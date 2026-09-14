@@ -513,3 +513,49 @@ test("restores the API-host CSRF token without a frontend cookie", async ({ page
   await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
   expect(signedOut).toBe(true);
 });
+
+test("sidebar keeps the account visible at desktop and short viewport heights", async ({ page }) => {
+  await mockStudent(page);
+  for (const [width, height] of [[1280, 720], [954, 935], [768, 650]]) {
+    await page.setViewportSize({ width, height });
+    await page.goto("/practice");
+    await expect(page.getByRole("heading", { name: "Let’s get you interview-ready" })).toBeVisible();
+    const layout = await page.locator(".sidebar").evaluate(el => {
+      const account = el.querySelector(".sidebar-account")!.getBoundingClientRect();
+      return { overflow: el.scrollHeight - el.clientHeight, accountBottom: account.bottom, accountTop: account.top };
+    });
+    expect(layout.overflow).toBeLessThanOrEqual(1);
+    expect(layout.accountBottom).toBeLessThanOrEqual(height);
+    expect(layout.accountTop).toBeGreaterThan(0);
+  }
+});
+
+test("mobile navigation traps focus, closes with Escape and restores scrolling", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockStudent(page);
+  await page.goto("/");
+  await expect(page.getByRole("navigation", { name: "Student navigation" })).toBeHidden();
+  const opener = page.getByRole("button", { name: "Open navigation" });
+  await opener.click();
+  await expect(page.getByRole("dialog", { name: "Student workspace" })).toBeVisible();
+  expect(await page.evaluate(() => document.body.style.overflow)).toBe("hidden");
+  await page.getByRole("button", { name: "Sign out" }).focus();
+  await page.keyboard.press("Tab");
+  expect(await page.locator(".sidebar").evaluate(el => el.contains(document.activeElement))).toBe(true);
+  await page.keyboard.press("Escape");
+  await expect(opener).toBeFocused();
+  await expect(opener).toHaveAttribute("aria-expanded", "false");
+  expect(await page.evaluate(() => document.body.style.overflow)).not.toBe("hidden");
+});
+
+test("long placement company names fit a narrow phone screen", async ({ page }) => {
+  await page.setViewportSize({ width: 320, height: 568 });
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [{
+    id: "long-company", company_name: "InternationalSoftwareEngineeringAndInfrastructure",
+    role_title: "CloudPlatformEngineeringSpecialist", location: "Remote", status: "published",
+  }] }));
+  await page.goto("/placements");
+  await expect(page.getByRole("heading", { name: "CloudPlatformEngineeringSpecialist" })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
+});

@@ -222,7 +222,7 @@ img {
   flex-direction: column;
   padding: 29px 20px 16px;
   z-index: 40;
-  overflow-y: auto;
+  overflow: hidden;
 }
 .sidebar-brand {
   padding: 0 12px 27px;
@@ -276,7 +276,7 @@ img {
   border-radius: 13px;
   position: relative;
   margin-bottom: 22px;
-  margin-top: max(40px, calc(100vh - 715px));
+
 }
 .tip-icon {
   display: inline-flex;
@@ -1641,3 +1641,62 @@ dialog.modal::backdrop {
 }
 
 .auth-story h1 > span, .auth-story h1 > em { display: block; }
+
+/* Keep navigation and account controls within the available viewport. */
+.sidebar-brand, .sidebar-account { flex-shrink: 0; }
+.sidebar-brand { padding-bottom: 18px; }
+.sidebar-content { display: flex; flex-direction: column; flex: 1; min-height: 0; overflow-y: auto; overscroll-behavior: contain; scrollbar-width: thin; padding-bottom: 18px; }
+.sidebar-content > * { flex-shrink: 0; }
+.sidebar .portal-label { display: block; }
+.sidebar nav { margin-bottom: 22px; }
+.sidebar nav a { font-size: 13px; min-height: 44px; }
+.sidebar nav a svg, .sidebar nav a.active:after { flex-shrink: 0; }
+.sidebar-tip { margin-top: auto; margin-bottom: 0; }
+.sidebar-account { padding-top: 14px; }
+.sidebar-account strong { white-space: normal; overflow-wrap: anywhere; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; line-height: 1.45; }
+.sidebar-account .icon-button { flex-shrink: 0; }
+.dashboard-body, .dashboard-content, .dashboard-topbar > div { min-width: 0; }
+.dashboard-topbar > div:first-child { flex: 1; }
+.breadcrumb { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.topbar-tools { flex-shrink: 0; }
+.college-name { overflow: hidden; white-space: nowrap; text-overflow: ellipsis; display: block; }
+.college-name img { vertical-align: middle; margin-right: 8px; }
+.dashboard-content :is(.panel, .stat-card, .page-heading > div, .section-heading > div, .profile-heading > div, .profile-details > div, .next-steps > a > div) { min-width: 0; }
+.dashboard-content :is(h1, h2, h3, p, .pill, .stat-card > strong, .record-result) { overflow-wrap: anywhere; }
+.page-heading > .button, .section-heading > a, .section-heading > button { flex-shrink: 0; }
+.section-heading { flex-wrap: wrap; }
+.profile-heading > div { flex: 1; }
+.record-result { min-width: 0; max-width: 160px; }
+.error-message { flex-wrap: wrap; }
+.dashboard-shell .icon-button { min-width: 36px; min-height: 36px; }
+@media (max-height: 800px) { .sidebar-tip { display: none; } }
+@media (max-width: 980px) {
+  .topbar-tools { gap: 10px; }
+  .college-name { max-width: 140px; }
+}
+@media (max-width: 760px) {
+  .sidebar { visibility: hidden; max-width: calc(100vw - 48px); padding-top: max(18px, env(safe-area-inset-top)); padding-bottom: max(16px, env(safe-area-inset-bottom)); }
+  .sidebar.open { visibility: visible; }
+  .sidebar-brand .brand { font-size: 26px; }
+  .sidebar-brand { padding-inline: 0; }
+  .sidebar-account strong { font-size: 12px; }
+  .sidebar-account div span { font-size: 11px; }
+  .college-name { display: none; }
+  .dashboard-shell .icon-button { min-width: 44px; min-height: 44px; }
+  .dashboard-topbar { gap: 6px; padding-inline: 12px; }
+  .dashboard-content input:not([type="checkbox"]):not([type="file"]), .dashboard-content select, .dashboard-content textarea { font-size: 16px; }
+  .page-heading { flex-wrap: wrap; }
+  .stat-card > strong { font-size: clamp(22px, 6vw, 27px); line-height: 1.2; }
+  .record-info { min-width: min(140px, 100%); }
+  .profile-heading { align-items: flex-start; }
+  .profile-heading > .pill { flex-basis: 100%; width: fit-content; }
+}
+.dashboard-content .eyebrow, .modal :is(.eyebrow, h2, p) { overflow-wrap: anywhere; }
+.drive-card > p svg { flex-shrink: 0; }
+@media (max-width: 760px) {
+  .profile-heading { display: grid; grid-template-columns: 66px minmax(0, 1fr); }
+  .profile-heading > .pill { grid-column: 1 / -1; justify-self: start; }
+}
+@media (max-width: 420px) {
+  .profile-details { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+}

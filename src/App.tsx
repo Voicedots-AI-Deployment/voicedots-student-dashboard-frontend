@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   ArrowUpRight,
@@ -228,6 +228,7 @@ export function App() {
   const auth = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const sidebarRef = useRef<HTMLElement>(null);
   const [dark, setDark] = useState(
     () => localStorage.getItem("theme") === "dark",
   );
@@ -241,6 +242,36 @@ export function App() {
     setMobileOpen(false);
     window.scrollTo(0, 0);
   }, [location.pathname]);
+  useEffect(() => {
+    const desktop = window.matchMedia("(min-width: 761px)");
+    const closeOnDesktop = () => { if (desktop.matches) setMobileOpen(false); };
+    desktop.addEventListener("change", closeOnDesktop);
+    return () => desktop.removeEventListener("change", closeOnDesktop);
+  }, []);
+  useEffect(() => {
+    if (!mobileOpen) return;
+    const previousFocus = document.activeElement as HTMLElement | null;
+    const previousOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    const focusable = () => Array.from(sidebarRef.current?.querySelectorAll<HTMLElement>(
+      'a[href], button:not([disabled]), [tabindex="0"]',
+    ) || []).filter(element => element.getClientRects().length > 0);
+    focusable()[0]?.focus();
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (event.key === "Escape") { event.preventDefault(); setMobileOpen(false); }
+      if (event.key !== "Tab") return;
+      const elements = focusable();
+      const first = elements[0], last = elements[elements.length - 1];
+      if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last?.focus(); }
+      else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first?.focus(); }
+    };
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener("keydown", onKeyDown);
+      previousFocus?.focus({ preventScroll: true });
+    };
+  }, [mobileOpen]);
   if (auth.loading) return <Loading />;
   if (!auth.identity) return <Login />;
   const student = auth.identity.student;
@@ -270,7 +301,7 @@ export function App() {
           onClick={() => setMobileOpen(false)}
         />
       )}
-      <aside className={`sidebar ${mobileOpen ? "open" : ""}`}>
+      <aside ref={sidebarRef} className={`sidebar ${mobileOpen ? "open" : ""}`} aria-label="Student workspace" role={mobileOpen ? "dialog" : undefined} aria-modal={mobileOpen || undefined}>
         <div className="sidebar-brand">
           <Brand />
           <button
@@ -281,6 +312,7 @@ export function App() {
             <X size={20} />
           </button>
         </div>
+        <div className="sidebar-content">
         <span className="portal-label">STUDENT WORKSPACE</span>
         <nav aria-label="Student navigation">
           {nav.map(({ to, label, icon: Icon }) => (
@@ -300,6 +332,7 @@ export function App() {
             Let’s practice <ArrowRight size={15} />
           </NavLink>
         </div>
+        </div>
         <div className="sidebar-account">
           <span className="avatar">
             {student.full_name
@@ -309,8 +342,8 @@ export function App() {
               .join("")}
           </span>
           <div>
-            <strong>{student.full_name}</strong>
-            <span>{student.roll_number}</span>
+            <strong title={student.full_name}>{student.full_name}</strong>
+            <span title={student.roll_number}>{student.roll_number}</span>
           </div>
           <button
             className="icon-button"
@@ -338,7 +371,7 @@ export function App() {
             </span>
           </div>
           <div className="topbar-tools">
-            <span className="college-name">
+            <span className="college-name" title={student.college_name || "Student portal"}>
               {auth.identity.logo_url && (
                 <img src={auth.identity.logo_url} alt="" />
               )}
