@@ -365,7 +365,7 @@ export function Practice() {
             </strong>
             <p>
               {context
-                ? `Interview window: ${humanize(context.interview_window)}. Your college controls access to this attempt.`
+                ? `Interview window: ${humanize(context.interview_window)}. Your placement team controls access to this attempt.`
                 : "Return to Placements to check your assignment."}
             </p>
             {context?.action === "resume" && (

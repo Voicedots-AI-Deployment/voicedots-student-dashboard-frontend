@@ -64,7 +64,7 @@ test("sign in uses student auth and restores the requested page", async ({
   await expect(
     page.getByRole("heading", { name: "Welcome back." }),
   ).toBeVisible();
-  await page.getByLabel("College email").fill("asha@college.edu");
+  await page.getByLabel("Email").fill("asha@college.edu");
   await page.getByLabel("Password", { exact: true }).fill("MyStrongPassword1!");
   const login = page.waitForRequest("**/api/auth/student-login");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
@@ -91,7 +91,7 @@ test("enrollment activates a roster account", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("button", { name: "First time here?" }).click();
   await page.getByLabel("Roll number").fill("CS2026001");
-  await page.getByLabel("College email").fill("asha@college.edu");
+  await page.getByLabel("Email").fill("asha@college.edu");
   await page.getByLabel("Password", { exact: true }).fill("MyStrongPassword1!");
   const enrollment = page.waitForRequest("**/api/auth/student-enroll");
   await page.getByRole("button", { name: "Activate account" }).click();
@@ -376,7 +376,7 @@ test("replacing an active login requires selecting the replacement checkbox", as
     return route.fallback();
   });
   await page.goto("/");
-  await page.getByLabel("College email").fill("asha@college.edu");
+  await page.getByLabel("Email").fill("asha@college.edu");
   await page.getByLabel("Password", { exact: true }).fill("MyStrongPassword1!");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   const replacement = page.getByRole("checkbox", {

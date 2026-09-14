@@ -1,3 +1,4 @@
+import {displayName} from "./display";
 import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
@@ -146,12 +147,12 @@ function Login() {
               </label>
             )}
             <label>
-              College email
+              Email
               <input
                 name="email"
                 type="email"
                 autoComplete="email"
-                placeholder="you@college.edu"
+                placeholder="you@example.com"
                 required
               />
             </label>
@@ -205,7 +206,7 @@ function Login() {
           <div className="auth-help">
             <BookOpen size={20} />
             <p>
-              Your college manages access to this portal. Contact your placement
+              Your placement team manages access to this portal. Contact your placement
               cell if you need an account or help signing in.
             </p>
           </div>
@@ -342,7 +343,7 @@ export function App() {
               .join("")}
           </span>
           <div>
-            <strong title={student.full_name}>{student.full_name}</strong>
+            <strong title={student.full_name}>{displayName(student.full_name)}</strong>
             <span title={student.roll_number}>{student.roll_number}</span>
           </div>
           <button
@@ -371,11 +372,11 @@ export function App() {
             </span>
           </div>
           <div className="topbar-tools">
-            <span className="college-name" title={student.college_name || "Student portal"}>
+            <span className="college-name" title={displayName(student.college_name) || "Student portal"}>
               {auth.identity.logo_url && (
                 <img src={auth.identity.logo_url} alt="" />
               )}
-              {student.college_name || "Student portal"}
+              {displayName(student.college_name) || "Student portal"}
             </span>
             <button
               className="icon-button"

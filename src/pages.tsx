@@ -1,3 +1,4 @@
+import {displayName} from "./display";
 import { useState, type FormEvent } from "react";
 import {
   ArrowRight,
@@ -116,7 +117,7 @@ export function Overview() {
     <>
       <PageHeading
         eyebrow="A LITTLE BETTER, EVERY DAY"
-        title={`Hello, ${identity!.student.full_name.split(" ")[0]}.`}
+        title={`Hello, ${displayName(identity!.student.full_name.split(" ")[0])}.`}
       >
         Your next opportunity starts with what you do today.
       </PageHeading>
@@ -318,7 +319,7 @@ export function Placements() {
           </button>
         }
       >
-        Explore opportunities that match your college’s eligibility criteria.
+        Explore opportunities that match your placement eligibility criteria.
       </PageHeading>
       <label className="search-field">
         Search opportunities
@@ -463,7 +464,7 @@ export function Reports() {
         }
       >
         Personal feedback from your interviews. Placement results appear when
-        your college releases them.
+        your placement team releases them.
       </PageHeading>
       <ResourceState resource={resource}>
         <section className="panel">
@@ -605,8 +606,8 @@ export function Profile() {
               .join("")}
           </span>
           <div>
-            <h2>{student.full_name}</h2>
-            <p>{student.college_name || "Student"}</p>
+            <h2>{displayName(student.full_name)}</h2>
+            <p>{displayName(student.college_name) || "Student"}</p>
           </div>
           <span className="pill">Student account</span>
         </div>
@@ -626,7 +627,7 @@ export function Profile() {
           ))}
         </dl>
         <p className="muted">
-          Your college manages academic details. Contact your placement cell to
+          Your placement team manages academic details. Contact your placement cell to
           request corrections.
         </p>
       </section>
