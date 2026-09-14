@@ -129,7 +129,7 @@ function errorMessage(body: unknown): string {
 
 export async function request(
   path: string,
-  options: RequestInit = {},
+  options: RequestInit & { timeoutMs?: number } = {},
 ): Promise<Response> {
   const headers = new Headers(options.headers);
   headers.set("X-Portal-Role", "student");
@@ -154,7 +154,7 @@ export async function request(
   const cancel = () => controller.abort();
   if (options.signal?.aborted) controller.abort();
   options.signal?.addEventListener("abort", cancel, { once: true });
-  const timeout = setTimeout(cancel, 30000);
+  const timeout = setTimeout(cancel, options.timeoutMs ?? 30000);
   try {
     response = await fetch(apiUrl(path), {
       ...options,
@@ -187,7 +187,7 @@ export async function request(
   return response;
 }
 
-export async function api<T>(path: string, options?: RequestInit): Promise<T> {
+export async function api<T>(path: string, options?: RequestInit & { timeoutMs?: number }): Promise<T> {
   const response = await request(path, options);
   const body = await response.json();
   if (typeof body?.csrf_token === "string") csrfToken = body.csrf_token;

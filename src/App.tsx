@@ -31,6 +31,7 @@ import { api, ApiError, json } from "./api";
 import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Loading } from "./ui";
 import { Overview, Placements, Growth, Profile, Reports } from "./pages";
+import { Coach } from "./coach";
 import { Practice } from "./practice";
 
 function Login() {
@@ -218,6 +219,7 @@ function Login() {
 
 const nav = [
   { to: "/", label: "Overview", icon: House },
+  { to: "/coach", label: "AI coach", icon: BookOpen },
   { to: "/practice", label: "Interview practice", icon: Mic },
   { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
   { to: "/reports", label: "My reports", icon: FileText },
@@ -400,6 +402,7 @@ export function App() {
             <Route path="/placements" element={<Placements />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/growth" element={<Growth />} />
+            <Route path="/coach" element={<Coach />} />
             <Route path="/profile" element={<Profile />} />
             <Route
               path="*"

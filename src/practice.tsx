@@ -63,11 +63,19 @@ export function Practice() {
   });
   const [pollVersion, setPollVersion] = useState(0);
   const [pollError, setPollError] = useState("");
+  const savedFile = useRef<File | null>(null);
+  const autoSelected = useRef(false);
   const [resumeBusy, setResumeBusy] = useState(false);
   const alive = useRef(true);
   const library = useResource<{ resumes: Resume[] }>(
     "/api/student/resume-library",
   );
+  useEffect(() => {
+    if (autoSelected.current || file || preparation || !library.data) return;
+    autoSelected.current = true;
+    const primary = library.data.resumes.find(r => r.is_primary);
+    if (primary) void useResume(primary);
+  }, [library.data]);
   const attempts = useResource<{ attempts: Attempt[] }>(
     "/api/student/practice/resumable",
   );
@@ -214,6 +222,11 @@ export function Practice() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
+      if (savedFile.current !== file) {
+        const savedBody = new FormData(); savedBody.set("resume", file);
+        await api("/api/student/resume-library", { method: "POST", body: savedBody });
+        savedFile.current = file; library.reload();
+      }
       const result = await api<Preparation>("/api/student/interview/start", {
         method: "POST",
         body,
@@ -287,7 +300,10 @@ export function Practice() {
       const response = await request(
         `/api/student/resume-library/${encodeURIComponent(resume.resume_id)}/file`,
       );
-      chooseFile(new File([await response.blob()], resume.original_filename));
+      const saved = new File([await response.blob()], resume.original_filename);
+      if (!alive.current) return;
+      savedFile.current = saved;
+      chooseFile(saved);
     } catch (e) {
       setError((e as Error).message);
     } finally {
@@ -303,6 +319,7 @@ export function Practice() {
     body.set("resume", file);
     try {
       await api("/api/student/resume-library", { method: "POST", body });
+      savedFile.current = file;
       library.reload();
       setNotice("Resume saved to your library.");
     } catch (e) {
@@ -681,7 +698,7 @@ export function Practice() {
                       {resume.is_primary && "· Main resume"}
                     </span>
                   </div>
-                  {resume.submission_id && !resume.is_primary && (
+                  {!resume.is_primary && (
                     <button
                       className="text-button"
                       disabled={resumeBusy}
@@ -702,7 +719,7 @@ export function Practice() {
             </div>
           ) : (
             <Empty title="Your experience belongs here">
-              Upload a resume above and choose “Save selected resume” to reuse
+              Your resume is saved automatically when you prepare an interview. You can also save it here to reuse
               it later.
             </Empty>
           )}

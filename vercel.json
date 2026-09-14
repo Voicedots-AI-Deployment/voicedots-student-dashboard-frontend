@@ -24,6 +24,10 @@
     {
       "source": "/profile",
       "destination": "/index.html"
+    },
+    {
+      "source": "/coach",
+      "destination": "/index.html"
     }
   ],
   "headers": [

@@ -559,3 +559,31 @@ test("long placement company names fit a narrow phone screen", async ({ page }) 
   await expect(page.getByRole("heading", { name: "CloudPlatformEngineeringSpecialist" })).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
 });
+
+test('profile persists project evidence, drafts a resume, and saves it to the library',async({page})=>{
+ await mockStudent(page);let profile:any={},draft:any={},saved=false;
+ await page.route('**/api/student/portfolio**',route=>{const path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();
+ if(path.endsWith('/build')){expect(body.job_description).toContain('Python');draft={resume_text:'Asha Kumar\nBuilt a Python library API with search.',warnings:[]};return route.fulfill({json:draft})}
+ if(path.endsWith('/save-resume')){saved=true;return route.fulfill({json:{resume_id:'saved-1'}})}
+ if(route.request().method()==='PUT'){profile=body;return route.fulfill({json:{status:'saved'}})}
+ return route.fulfill({json:{profile,draft:Object.keys(draft).length?draft:undefined}})
+ });
+ await page.goto('/profile');await page.getByLabel('Topics you have worked on').fill('Python APIs');await page.getByRole('button',{name:'Add project',exact:true}).click();await page.getByLabel('Project name').fill('Library API');await page.getByLabel('What you built and your contribution').fill('Built a Python API with book search.');await page.getByRole('button',{name:'Save profile details',exact:true}).click();await expect(page.getByText('Profile details saved.',{exact:true})).toBeVisible();expect(profile.projects[0].name).toBe('Library API');
+ await page.getByLabel('Target role',{exact:true}).last().fill('Backend engineer');await page.getByLabel('Job description',{exact:true}).fill('Build Python APIs and reliable database services.');await page.getByRole('button',{name:'Create tailored draft'}).click();await expect(page.getByLabel('Editable resume draft')).toContainText('Python library API');await page.getByRole('button',{name:'Save to resume library'}).click();await expect.poll(()=>saved).toBe(true);
+ await page.reload();await expect(page.getByLabel('Project name')).toHaveValue('Library API');await expect(page.getByLabel('Editable resume draft')).toHaveValue(draft.resume_text);
+});
+
+test('coach creates a saved roadmap and continues the conversation',async({page})=>{
+ await mockStudent(page);const plan={id:'plan-1',role_title:'Backend engineer',target_date:'2027-01-01',plan:{summary:'Learn reliable API design',goal:'Explain and build APIs',priority_topics:[],daily_roadmap:[{day:1,title:'Python APIs',focus:'Request handling',activities:['Build one endpoint'],success_check:'Explain a request'}],discussion_starters:['Show today’s plan']},messages:[{id:'m1',role:'coach',content:'Let’s learn API design.'}]};let created=false;
+ await page.route('**/api/student/coach/plans**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/messages')){plan.messages.push({id:'m2',role:'coach',content:'An API receives a request and returns a response.'});return route.fulfill({json:{reply:plan.messages[1].content}})}if(path.endsWith('/plans')){if(route.request().method()==='POST'){created=true;return route.fulfill({json:plan})}return route.fulfill({json:{plans:created?[plan]:[]}})}return route.fulfill({json:plan})});
+ await page.goto('/coach');await page.getByLabel('Target role',{exact:true}).fill('Backend engineer');await page.getByLabel('Interview date').fill('2027-01-01');await page.getByLabel('Job description',{exact:true}).fill('Build Python APIs and reliable database services.');await page.getByRole('button',{name:'Create preparation plan'}).click();await expect(page.getByText('Learn reliable API design')).toBeVisible();await page.getByText('Day 1: Python APIs').click();await expect(page.getByText('Build one endpoint')).toBeVisible();await page.getByLabel('Ask your coach').fill('Explain APIs');await page.getByRole('button',{name:'Send message'}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();await expect(page.getByRole('button',{name:'Start voice lesson'})).toBeVisible();
+});
+
+test('coach voice acknowledges played audio and releases the microphone on navigation',async({page})=>{
+ await mockStudent(page);const plan={id:'voice-1',role_title:'Engineer',target_date:'2027-01-01',plan:{summary:'Learn APIs',goal:'Understand requests',priority_topics:[],daily_roadmap:[],discussion_starters:[]},messages:[]};
+ await page.route('**/api/student/coach/plans**',r=>r.fulfill({json:new URL(r.request().url()).pathname.endsWith('/plans')?{plans:[plan]}:plan}));
+ await page.addInitScript(()=>{Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);track.stop=()=>{(window as any).micReleased=true;stop();void ctx.close()};return destination.stream}})});
+ let acknowledged=false,ended=false;
+ await page.routeWebSocket('**/ws/coach/**',ws=>{ws.onMessage(message=>{if(typeof message==='string'){const p=JSON.parse(message);if(p.type==='playback_complete'&&p.audio_epoch===1)acknowledged=true;if(p.type==='end_interview')ended=true}});ws.send(JSON.stringify({type:'tts_begin',audio_epoch:1,text:'Welcome to your lesson.'}));const packet=Buffer.alloc(964);packet.writeUInt32BE(1);ws.send(packet);ws.send(JSON.stringify({type:'tts_end',audio_epoch:1}));});
+ await page.goto('/coach');await page.getByRole('button',{name:'Engineer · 2027-01-01'}).click();await page.getByRole('button',{name:'Start voice lesson'}).click();await expect.poll(()=>acknowledged).toBe(true);await expect(page.getByText('Listening to you',{exact:true})).toBeVisible();await page.getByRole('link',{name:'My profile',exact:true}).click();await expect.poll(()=>ended).toBe(true);await expect.poll(()=>page.evaluate(()=>(window as any).micReleased)).toBe(true);
+});
