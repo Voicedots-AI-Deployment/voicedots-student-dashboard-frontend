@@ -1,3 +1,4 @@
+import { AcademicOverview } from "./academics";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
 import { useState, type FormEvent } from "react";
@@ -123,6 +124,7 @@ export function Overview() {
         Your next opportunity starts with what you do today.
       </PageHeading>
       <div className="career-actions"><Link className="button secondary" to="/profile">{identity!.student.current_resume_submission_id ? "Manage your saved resume" : "Set up your resume"}</Link><Link className="button secondary" to="/coach">Learn with your AI coach</Link></div>
+      <AcademicOverview />
       <section className="welcome-banner">
         <div>
           <span className="pill">

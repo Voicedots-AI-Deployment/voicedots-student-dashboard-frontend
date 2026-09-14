@@ -31,6 +31,7 @@ import { api, ApiError, json } from "./api";
 import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Loading } from "./ui";
 import { Overview, Placements, Growth, Profile, Reports } from "./pages";
+import { Academics } from "./academics";
 import { Coach } from "./coach";
 import { Practice } from "./practice";
 
@@ -219,6 +220,7 @@ function Login() {
 
 const nav = [
   { to: "/", label: "Overview", icon: House },
+  { to: "/academics", label: "Marks and attendance", icon: BookOpen },
   { to: "/coach", label: "AI coach", icon: BookOpen },
   { to: "/practice", label: "Interview practice", icon: Mic },
   { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
@@ -402,6 +404,7 @@ export function App() {
             <Route path="/placements" element={<Placements />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/growth" element={<Growth />} />
+            <Route path="/academics" element={<Academics />} />
             <Route path="/coach" element={<Coach />} />
             <Route path="/profile" element={<Profile />} />
             <Route

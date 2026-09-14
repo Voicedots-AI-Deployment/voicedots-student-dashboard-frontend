@@ -1715,3 +1715,12 @@ dialog.modal::backdrop {
 .coach-message p,.voice-caption { white-space:pre-wrap; overflow-wrap:anywhere; }
 .dark .coach-message { background:#221d32; }
 .career-tools .record { flex-wrap:wrap; }
+
+.academic-overview { margin-bottom:24px; }
+.academic-value { font-size:clamp(24px,3vw,34px); font-weight:650; letter-spacing:-.03em; }
+.academic-stats>div { border:1px solid var(--border,#e7e1f2); padding:20px; border-radius:16px; }
+.academic-table { overflow-x:auto; margin:18px 0; }
+.academic-table table { width:100%; border-collapse:collapse; text-align:left; }
+.academic-table td,.academic-table th { padding:14px; border-bottom:1px solid var(--border,#e7e1f2); }
+.academic-report { background:white; border-radius:12px; padding:12px; overflow:auto; }
+.academic-report img { display:block; width:100%; height:auto; }

@@ -28,6 +28,10 @@
     {
       "source": "/coach",
       "destination": "/index.html"
+    },
+    {
+      "source": "/academics",
+      "destination": "/index.html"
     }
   ],
   "headers": [
