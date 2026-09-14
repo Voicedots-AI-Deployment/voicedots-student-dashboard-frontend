@@ -4,6 +4,8 @@
  * talking ring animations, and post-call report compilation flow.
  */
 
+import { createFeedPhotoVerifier } from "./feed-photo-verifier.js";
+
 const _HTTP_BASE = window.__API_BASE__ || window.location.origin;
 const WS_BASE = _HTTP_BASE.replace(/^http/, "ws");
 
@@ -284,6 +286,28 @@ const MULTIPLE_PERSON_HOLD_MS = 3000;
 // cross PHONE_VISIBLE_THRESHOLD_MS. Mirrors MULTIPLE_PERSON_HOLD_MS above.
 const PHONE_DETECTION_HOLD_MS = 3000;
 
+const photoCaptureBtn = document.getElementById("pj-photo-capture");
+const photoVerifier = createFeedPhotoVerifier({
+  getVideo: () => _isCallScreenActive() ? candidateVideoEl : lobbyVideoEl,
+  request: studentFetch,
+  apiBase: _HTTP_BASE,
+  onChange: ({ message, enabled, ready, state }) => {
+    const panel = document.getElementById("pj-photo-verification");
+    const status = document.getElementById("pj-photo-status");
+    const liveStatus = document.getElementById("call-photo-status");
+    if (panel) panel.hidden = enabled === false;
+    if (status && message !== undefined) status.textContent = message;
+    if (liveStatus) {
+      liveStatus.hidden = enabled === false;
+      liveStatus.textContent = ready ? "Photo matched" : state === "mismatch" ? "Photo mismatch"
+        : state === "unavailable" ? "Photo check unavailable" : "Photo check pending";
+      liveStatus.title = status?.textContent || "";
+    }
+    updatePrejoinReadiness();
+  },
+});
+window.addEventListener("pagehide", () => photoVerifier.stop());
+
 // ============================================================
 // INITIALIZATION
 // ============================================================
@@ -331,8 +355,23 @@ document.addEventListener("DOMContentLoaded", async () => {
   // screens for an interview that's already over.
   if (await tryResumeCompletedSessionOnLoad()) return;
 
+  // Legacy deep links may lack a session ID. Create the attempt before its
+  // camera reference is established, rather than waiting until Join.
+  if (!currentSessionId) {
+    try {
+      const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/interview`, { method: "POST" });
+      const record = await response.json();
+      if (!response.ok || !record.session_id) throw new Error("Could not prepare photo verification for this interview.");
+      currentSessionId = record.session_id;
+    } catch (error) {
+      showPrejoinError(camErrorEl, error.message);
+      return;
+    }
+  }
+
   // Start pre-join step 1 (camera)
   await initCameraCheck();
+  await photoVerifier.load(currentSessionId);
 });
 
 async function tryResumeCompletedSessionOnLoad() {
@@ -585,6 +624,7 @@ function setupStudentProfileInfo() {
 // ============================================================
 
 function setupPrejoinFlow() {
+  photoCaptureBtn?.addEventListener("click", () => void photoVerifier.captureReference());
   if (camSelectEl) camSelectEl.addEventListener("change", () => switchDevice("video", camSelectEl.value));
   if (micSelectEl) {
     micSelectEl.addEventListener("change", () => {
@@ -666,6 +706,18 @@ function setupPrejoinFlow() {
         showPrejoinError(shareErrorEl, "Complete the device checks, spoken sentence, screen sharing and guidance acknowledgement before joining.");
         return;
       }
+      pjJoinBtn.disabled = true;
+      try {
+        if (!await photoVerifier.verifyBeforeJoin()) {
+          showPrejoinError(shareErrorEl, "Photo verification did not pass. Return to the camera check and retry.");
+          updatePrejoinReadiness();
+          return;
+        }
+      } catch {
+        showPrejoinError(shareErrorEl, "Photo verification is unavailable. Please retry.");
+        updatePrejoinReadiness();
+        return;
+      }
       try {
         await requestInterviewFullscreen();
       } catch {
@@ -744,12 +796,13 @@ function hasLiveTrack(kind) {
 }
 
 function cameraReadyForInterview() {
-  return cameraTrackLive && cameraAnalysisPassing;
+  return cameraTrackLive && cameraAnalysisPassing && photoVerifier.isReady();
 }
 
 function updatePrejoinReadiness() {
   cameraTrackLive = hasLiveTrack("video");
   microphoneTrackLive = hasLiveTrack("audio");
+  if (photoCaptureBtn) photoCaptureBtn.disabled = !cameraTrackLive || photoVerifier.isBusy();
   if (pjCamNextBtn) pjCamNextBtn.disabled = !cameraReadyForInterview();
   if (pjMicNextBtn) pjMicNextBtn.disabled = !(microphoneTrackLive && micLevelDetected);
   if (pjVoiceVerifyBtn) pjVoiceVerifyBtn.disabled = !(microphoneTrackLive && micSignalDetected);
@@ -761,6 +814,7 @@ function bindMediaTrackEnded(track) {
   track.addEventListener("ended", () => {
     const isVideo = track.kind === "video";
     if (isVideo) {
+      photoVerifier.invalidate();
       cameraTrackLive = false;
       if (camOkBadge) camOkBadge.style.display = "none";
       showPrejoinError(camErrorEl, "Camera disconnected. Reconnect it; this page will detect it automatically.");
@@ -822,6 +876,7 @@ async function attachDeviceTrack(kind, deviceId) {
     userMediaStream.addTrack(newTrack);
     bindMediaTrackEnded(newTrack);
     if (kind === "video") {
+      photoVerifier.invalidate();
       if (lobbyVideoEl) lobbyVideoEl.srcObject = userMediaStream;
       if (candidateVideoEl) candidateVideoEl.srcObject = userMediaStream;
       if (camErrorEl) camErrorEl.style.display = "none";
@@ -1833,6 +1888,7 @@ function bindScreenShareEnded(track) {
 function requestInterviewEnd(reason) {
   if (integrityEndRequested || sessionCompletedCleanly) return;
   integrityEndRequested = true;
+  photoVerifier.stop();
   // Release browser-owned presentation state immediately. Waiting for the
   // server's session_complete message left fullscreen and monitor capture
   // active during slow network/report transitions.
@@ -1866,6 +1922,7 @@ function showIncompleteInterview(reason, completed = 0, required = TOTAL_INTERVI
 }
 
 function showFatalError(detail) {
+  photoVerifier.stop();
   const toast = document.getElementById("error-toast");
   const text = document.getElementById("error-toast-text");
   if (text) {
@@ -2248,6 +2305,7 @@ function handleControlMessage(payload) {
     // only from here on do queued pending events get flushed.
     case "interview_started":
       proctoringActive = true;
+      photoVerifier.start();
       _flushPendingIntegrityEvents();
       break;
 
@@ -2566,6 +2624,7 @@ async function recoverCompletedSession() {
 }
 
 function stopInterview() {
+  photoVerifier.stop();
   interviewStopRequested = true;
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);

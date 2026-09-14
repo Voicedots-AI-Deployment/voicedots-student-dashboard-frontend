@@ -307,6 +307,11 @@
         <select id="cam-select" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surf2);color:white;font-size:0.85rem;margin-bottom:14px;">
           <option value="">Detecting cameras...</option>
         </select>
+        <div id="pj-photo-verification" style="margin-bottom:14px;">
+          <p id="pj-photo-status" role="status" style="font-size:0.82rem;color:#CBD5E1;">Loading photo verification…</p>
+          <p style="font-size:0.75rem;color:#94A3B8;">Camera frames are checked periodically. Video and captured photos are not saved by this check.</p>
+          <button class="pj-btn pj-btn-ghost" id="pj-photo-capture" type="button" disabled>Capture and verify photo</button>
+        </div>
         <div class="pj-actions">
           <button class="pj-btn pj-btn-primary" id="pj-cam-next" disabled>Continue →</button>
         </div>
@@ -490,6 +495,7 @@
 
         <div class="pip" id="pip-wrap">
           <video id="candidate-video" autoplay playsinline muted></video>
+          <span id="call-photo-status" hidden role="status" style="position:absolute;top:6px;left:6px;background:#0F172A;color:#E2E8F0;padding:3px 6px;border-radius:6px;font-size:0.65rem;">Photo check pending</span>
           <div class="pip-cam-off" id="pip-cam-off">
             <div class="pip-avatar" id="pip-initials">PS</div>
           </div>

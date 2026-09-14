@@ -34,43 +34,65 @@ import { Overview, Placements, Growth, Profile, Reports } from "./pages";
 import { Academics } from "./academics";
 import { Coach } from "./coach";
 import { Practice } from "./practice";
+import { PhotoVerification } from "./PhotoVerification";
+
+type PendingPhotoLogin = {
+  email: string;
+  password: string;
+  roll_number?: string;
+  replace_active_session?: boolean;
+  auth_method?: "password" | "face";
+};
 
 function Login() {
   const auth = useAuth();
   const [enroll, setEnroll] = useState(false);
+  const [faceSignIn, setFaceSignIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [replaceSession, setReplaceSession] = useState(false);
   const [conflict, setConflict] = useState(false);
-  async function submit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  // Credentials remain only in component memory while the camera step is open.
+  const [pendingPhoto, setPendingPhoto] = useState<PendingPhotoLogin | null>(null);
+  async function authenticate(credentials: PendingPhotoLogin, webcamPhoto?: string) {
     setBusy(true);
     setError("");
-    const form = new FormData(event.currentTarget);
     try {
-      const email = String(form.get("email")).trim();
-      const password = String(form.get("password"));
       await api(
-        enroll ? "/api/auth/student-enroll" : "/api/auth/student-login",
-        json(
-          enroll
-            ? {
-                email,
-                password,
-                roll_number: String(form.get("roll_number")).trim(),
-              }
-            : { email, password, replace_active_session: replaceSession },
-        ),
+        credentials.roll_number !== undefined ? "/api/auth/student-enroll" : "/api/auth/student-login",
+        json({ ...credentials, ...(webcamPhoto ? { webcam_photo: webcamPhoto } : {}) }),
       );
+      setPendingPhoto(null);
       await auth.refresh();
     } catch (e) {
-      if (e instanceof ApiError && e.status === 409 && !enroll)
-        setConflict(true);
+      const code = e instanceof ApiError
+        ? (e.payload as { detail?: { code?: string } } | undefined)?.detail?.code : undefined;
+      if (code === "PHOTO_REQUIRED") {
+        setPendingPhoto(credentials);
+        return;
+      }
+      if (code === "ACTIVE_SESSION_EXISTS") setConflict(true);
+      if (e instanceof ApiError && (e.status === 401 || e.status === 429)) setPendingPhoto(null);
       setError((e as Error).message);
     } finally {
       setBusy(false);
     }
+  }
+  async function submit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    if (faceSignIn && !enroll) {
+      setError("");
+      setPendingPhoto({ email: String(form.get("email")).trim(), password: "", auth_method: "face" });
+      return;
+    }
+    await authenticate({
+      email: String(form.get("email")).trim(),
+      password: String(form.get("password")),
+      ...(enroll ? { roll_number: String(form.get("roll_number")).trim() }
+        : { replace_active_session: replaceSession }),
+    });
   }
   return (
     <div className="auth-page">
@@ -120,11 +142,11 @@ function Login() {
         <div className="auth-form">
           <div className="auth-form-icon"><LockKeyhole size={23} /></div>
           <span className="eyebrow">YOUR STUDENT SPACE</span>
-          <h2>{enroll ? "Make it official." : "Welcome back."}</h2>
+          <h2>{pendingPhoto ? "Verify your photo." : enroll ? "Make it official." : faceSignIn ? "Sign in with your face." : "Welcome back."}</h2>
           <p>
-            {enroll
+            {pendingPhoto ? "One more step to finish signing in." : enroll
               ? "Activate the student account created by your placement cell."
-              : "Sign in to pick up where you left off."}
+              : faceSignIn ? "Enter your email, then capture a camera photo to sign in." : "Sign in to pick up where you left off."}
           </p>
           {auth.expired && (
             <ErrorMessage message="Your session has expired. Sign in again to continue." />
@@ -136,7 +158,16 @@ function Login() {
             />
           )}
           {error && <ErrorMessage message={error} />}
-          <form onSubmit={submit}>
+          {pendingPhoto ? <>
+            <PhotoVerification busy={busy}
+              onCapture={(photo) => authenticate({ ...pendingPhoto, replace_active_session: replaceSession }, photo)}
+              onCancel={() => { setPendingPhoto(null); setError(""); setConflict(false); setReplaceSession(false); }} />
+            {conflict && !enroll && <label className="checkbox">
+              <input type="checkbox" checked={replaceSession} disabled={busy}
+                onChange={(e) => setReplaceSession(e.target.checked)} />
+              End my previous session and sign in here
+            </label>}
+          </> : <form onSubmit={submit}>
             {enroll && (
               <label>
                 Roll number
@@ -158,7 +189,7 @@ function Login() {
                 required
               />
             </label>
-            <label>
+            {!faceSignIn && <label>
               Password
               <span className="auth-password">
               <input
@@ -175,7 +206,7 @@ function Login() {
               />
               <button type="button" className="auth-password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
               </span>
-            </label>
+            </label>}
             {conflict && !enroll && (
               <label className="checkbox">
                 <input
@@ -187,14 +218,20 @@ function Login() {
               </label>
             )}
             <button className="button primary" disabled={busy}>
-              {busy ? "Please wait…" : enroll ? "Activate account" : "Sign in"}
+              {busy ? "Please wait…" : enroll ? "Activate account" : faceSignIn ? "Open camera" : "Sign in"}
               <ArrowRight size={17} />
             </button>
-          </form>
-          <button
+          </form>}
+          {!pendingPhoto && !enroll && <button className="text-button" disabled={busy}
+            onClick={() => { setFaceSignIn(!faceSignIn); setError(""); setConflict(false); setReplaceSession(false); }}>
+            {faceSignIn ? "Use password instead" : "Sign in with face"}
+          </button>}
+          {!pendingPhoto && <button
             className="text-button"
+            disabled={busy}
             onClick={() => {
               setEnroll(!enroll);
+              setFaceSignIn(false);
               setShowPassword(false);
               setError("");
               setConflict(false);
@@ -204,7 +241,7 @@ function Login() {
             {enroll
               ? "Already have an account? Sign in"
               : "First time here? Set up your password"}
-          </button>
+          </button>}
           <div className="auth-help">
             <BookOpen size={20} />
             <p>
