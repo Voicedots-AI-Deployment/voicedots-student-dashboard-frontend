@@ -36,13 +36,22 @@ function getCookie(name) {
   return item ? decodeURIComponent(item.slice(prefix.length)) : "";
 }
 
-function studentFetch(url, options = {}) {
+let studentCsrfToken = "";
+
+async function studentFetch(url, options = {}) {
   const request = { ...options, credentials: "include" };
   const method = String(request.method || "GET").toUpperCase();
   const headers = new Headers(request.headers || {});
   headers.set("X-Portal-Role", "student");
   if (!["GET", "HEAD", "OPTIONS", "TRACE"].includes(method)) {
-    const csrf = getCookie("vd_student_csrf");
+    if (!studentCsrfToken && !getCookie("vd_student_csrf")) {
+      const identity = await fetch(`${_HTTP_BASE}/api/auth/student-me`, {
+        credentials: "include", headers: { "X-Portal-Role": "student" },
+      });
+      if (!identity.ok) throw new Error("Your session expired. Please sign in again.");
+      studentCsrfToken = (await identity.json()).csrf_token || "";
+    }
+    const csrf = studentCsrfToken || getCookie("vd_student_csrf");
     if (csrf) headers.set("X-CSRF-Token", csrf);
   }
   request.headers = headers;

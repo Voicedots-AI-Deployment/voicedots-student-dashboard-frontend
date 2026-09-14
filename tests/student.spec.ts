@@ -493,3 +493,23 @@ test("the real interview runtime restores a new-tab identity and loads device ch
   ).toBe(true);
   expect(errors).toEqual([]);
 });
+
+test("restores the API-host CSRF token without a frontend cookie", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/auth/student-me", (route) => route.fulfill({
+    json: { ...identity, csrf_token: "api-host-csrf" },
+  }));
+  let signedOut = false;
+  await page.route("**/api/auth/student-logout", async (route) => {
+    expect(route.request().headers()["x-csrf-token"]).toBe("api-host-csrf");
+    expect(new URL(route.request().url()).origin).toBe(
+      process.env.VITE_API_URL || "http://127.0.0.1:5175",
+    );
+    signedOut = true;
+    await route.fulfill({ json: { status: "ok" } });
+  });
+  await page.goto("/");
+  await page.getByRole("button", { name: "Sign out" }).click();
+  await expect(page.getByRole("heading", { name: "Welcome back." })).toBeVisible();
+  expect(signedOut).toBe(true);
+});

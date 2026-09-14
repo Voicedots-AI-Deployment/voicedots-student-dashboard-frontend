@@ -10,7 +10,7 @@ npm ci
 npm run dev
 ```
 
-Open `http://localhost:5175`. Start the student backend on port 8002 (see its README). Vite proxies `/api` and `/ws` to that backend, including cookie authentication and WebSocket upgrades. Use the same hostname consistently throughout a login session.
+Open `http://localhost:5175`. Start the student backend on port 8005 (see its README). Vite proxies `/api` and `/ws` to that backend, including cookie authentication and WebSocket upgrades. Use the same hostname consistently throughout a login session.
 
 The website at `http://localhost:5173/interviews` links to this portal automatically in development. In deployed builds, set the website's `VITE_STUDENT_DASHBOARD_URL` to the public root URL of this student service and this frontend's `VITE_WEBSITE_URL` to the marketing website URL. Build-time environment changes require rebuilding.
 
@@ -43,4 +43,17 @@ The build checks TypeScript before bundling. Playwright mocks the student API to
 
 `public/interview.js`, its device-check HTML, PCM worklet, panel assets, and pinned MediaPipe assets were migrated from the standalone interview project. They are intentionally retained together to preserve the existing audio/proctoring protocol. The dashboard itself is React; it does not embed the old portal in an iframe. The preserved college admin UI is independently authenticated.
 
-Serve `dist` through the student backend in production so UI, cookies, audio, and WebSockets share one origin. Hosting this frontend alone on a static host requires a reverse proxy for the student API and WebSockets; a SPA rewrite alone is insufficient.
+## Production at students.voicedots.io
+
+Set these Vercel build variables and deploy:
+
+```dotenv
+VITE_WEBSITE_URL=https://voicedots.io
+VITE_API_URL=https://student-api.voicedots.io
+```
+
+Remove `STUDENT_API_PROXY_TARGET` from Vercel; it only configures the local development proxy. The build emits `student-api-config.js` so the retained interview runtime uses the same API origin and connects directly to its `wss://` endpoint. Report links also target that API. Vercel rewrites cover the React dashboard routes.
+
+The backend must allow `https://students.voicedots.io` in `CORS_ALLOWED_ORIGINS`. Both HTTPS domains share the same site, so Strict cookies remain valid; sessions stay host-only and HttpOnly. The authenticated student identity response supplies the CSRF token to the frontend because JavaScript cannot read the API host's cookie. Unrelated Vercel preview domains are not enabled for authenticated use.
+
+The retained college admin portal is served at `https://student-api.voicedots.io/admin-panel/`; its existing authentication uses that same API origin. Alternatively, serving the entire frontend through the backend with `VITE_API_URL` empty still works.

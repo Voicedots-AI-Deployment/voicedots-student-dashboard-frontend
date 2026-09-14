@@ -1,3 +1,7 @@
+export const API_BASE = (import.meta.env.VITE_API_URL || "").replace(/\/+$/, "");
+export const apiUrl = (path: string) => `${API_BASE}${path}`;
+let csrfToken = "";
+
 export type Student = {
   id: string;
   full_name: string;
@@ -138,7 +142,8 @@ export async function request(
       .split(";")
       .map((c) => c.trim())
       .find((c) => c.startsWith("vd_student_csrf="));
-    if (cookie)
+    if (csrfToken) headers.set("X-CSRF-Token", csrfToken);
+    else if (cookie)
       headers.set(
         "X-CSRF-Token",
         decodeURIComponent(cookie.slice("vd_student_csrf=".length)),
@@ -151,7 +156,7 @@ export async function request(
   options.signal?.addEventListener("abort", cancel, { once: true });
   const timeout = setTimeout(cancel, 30000);
   try {
-    response = await fetch(path, {
+    response = await fetch(apiUrl(path), {
       ...options,
       signal: controller.signal,
       headers,
@@ -184,7 +189,10 @@ export async function request(
 
 export async function api<T>(path: string, options?: RequestInit): Promise<T> {
   const response = await request(path, options);
-  return response.json();
+  const body = await response.json();
+  if (typeof body?.csrf_token === "string") csrfToken = body.csrf_token;
+  if (path === "/api/auth/student-logout") csrfToken = "";
+  return body;
 }
 export const json = (body: unknown): RequestInit => ({
   method: "POST",

@@ -15,6 +15,7 @@ import {
 import { Link, useNavigate } from "react-router-dom";
 import {
   api,
+  apiUrl,
   ApiError,
   json,
   openInterview,
@@ -63,7 +64,7 @@ function ReportList({ reports }: { reports: Report[] }) {
             <a
               className="icon-button"
               aria-label={`Open report for ${report.target_role || "interview"}`}
-              href={`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.html`}
+              href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.html`)}
               target="_blank"
               rel="noreferrer"
             >
