@@ -1,0 +1,35 @@
+@import url("https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=Outfit:wght@400;500;600;700&display=swap");
+:root {
+  --bg: #0b0b10;
+  --surf: #14121c;
+  --surf2: #201c2c;
+  --accent: #7c3aed;
+  --accent-rgb: 124, 58, 237;
+  --accent-hover: #6d28d9;
+  --accent-bright: #c4b5fd;
+}
+body {
+  font-family: Inter, sans-serif;
+}
+h1,
+h2,
+h3,
+.topbar-name {
+  font-family: Outfit, Inter, sans-serif;
+}
+.topbar {
+  background: rgba(16, 12, 25, 0.94);
+}
+.topbar-brand {
+  gap: 0;
+}
+.topbar-brand > img {
+  margin-right: -6px;
+}
+.topbar-name {
+  font-weight: 600;
+  font-size: 21px;
+}
+.prejoin-card {
+  box-shadow: 0 24px 100px rgba(124, 58, 237, 0.12);
+}
