@@ -18,7 +18,7 @@ async function prepare(page: Page, failure = "") {
     }
     if (path.endsWith("/identity")) {
       counts.identity++;
-      expect(route.request().postDataJSON().captures).toHaveLength(3);
+      expect(route.request().postDataJSON().captures).toHaveLength(6);
       return route.fulfill({ status: failed === "identity" ? 422 : 200, json: failed === "identity" ? { detail: "Retry identity verification." } : { verified: true } });
     }
     if (path.endsWith("/interview") && route.request().method() === "POST") {
@@ -91,9 +91,6 @@ async function prepare(page: Page, failure = "") {
       startCameraAnalysis = async () => {
         setInterval(() => {
           cameraAnalysisPassing = hasLiveTrack("video") && lobbyVideoEl.readyState >= 2;
-          const instruction = document.getElementById("preflight-status").textContent;
-          preflightYaw = cameraAnalysisPassing ? (instruction.includes("turn your head") ? .35 : 0) : null;
-          preflightYawAt = Date.now();
         }, 60);
       };
       const originalWait = waitForPreflight;

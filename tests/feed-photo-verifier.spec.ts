@@ -1,9 +1,9 @@
 import { test, expect, type Page } from "@playwright/test";
 
-async function harness(page: Page, enabled = true) {
+async function harness(page: Page, enabled = true, monitor = false) {
   await page.route("**/interview.js*", (route) => route.abort());
   await page.goto("/interview.html");
-  await page.evaluate(async ({ enabled }) => {
+  await page.evaluate(async ({ enabled, monitor }) => {
     const w = window as any;
     w.cameraRequests = 0;
     navigator.mediaDevices.getUserMedia = async () => { w.cameraRequests++; throw new Error("Must reuse current stream"); };
@@ -29,13 +29,13 @@ async function harness(page: Page, enabled = true) {
       request: async (url: string, options: any) => {
         w.photoRequests.push({ url, body: options?.body });
         if (options?.signal) options.signal.addEventListener("abort", () => { w.aborted = true; });
-        if (url.endsWith("photo-verification")) return new Response(JSON.stringify({ enabled, reference_ready: false }));
+        if (url.endsWith("photo-verification")) return new Response(JSON.stringify({ enabled, reference_ready: false, monitor_path: monitor ? "/ws/interview/session-1/face-monitor" : undefined }));
         if (w.delayNext) await new Promise((resolve) => { w.finishRequest = resolve; });
         return new Response(JSON.stringify({ verified: w.matchNext, reference_ready: true, message: "Frame mismatch" }));
       },
     });
     await w.verifier.load("session-1");
-  }, { enabled });
+  }, { enabled, monitor });
 }
 
 test("captures existing video and checks periodic frames without reopening the camera", async ({ page }) => {
@@ -102,4 +102,57 @@ test("disabled verification never captures or sends frames", async ({ page }) =>
   await page.clock.runFor(45000);
   expect(await page.evaluate(() => (window as any).photoRequests.length)).toBe(1);
   expect(await page.evaluate(() => (window as any).verifier.isReady())).toBe(true);
+});
+
+test("WebSocket monitoring reuses video, waits for each result, and stops cleanly", async ({ page }) => {
+  let messages: string[] = [];
+  let send: (message: string) => void = () => {};
+  let connections = 0;
+  await page.routeWebSocket('ws://localhost/ws/interview/session-1/face-monitor', socket => {
+    connections++;
+    send = message => socket.send(message);
+    socket.onMessage(message => messages.push(String(message)));
+  });
+  await harness(page, true, true);
+  await page.clock.install();
+  await page.evaluate(() => (window as any).verifier.start());
+  await expect.poll(() => messages.length).toBe(1);
+  expect(JSON.parse(messages[0]).data).toMatch(/^data:image\/jpeg;base64,/);
+  await page.clock.runFor(5000);
+  expect(messages).toHaveLength(1);
+  send(JSON.stringify({ type: 'status', verified: false, reason: 'Lighting too dark.' }));
+  await expect.poll(() => page.evaluate(() => (window as any).photoUpdates.at(-1).message)).toBe('Lighting too dark.');
+  expect(await page.evaluate(() => (window as any).photoUpdates.at(-1).state)).toBe('pending');
+  await page.clock.runFor(1000);
+  await expect.poll(() => messages.length).toBe(2);
+  send(JSON.stringify({ type: 'status', verified: true }));
+  await expect.poll(() => page.evaluate(() => (window as any).verifier.isReady())).toBe(true);
+  expect(await page.evaluate(() => (window as any).cameraRequests)).toBe(0);
+  expect(await page.evaluate(() => (window as any).photoRequests.length)).toBe(1);
+  await page.evaluate(() => (window as any).verifier.stop());
+  await page.clock.runFor(60000);
+  expect(messages).toHaveLength(2);
+  expect(connections).toBe(1);
+  expect(await page.evaluate(() => (window as any).existingVideo.srcObject.getVideoTracks()[0].readyState)).toBe('live');
+});
+
+test("camera replacement reconnects monitoring without opening another camera", async ({ page }) => {
+  let connections = 0;
+  let frames = 0;
+  await page.routeWebSocket('ws://localhost/ws/interview/session-1/face-monitor', socket => {
+    connections++;
+    socket.onMessage(() => { frames++; socket.send(JSON.stringify({ type: 'status', verified: true })); });
+  });
+  await harness(page, true, true);
+  await page.clock.install();
+  await page.evaluate(() => (window as any).verifier.start());
+  await expect.poll(() => frames).toBe(1);
+  await page.evaluate(() => (window as any).verifier.invalidate());
+  await expect.poll(() => connections).toBe(2);
+  await expect.poll(() => frames).toBe(2);
+  await page.evaluate(() => (window as any).verifier.stop());
+  await page.clock.runFor(60000);
+  expect(frames).toBe(2);
+  expect(connections).toBe(2);
+  expect(await page.evaluate(() => (window as any).cameraRequests)).toBe(0);
 });

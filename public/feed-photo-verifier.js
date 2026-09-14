@@ -8,6 +8,8 @@ export function createFeedPhotoVerifier({ getVideo, request, apiBase, onChange }
   let generation = 0;
   let timer = null;
   let controller = null;
+  let monitorPath = null;
+  let monitorSocket = null;
   let lastVerifiedAt = 0;
   let currentState = "pending";
   let currentMessage = "";
@@ -65,9 +67,10 @@ export function createFeedPhotoVerifier({ getVideo, request, apiBase, onChange }
       if (ticket !== generation) return;
       if (typeof data.enabled !== "boolean") throw new Error("Photo verification settings could not be loaded.");
       enabled = data.enabled;
+      monitorPath = data.monitor_path || null;
       ready = !enabled || data.verified === true;
-      notify(enabled ? "pending" : "disabled", enabled
-        ? "Capture a starting photo. We’ll verify it against your saved photo and compare later camera frames with it."
+      notify(ready ? "matched" : enabled ? "pending" : "disabled", enabled
+        ? ready ? "Identity verified against your registered photo." : "Verify your camera against your registered photo."
         : "");
     } catch (error) {
       if (ticket === generation) notify("unavailable", error.message);
@@ -106,6 +109,48 @@ export function createFeedPhotoVerifier({ getVideo, request, apiBase, onChange }
     }
   }
 
+  function connectMonitor() {
+    if (!active || !monitorPath || monitorSocket) return;
+    const socket = new WebSocket(`${apiBase.replace(/^http/, "ws")}${monitorPath}`);
+    monitorSocket = socket;
+    const sample = () => {
+      if (!active || monitorSocket !== socket || socket.readyState !== WebSocket.OPEN) return;
+      try {
+        socket.send(JSON.stringify({ type: "frame", data: frame() }));
+        timer = setTimeout(() => socket.close(), 20000);
+      } catch (error) {
+        notify("pending", error.message);
+        timer = setTimeout(sample, 1000);
+      }
+    };
+    socket.onopen = sample;
+    socket.onmessage = event => {
+      if (!active || monitorSocket !== socket) return;
+      try {
+        const data = JSON.parse(event.data);
+        ready = data.verified === true;
+        if (ready) lastVerifiedAt = Date.now();
+        notify(ready ? "matched" : "pending", ready ? "Identity verified against your registered photo." : data.reason || "Checking camera observations…");
+      } catch {
+        notify("unavailable", "Camera monitoring is reconnecting.");
+        socket.close();
+        return;
+      }
+      clearTimeout(timer);
+      timer = setTimeout(sample, 1000);
+    };
+    socket.onerror = () => socket.close();
+    socket.onclose = () => {
+      if (monitorSocket !== socket) return;
+      monitorSocket = null;
+      clearTimeout(timer);
+      if (active) {
+        notify("unavailable", "Camera monitoring is reconnecting.");
+        timer = setTimeout(connectMonitor, 2000);
+      }
+    };
+  }
+
   function schedule() {
     clearTimeout(timer);
     if (!active || enabled !== true) return;
@@ -127,22 +172,33 @@ export function createFeedPhotoVerifier({ getVideo, request, apiBase, onChange }
       if (ready && Date.now() - lastVerifiedAt < 5000) return true;
       return check(true);
     },
-    start() { active = true; schedule(); },
+    start() {
+      if (active) return;
+      active = true;
+      if (monitorPath) connectMonitor(); else schedule();
+    },
     stop() {
       active = false;
+      const socket = monitorSocket;
+      monitorSocket = null;
+      socket?.close();
       generation++;
       clearTimeout(timer);
       controller?.abort();
       busy = false;
     },
     invalidate() {
+      const socket = monitorSocket;
+      monitorSocket = null;
+      socket?.close();
+      clearTimeout(timer);
       generation++;
       controller?.abort();
       busy = false;
       ready = enabled === false;
       lastVerifiedAt = 0;
       if (enabled !== false) notify("pending", "Camera changed or disconnected. Verify a fresh frame to continue.");
-      schedule();
+      if (active && monitorPath) connectMonitor(); else schedule();
     },
   };
 }

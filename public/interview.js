@@ -159,14 +159,11 @@ let micTestContext = null;
 let cameraTrackLive = false;
 let microphoneTrackLive = false;
 let preflightId = null;
-let preflightDirection = 1;
 let preflightBusy = false;
 let interviewHasStarted = false;
 let initialConnectionTimer = null;
 let preflightStarted = false;
 let preflightCancelled = false;
-let preflightYaw = null;
-let preflightYawAt = 0;
 let servicesCheckedAt = 0;
 let identityCheckedAt = 0;
 const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", screen: "pending" };
@@ -656,7 +653,6 @@ async function checkReadiness() {
     const data = await response.json();
     if (!response.ok) throw new Error(data.detail || "Could not prepare this interview.");
     preflightId = data.preflight_id;
-    preflightDirection = data.direction;
   }
   await new Promise((resolve, reject) => {
     const socket = new WebSocket(`${WS_BASE}/ws/interview-preflight/${currentSubmissionId}?preflight_id=${encodeURIComponent(preflightId)}`);
@@ -683,21 +679,13 @@ async function checkReadiness() {
 }
 
 async function verifyPreflightIdentity() {
-  await waitForPreflight(() => preflightYaw !== null && Date.now() - preflightYawAt < 1500 && Math.abs(preflightYaw) < .2,
-    "Face the camera in good light and retry verification.");
-  const baseline = preflightYaw;
-  const captures = [photoVerifier.captureFrame()];
-  const after = Date.now();
-  preflightStatus(`For verification, turn your head slightly to your ${preflightDirection === 1 ? "left" : "right"}.`);
-  await waitForPreflight(() => preflightYawAt > after && (preflightYaw - baseline) * preflightDirection > .22,
-    "Follow the head-turn instruction and retry verification.", 20000);
-  captures.push(photoVerifier.captureFrame());
-  const turnedAt = Date.now();
-  preflightStatus("Now look forward at the camera again.");
-  await waitForPreflight(() => preflightYawAt > turnedAt && Math.abs(preflightYaw - baseline) < .1 && cameraAnalysisPassing,
-    "Look forward at the camera and retry verification.", 20000);
-  captures.push(photoVerifier.captureFrame());
-  preflightStatus("Verifying your identity…");
+  preflightStatus("Verifying your identity across several camera frames. Face the camera naturally.");
+  const captures = [];
+  for (let index = 0; index < 6; index++) {
+    if (preflightCancelled || !hasLiveTrack("video")) throw new Error("Camera unavailable. Retry verification.");
+    captures.push(photoVerifier.captureFrame());
+    if (index < 5) await new Promise(resolve => setTimeout(resolve, 300));
+  }
   const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/preflight/${preflightId}/identity`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ captures }), signal: AbortSignal.timeout(30000),
   });
@@ -945,7 +933,6 @@ async function attachDeviceTrack(kind, deviceId) {
     bindMediaTrackEnded(newTrack);
     if (kind === "video") {
       cameraAnalysisPassing = false;
-      preflightYaw = null;
       preflightChecks.identity = "pending";
       photoVerifier.invalidate();
       if (lobbyVideoEl) lobbyVideoEl.srcObject = userMediaStream;
@@ -1234,11 +1221,6 @@ async function analyzeCameraFrame() {
     const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
     faceCountDetected = (result.faceLandmarks || []).length;
     landmarks = result.faceLandmarks?.[0] || null;
-    if (landmarks && faceCountDetected === 1) {
-      const left = landmarks[33].x, right = landmarks[263].x;
-      preflightYaw = (landmarks[1].x - (left + right) / 2) / Math.abs(left - right);
-      preflightYawAt = Date.now();
-    } else { preflightYaw = null; }
   } else if (nativeFaceDetector) {
     const faces = await nativeFaceDetector.detect(lobbyVideoEl);
     faceCountDetected = faces.length;
