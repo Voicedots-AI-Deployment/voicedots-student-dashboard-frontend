@@ -65,7 +65,7 @@ export function createFeedPhotoVerifier({ getVideo, request, apiBase, onChange }
       if (ticket !== generation) return;
       if (typeof data.enabled !== "boolean") throw new Error("Photo verification settings could not be loaded.");
       enabled = data.enabled;
-      ready = !enabled;
+      ready = !enabled || data.verified === true;
       notify(enabled ? "pending" : "disabled", enabled
         ? "Capture a starting photo. We’ll verify it against your saved photo and compare later camera frames with it."
         : "");
@@ -113,6 +113,7 @@ export function createFeedPhotoVerifier({ getVideo, request, apiBase, onChange }
   }
 
   return {
+    captureFrame: frame,
     load,
     isReady: () => enabled === false || ready,
     isBusy: () => busy,

@@ -346,7 +346,7 @@ export function Practice() {
   const pending = preparation?.status === "in_progress";
   const needsClarification = preparation?.status === "needs_clarification";
   const ready =
-    preparation?.session_id && preparation.submission_id && !pending;
+    preparation?.status === "ready" && preparation.submission_id && !pending;
   const driveBlocked =
     !!driveId &&
     (!context ||

@@ -43,24 +43,21 @@
 
     /* ── PRE-JOIN FLOW ── */
     #prejoin-screen{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;}
-    .prejoin-card{background:var(--surf);border:1px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:560px;overflow:hidden;}
-    .prejoin-steps{display:flex;border-bottom:1px solid var(--border);}
-    .pj-step{flex:1;padding:14px 16px;text-align:center;font-size:0.75rem;font-weight:700;color:var(--muted);border-bottom:2px solid transparent;transition:all .2s;}
-    .pj-step.active{color:var(--accent-bright);border-bottom-color:var(--accent);}
-    .pj-step.done{color:#4ADE80;}
-    .pj-step-num{display:inline-flex;align-items:center;justify-content:center;width:22px;height:22px;border-radius:50%;background:var(--surf2);font-size:0.72rem;font-weight:800;margin-bottom:4px;}
-    .pj-step.active .pj-step-num{background:var(--accent);}
-    .pj-step.done .pj-step-num{background:#16A34A;}
+    .prejoin-card{margin:auto 0;background:var(--surf);border:1px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:560px;overflow:hidden;}
 
     .pj-panel{display:none;padding:32px;animation:fadeUp .25s ease both;}
     .pj-panel.active{display:block;}
+    #preflight-loading[hidden],#cam-preview[hidden]{display:none;}
+    #preflight-loading .mic-bar{animation:preflightPulse 1s ease-in-out infinite alternate;height:20px;background:var(--accent);}
+    #preflight-loading .mic-bar:nth-child(even){animation-delay:.3s;}
+    @keyframes preflightPulse{from{opacity:.35;transform:scaleY(.4)}to{opacity:1;transform:scaleY(1)}}
+    @media(prefers-reduced-motion:reduce){#preflight-loading .mic-bar{animation:none;}}
     @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 
     /* Camera preview */
     .cam-preview{width:100%;aspect-ratio:16/9;border-radius:var(--r-md);background:#000;overflow:hidden;position:relative;margin:20px 0;border:1px solid var(--border);}
     .cam-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
     .cam-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);font-size:0.85rem;}
-    .cam-ok-badge{position:absolute;top:12px;right:12px;background:rgba(16,185,129,0.9);color:white;font-size:0.72rem;font-weight:700;padding:3px 10px;border-radius:var(--r-full);display:none;}
     .vision-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:-8px 0 14px;}
     .vision-check{padding:8px 9px;border:1px solid var(--border);border-radius:9px;background:rgba(15,23,42,.65);font-size:.7rem;font-weight:700;color:#94A3B8;text-align:center;}
     .vision-check[data-state="pass"]{border-color:rgba(74,222,128,.45);color:#4ADE80;background:rgba(34,197,94,.08);}
@@ -71,14 +68,10 @@
     .mic-viz{display:flex;align-items:flex-end;justify-content:center;gap:3px;height:48px;margin:16px 0;}
     .mic-bar{width:5px;background:var(--accent);border-radius:3px;transition:height .08s ease;min-height:4px;}
     .mic-status{text-align:center;font-size:0.8rem;color:var(--muted);margin-bottom:8px;}
-    .mic-ok-badge{display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.12);border:1px solid rgba(16,185,129,0.3);color:#4ADE80;font-size:0.78rem;font-weight:700;padding:6px 14px;border-radius:var(--r-full);margin-top:8px;}
 
     /* Screen share step */
-    .share-card{border:1.5px dashed var(--border);border-radius:var(--r-md);padding:24px;text-align:center;margin:20px 0;}
-    .share-icon{font-size:2rem;margin-bottom:10px;}
 
     /* Step nav buttons */
-    .pj-actions{display:flex;gap:10px;justify-content:flex-end;margin-top:24px;}
     .pj-btn{padding:10px 22px;border-radius:var(--r-full);font-family:inherit;font-size:0.88rem;font-weight:700;cursor:pointer;border:none;transition:all .15s;}
     .pj-btn-primary{background:var(--accent);color:white;box-shadow:0 4px 16px rgba(var(--accent-rgb),.34);}
     .pj-btn-primary:hover{background:var(--accent-hover);transform:translateY(-1px);}
@@ -269,123 +262,43 @@
   <!-- PRE-JOIN SCREEN -->
   <div id="prejoin-screen">
     <div class="prejoin-card">
-      <!-- Step progress -->
-      <div class="prejoin-steps">
-        <div class="pj-step active" id="pjstep-1">
-          <div><div class="pj-step-num">1</div></div>
-          <div>Camera</div>
-        </div>
-        <div class="pj-step" id="pjstep-2">
-          <div><div class="pj-step-num">2</div></div>
-          <div>Microphone</div>
-        </div>
-        <div class="pj-step" id="pjstep-3">
-          <div><div class="pj-step-num">3</div></div>
-          <div>Screen Share</div>
-        </div>
-      </div>
-
-      <!-- Step 1: Camera -->
-      <div class="pj-panel active" id="pj-panel-1">
-        <h2 style="font-size:1.3rem;font-weight:800;margin-bottom:4px;">Check your camera</h2>
-        <p style="font-size:0.85rem;color:#64748B;margin-bottom:0;">Choose a camera and confirm that the live preview is working.</p>
-        <div class="cam-preview" id="cam-preview">
+      <div class="pj-panel active">
+        <h2 id="preflight-title" style="font-size:1.3rem;font-weight:800;margin-bottom:12px;">Start AI Interview</h2>
+        <p id="preflight-status" role="status" aria-live="polite">We’ll check your camera, microphone, identity and connection, then request your entire screen.</p>
+        <div id="preflight-loading" class="mic-viz" hidden aria-hidden="true"><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div></div>
+        <div class="cam-preview" id="cam-preview" hidden>
           <video id="lobby-video" autoplay muted playsinline></video>
-          <div class="cam-overlay" id="cam-overlay">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 7l-7 5 7 5V7z"/><rect x="1" y="5" width="15" height="14" rx="2" ry="2"/></svg>
-            <span>Requesting camera access...</span>
-          </div>
-          <div class="cam-ok-badge" id="cam-ok-badge">● Camera OK</div>
+          <div class="cam-overlay" id="cam-overlay"><span>Waiting for camera access…</span></div>
         </div>
-        <div id="cam-error" style="color:#F87171;font-size:0.82rem;text-align:center;display:none;margin-bottom:12px;">A working camera is required for this interview.</div>
-        <div class="vision-checks" aria-live="polite">
-          <div class="vision-check" id="face-check" data-state="warn">Loading person check…</div>
-          <div class="vision-check" id="lighting-check" data-state="warn">Checking lighting…</div>
-          <div class="vision-check" id="framing-check" data-state="warn">Checking framing…</div>
-        </div>
-        <label style="font-size:0.78rem;font-weight:700;color:#94A3B8;display:block;margin-bottom:4px;">Camera</label>
-        <select id="cam-select" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surf2);color:white;font-size:0.85rem;margin-bottom:14px;">
-          <option value="">Detecting cameras...</option>
-        </select>
-        <div id="pj-photo-verification" style="margin-bottom:14px;">
-          <p id="pj-photo-status" role="status" style="font-size:0.82rem;color:#CBD5E1;">Loading photo verification…</p>
-          <p style="font-size:0.75rem;color:#94A3B8;">Camera frames are checked periodically. Video and captured photos are not saved by this check.</p>
-          <button class="pj-btn pj-btn-ghost" id="pj-photo-capture" type="button" disabled>Capture and verify photo</button>
-        </div>
-        <div class="pj-actions">
-          <button class="pj-btn pj-btn-primary" id="pj-cam-next" disabled>Continue →</button>
-        </div>
+        <p style="font-size:.8rem;color:var(--muted);margin:16px 0;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
+        <button class="pj-btn pj-btn-primary" id="pj-join-btn" type="button" disabled>Start AI Interview</button>
       </div>
-
-      <!-- Step 2: Microphone -->
+      <div class="pj-panel" id="pj-panel-1">
+        <h3>Camera check</h3>
+        <p id="cam-error" role="alert"></p>
+        <div class="vision-checks"><div class="vision-check" id="face-check"></div><div class="vision-check" id="lighting-check"></div><div class="vision-check" id="framing-check"></div></div>
+        <label for="cam-select">Camera</label>
+        <select id="cam-select" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surf2);color:var(--text);margin:12px 0;"></select>
+        <button class="pj-btn pj-btn-ghost" id="pj-cam-retry" type="button">Retry camera</button>
+      </div>
       <div class="pj-panel" id="pj-panel-2">
-        <h2 style="font-size:1.3rem;font-weight:800;margin-bottom:4px;">Test your microphone</h2>
-        <p style="font-size:0.85rem;color:#64748B;">When the bars respond, select the button and say: <strong style="color:#E2E8F0;">“I am ready for my interview.”</strong></p>
-        <div class="mic-viz" id="mic-viz">
-          <div class="mic-bar" style="height:8px;"></div>
-          <div class="mic-bar" style="height:16px;"></div>
-          <div class="mic-bar" style="height:10px;"></div>
-          <div class="mic-bar" style="height:24px;"></div>
-          <div class="mic-bar" style="height:12px;"></div>
-          <div class="mic-bar" style="height:20px;"></div>
-          <div class="mic-bar" style="height:8px;"></div>
-          <div class="mic-bar" style="height:18px;"></div>
-          <div class="mic-bar" style="height:14px;"></div>
-          <div class="mic-bar" style="height:10px;"></div>
-          <div class="mic-bar" style="height:22px;"></div>
-          <div class="mic-bar" style="height:16px;"></div>
-        </div>
-        <p class="mic-status" id="mic-status-text">🎙 Speak now to check the microphone level.</p>
-        <div id="mic-live-transcript" aria-live="polite" style="min-height:44px;margin:10px 0;padding:10px 12px;border:1px solid var(--border);border-radius:8px;background:var(--surf2);color:#CBD5E1;font-size:.84rem;line-height:1.45;">Recognized words will appear here while you speak.</div>
-        <div style="text-align:center;margin:10px 0;">
-          <button type="button" class="pj-btn pj-btn-primary" id="pj-voice-verify" disabled>Verify spoken sentence</button>
-        </div>
-        <div id="mic-ok-wrap" style="text-align:center;display:none;">
-          <span class="mic-ok-badge">✓ Microphone detected &amp; working</span>
-        </div>
-        <div id="mic-error" style="color:#F87171;font-size:0.82rem;text-align:center;display:none;margin-top:8px;">A working microphone and a successful voice test are required.</div>
-        <label style="font-size:0.78rem;font-weight:700;color:#94A3B8;display:block;margin-top:14px;margin-bottom:4px;">Microphone</label>
-        <select id="mic-select" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surf2);color:white;font-size:0.85rem;">
-          <option value="">Detecting microphones...</option>
-        </select>
-        <div class="pj-actions" style="margin-top:20px;">
-          <button class="pj-btn pj-btn-ghost" id="pj-mic-back">← Back</button>
-          <button class="pj-btn pj-btn-primary" id="pj-mic-next" disabled>Continue →</button>
-        </div>
+        <h3>Microphone check</h3>
+        <p id="mic-error" role="alert"></p><p class="mic-status" id="mic-status-text"></p><div id="mic-ok-wrap" hidden></div>
+        <label for="mic-select">Microphone</label>
+        <select id="mic-select" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surf2);color:var(--text);margin:12px 0;"></select>
+        <button class="pj-btn pj-btn-ghost" id="pj-mic-retry" type="button">Retry microphone</button>
       </div>
-
-      <!-- Step 3: Screen Share -->
+      <div class="pj-panel" id="pj-photo-verification">
+        <h3>Identity and liveness check</h3><p id="pj-photo-status" role="alert"></p>
+        <button class="pj-btn pj-btn-ghost" id="pj-photo-capture" type="button">Retry Verification</button>
+      </div>
+      <div class="pj-panel" id="pj-network-panel">
+        <h3>Connection and interview services</h3><p id="pj-network-error" role="alert"></p>
+        <button class="pj-btn pj-btn-ghost" id="pj-network-retry" type="button">Retry readiness check</button>
+      </div>
       <div class="pj-panel" id="pj-panel-3">
-        <h2 style="font-size:1.3rem;font-weight:800;margin-bottom:4px;">Share your entire screen</h2>
-        <p style="font-size:0.85rem;color:#64748B;">Screen sharing is required throughout the strict interview. Select your entire screen—not one tab or window.</p>
-        <div class="share-card">
-          <div class="share-icon">🖥️</div>
-          <p style="font-size:0.85rem;font-weight:600;color:white;margin-bottom:4px;">Entire-screen sharing required</p>
-          <p style="font-size:0.78rem;color:#64748B;">The interview records only integrity events; it does not store a screen recording.</p>
-          <div style="display:flex;gap:10px;justify-content:center;margin-top:16px;">
-            <button class="pj-btn pj-btn-primary" id="pj-share-allow" style="font-size:0.82rem;padding:8px 18px;">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" style="vertical-align:middle;margin-right:4px;"><rect x="2" y="3" width="20" height="14" rx="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
-              Allow Screen Share
-            </button>
-          </div>
-          <div id="share-ok" style="color:#4ADE80;font-size:0.8rem;font-weight:700;margin-top:12px;display:none;">✓ Screen share permission granted</div>
-          <div id="share-error" style="color:#F87171;font-size:0.8rem;font-weight:600;margin-top:12px;display:none;"></div>
-        </div>
-        <div style="margin:14px 0;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surf2);font-size:.8rem;color:#CBD5E1;line-height:1.55;">
-          <strong style="color:white;">Before joining</strong><br>
-          This interview is conducted in English. Keep your camera, microphone and entire-screen share active. Do not switch tabs, use outside assistance or allow another person into the camera view.
-          <label style="display:flex;align-items:flex-start;gap:8px;margin-top:10px;cursor:pointer;">
-            <input type="checkbox" id="pj-guidance-ack" style="margin-top:3px;">
-            <span>I understand and will follow these interview requirements.</span>
-          </label>
-        </div>
-        <div class="pj-actions">
-          <button class="pj-btn pj-btn-ghost" id="pj-share-back">← Back</button>
-          <button class="pj-btn pj-btn-primary" id="pj-join-btn" disabled>
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-            Join Interview
-          </button>
-        </div>
+        <h3>Entire-screen sharing</h3><p id="share-error" role="alert"></p><div id="share-ok" hidden></div>
+        <button class="pj-btn pj-btn-primary" id="pj-share-allow" type="button">Share Screen Again</button>
       </div>
     </div>
   </div>

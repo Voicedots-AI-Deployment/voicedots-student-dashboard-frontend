@@ -19,11 +19,6 @@ const PREBUFFER_SECONDS = 0.25;
 // every API/WS call; this stored profile is only a client-side
 // "do we already look logged in" hint for that redirect.
 const STUDENT_SESSION_KEY = "vd_student_data";
-// Mic-verification phrase check must reject negation, not just require the
-// keywords: "I am NOT ready for this interview" contains "ready"/"interview"
-// too. Apostrophes are stripped by normalize() before this is checked.
-const _NEGATION_WORDS = ["not", "dont", "isnt", "arent", "wasnt", "wont", "cant", "no"];
-
 function getStudentSession() {
   try { return JSON.parse(sessionStorage.getItem(STUDENT_SESSION_KEY)); } catch { return null; }
 }
@@ -62,34 +57,23 @@ async function studentFetch(url, options = {}) {
 
 // Elements - Prejoin
 const prejoinScreen = document.getElementById("prejoin-screen");
-const pjStep1 = document.getElementById("pjstep-1");
-const pjStep2 = document.getElementById("pjstep-2");
-const pjStep3 = document.getElementById("pjstep-3");
 const pjPanel1 = document.getElementById("pj-panel-1");
 const pjPanel2 = document.getElementById("pj-panel-2");
 const pjPanel3 = document.getElementById("pj-panel-3");
 const lobbyVideoEl = document.getElementById("lobby-video");
-const camOkBadge = document.getElementById("cam-ok-badge");
 const camErrorEl = document.getElementById("cam-error");
 const faceCheckEl = document.getElementById("face-check");
 const lightingCheckEl = document.getElementById("lighting-check");
 const framingCheckEl = document.getElementById("framing-check");
 const camSelectEl = document.getElementById("cam-select");
 const micSelectEl = document.getElementById("mic-select");
-const pjCamNextBtn = document.getElementById("pj-cam-next");
-const pjMicBackBtn = document.getElementById("pj-mic-back");
-const pjMicNextBtn = document.getElementById("pj-mic-next");
-const pjVoiceVerifyBtn = document.getElementById("pj-voice-verify");
-const pjShareBackBtn = document.getElementById("pj-share-back");
 const pjShareAllowBtn = document.getElementById("pj-share-allow");
 const pjJoinBtn = document.getElementById("pj-join-btn");
 const micStatusText = document.getElementById("mic-status-text");
-const micLiveTranscriptEl = document.getElementById("mic-live-transcript");
 const micOkWrap = document.getElementById("mic-ok-wrap");
 const micErrorEl = document.getElementById("mic-error");
 const shareOkEl = document.getElementById("share-ok");
 const shareErrorEl = document.getElementById("share-error");
-const pjGuidanceAck = document.getElementById("pj-guidance-ack");
 
 // Elements - Active Call
 const callScreen = document.getElementById("call-screen");
@@ -171,12 +155,21 @@ let micAnalyser = null;
 let micAnimId = null;
 let micLevelDetected = false;
 let micSignalDetected = false;
-let micRecognition = null;
 let micTestContext = null;
-let micTestSocket = null;
-let micTestProcessor = null;
 let cameraTrackLive = false;
 let microphoneTrackLive = false;
+let preflightId = null;
+let preflightDirection = 1;
+let preflightBusy = false;
+let interviewHasStarted = false;
+let initialConnectionTimer = null;
+let preflightStarted = false;
+let preflightCancelled = false;
+let preflightYaw = null;
+let preflightYawAt = 0;
+let servicesCheckedAt = 0;
+let identityCheckedAt = 0;
+const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", screen: "pending" };
 let currentAudioEpoch = 0;
 let playbackTime = 0;
 let playbackCompleteTimer = null;
@@ -295,7 +288,7 @@ const photoVerifier = createFeedPhotoVerifier({
     const panel = document.getElementById("pj-photo-verification");
     const status = document.getElementById("pj-photo-status");
     const liveStatus = document.getElementById("call-photo-status");
-    if (panel) panel.hidden = enabled === false;
+    if (panel && _isCallScreenActive()) panel.hidden = true;
     if (status && message !== undefined) status.textContent = message;
     if (liveStatus) {
       liveStatus.hidden = enabled === false;
@@ -306,7 +299,14 @@ const photoVerifier = createFeedPhotoVerifier({
     updatePrejoinReadiness();
   },
 });
-window.addEventListener("pagehide", () => photoVerifier.stop());
+window.addEventListener("pagehide", () => {
+  preflightCancelled = true;
+  clearTimeout(initialConnectionTimer);
+  photoVerifier.stop();
+  stopMicLevelTest();
+  userMediaStream?.getTracks().forEach(track => track.stop());
+  screenStream?.getTracks().forEach(track => track.stop());
+});
 
 // ============================================================
 // INITIALIZATION
@@ -339,7 +339,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // is_current=false, storage.py's create_stage5_session). Same
   // query-param-with-sessionStorage-fallback pattern submission_id already
   // uses above.
-  currentSessionId = urlParams.get("session_id") || sessionStorage.getItem("current_session_id") || null;
+  currentSessionId = urlParams.get("session_id") || (sessionStorage.getItem("current_submission_id") === currentSubmissionId ? sessionStorage.getItem("current_session_id") : null);
 
   if (!currentSubmissionId) {
     alert("No interview session found. Redirecting to student portal...");
@@ -354,24 +354,7 @@ document.addEventListener("DOMContentLoaded", async () => {
   // go straight to their report/readiness instead of repeating consent
   // screens for an interview that's already over.
   if (await tryResumeCompletedSessionOnLoad()) return;
-
-  // Legacy deep links may lack a session ID. Create the attempt before its
-  // camera reference is established, rather than waiting until Join.
-  if (!currentSessionId) {
-    try {
-      const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/interview`, { method: "POST" });
-      const record = await response.json();
-      if (!response.ok || !record.session_id) throw new Error("Could not prepare photo verification for this interview.");
-      currentSessionId = record.session_id;
-    } catch (error) {
-      showPrejoinError(camErrorEl, error.message);
-      return;
-    }
-  }
-
-  // Start pre-join step 1 (camera)
-  await initCameraCheck();
-  await photoVerifier.load(currentSessionId);
+  renderPreflight();
 });
 
 async function tryResumeCompletedSessionOnLoad() {
@@ -619,117 +602,13 @@ function setupStudentProfileInfo() {
   } catch {}
 }
 
-// ============================================================
-// PRE-JOIN DEVICE CHECK FLOW (3 Steps)
-// ============================================================
-
 function setupPrejoinFlow() {
-  photoCaptureBtn?.addEventListener("click", () => void photoVerifier.captureReference());
-  if (camSelectEl) camSelectEl.addEventListener("change", () => switchDevice("video", camSelectEl.value));
-  if (micSelectEl) {
-    micSelectEl.addEventListener("change", () => {
-      switchDevice("audio", micSelectEl.value).then(() => {
-        stopMicLevelTest();
-        startMicLevelTest();
-      });
-    });
-  }
-  if (pjVoiceVerifyBtn) pjVoiceVerifyBtn.addEventListener("click", verifySpokenMicSentence);
-  if (pjGuidanceAck) pjGuidanceAck.addEventListener("change", updatePrejoinReadiness);
-
-  // Step 1 -> Step 2
-  if (pjCamNextBtn) {
-    pjCamNextBtn.addEventListener("click", () => {
-      if (!cameraReadyForInterview()) {
-        showPrejoinError(camErrorEl, "A live camera is required before continuing.");
-        return;
-      }
-      setPrejoinStep(2);
-      startMicLevelTest();
-    });
-  }
-
-  // Step 2 -> Step 1
-  if (pjMicBackBtn) {
-    pjMicBackBtn.addEventListener("click", () => {
-      stopMicLevelTest();
-      setPrejoinStep(1);
-    });
-  }
-
-  // Step 2 -> Step 3
-  if (pjMicNextBtn) {
-    pjMicNextBtn.addEventListener("click", () => {
-      if (!microphoneTrackLive || !micLevelDetected) {
-        showPrejoinError(micErrorEl, "Speak into a working microphone until the voice test passes.");
-        return;
-      }
-      stopMicLevelTest();
-      setPrejoinStep(3);
-    });
-  }
-
-  // Step 3 -> Step 2
-  if (pjShareBackBtn) {
-    pjShareBackBtn.addEventListener("click", () => {
-      setPrejoinStep(2);
-      startMicLevelTest();
-    });
-  }
-
-  // Step 3 Screen share allow
-  if (pjShareAllowBtn) {
-    pjShareAllowBtn.addEventListener("click", async () => {
-      try {
-        if (shareErrorEl) shareErrorEl.style.display = "none";
-        const capture = await acquireEntireScreenShare();
-        screenStream = capture.stream;
-        isScreenSharing = true;
-        bindScreenShareEnded(capture.track);
-        if (shareOkEl) shareOkEl.style.display = "block";
-        pjShareAllowBtn.disabled = true;
-        pjShareAllowBtn.textContent = "✓ Screen Sharing Ready";
-        updatePrejoinReadiness();
-      } catch (err) {
-        console.warn("Screen share declined:", err);
-        isScreenSharing = false;
-        if (pjJoinBtn) pjJoinBtn.disabled = true;
-        showPrejoinError(shareErrorEl, err.message || "Entire-screen sharing is required before joining.");
-      }
-    });
-  }
-
-  // Step 3 Join
-  if (pjJoinBtn) {
-    pjJoinBtn.addEventListener("click", async () => {
-      if (!cameraReadyForInterview() || !microphoneTrackLive || !micLevelDetected || !isScreenSharing || !pjGuidanceAck?.checked) {
-        showPrejoinError(shareErrorEl, "Complete the device checks, spoken sentence, screen sharing and guidance acknowledgement before joining.");
-        return;
-      }
-      pjJoinBtn.disabled = true;
-      try {
-        if (!await photoVerifier.verifyBeforeJoin()) {
-          showPrejoinError(shareErrorEl, "Photo verification did not pass. Return to the camera check and retry.");
-          updatePrejoinReadiness();
-          return;
-        }
-      } catch {
-        showPrejoinError(shareErrorEl, "Photo verification is unavailable. Please retry.");
-        updatePrejoinReadiness();
-        return;
-      }
-      try {
-        await requestInterviewFullscreen();
-      } catch {
-        // Some managed browsers deny fullscreen. The interview can still
-        // start; leaving the page remains monitored independently.
-      }
-      if (prejoinScreen) prejoinScreen.style.display = "none";
-      if (callScreen) callScreen.style.display = "block";
-      if (liveChip) liveChip.style.display = "inline-flex";
-      startInterview(currentSubmissionId);
-    });
-  }
+  pjJoinBtn?.addEventListener("click", () => void runPreflight());
+  document.getElementById("pj-cam-retry")?.addEventListener("click", () => void retryPreflight("camera"));
+  document.getElementById("pj-mic-retry")?.addEventListener("click", () => void retryPreflight("microphone"));
+  photoCaptureBtn?.addEventListener("click", () => void retryPreflight("identity"));
+  document.getElementById("pj-network-retry")?.addEventListener("click", () => void retryPreflight("network"));
+  pjShareAllowBtn?.addEventListener("click", () => void retryPreflight("screen"));
 }
 
 function showPrejoinError(element, message) {
@@ -738,32 +617,223 @@ function showPrejoinError(element, message) {
   element.style.display = "block";
 }
 
-function setPrejoinStep(step) {
-  [pjStep1, pjStep2, pjStep3].forEach((s, idx) => {
-    if (!s) return;
-    s.classList.remove("active", "done");
-    if (idx + 1 < step) s.classList.add("done");
-    if (idx + 1 === step) s.classList.add("active");
-  });
+function renderPreflight() {
+  const panels = { camera: pjPanel1, microphone: pjPanel2, identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
+  for (const [key, panel] of Object.entries(panels)) {
+    if (panel) panel.classList.toggle("active", preflightChecks[key] === "failed");
+    panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
+  }
+  document.getElementById("preflight-loading").hidden = !preflightBusy;
+  pjJoinBtn.disabled = preflightBusy;
+  pjJoinBtn.hidden = Object.values(preflightChecks).includes("failed");
+  pjJoinBtn.textContent = preflightBusy ? "Preparing Interview…" : "Start AI Interview";
+  document.getElementById("preflight-title").textContent = preflightStarted ? "Preparing Interview" : "Start AI Interview";
+}
 
-  [pjPanel1, pjPanel2, pjPanel3].forEach((p, idx) => {
-    if (!p) return;
-    p.classList.remove("active");
-    if (idx + 1 === step) p.classList.add("active");
+function preflightStatus(message) {
+  document.getElementById("preflight-status").textContent = message;
+}
+
+function failPreflight(key, message) {
+  preflightChecks[key] = "failed";
+  const errors = { camera: camErrorEl, microphone: micErrorEl, identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), screen: shareErrorEl };
+  showPrejoinError(errors[key], message);
+  renderPreflight();
+}
+
+async function waitForPreflight(check, message, timeout = 15000) {
+  const until = Date.now() + timeout;
+  while (!check()) {
+    if (preflightCancelled) throw new Error("Preparation cancelled.");
+    if (Date.now() > until) throw new Error(message);
+    await new Promise(resolve => setTimeout(resolve, 100));
+  }
+}
+
+async function checkReadiness() {
+  if (!preflightId) {
+    const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/preflight`, { method: "POST", signal: AbortSignal.timeout(15000) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Could not prepare this interview.");
+    preflightId = data.preflight_id;
+    preflightDirection = data.direction;
+  }
+  await new Promise((resolve, reject) => {
+    const socket = new WebSocket(`${WS_BASE}/ws/interview-preflight/${currentSubmissionId}?preflight_id=${encodeURIComponent(preflightId)}`);
+    let settled = false;
+    const finish = error => {
+      if (settled) return;
+      settled = true; clearTimeout(timeout); socket.close();
+      if (error) reject(error); else resolve();
+    };
+    const timeout = setTimeout(() => finish(new Error("Connection check timed out. Retry the readiness check.")), 15000);
+    socket.onmessage = event => {
+      try {
+        const data = JSON.parse(event.data);
+        if (data.type === "ready") { servicesCheckedAt = Date.now(); finish(); }
+        else if (data.type === "error") {
+          if (String(data.detail).includes("expired")) { preflightId = null; preflightChecks.identity = "pending"; }
+          finish(new Error(data.detail || "Interview services are unavailable."));
+        }
+      } catch (error) { finish(error); }
+    };
+    socket.onerror = () => finish(new Error("Could not connect to the interview service. Retry the readiness check."));
+    socket.onclose = () => finish(new Error("Connection check stopped. Check your sign-in and retry."));
   });
 }
 
+async function verifyPreflightIdentity() {
+  await waitForPreflight(() => preflightYaw !== null && Date.now() - preflightYawAt < 1500 && Math.abs(preflightYaw) < .2,
+    "Face the camera in good light and retry verification.");
+  const baseline = preflightYaw;
+  const captures = [photoVerifier.captureFrame()];
+  const after = Date.now();
+  preflightStatus(`For verification, turn your head slightly to your ${preflightDirection === 1 ? "left" : "right"}.`);
+  await waitForPreflight(() => preflightYawAt > after && (preflightYaw - baseline) * preflightDirection > .22,
+    "Follow the head-turn instruction and retry verification.", 20000);
+  captures.push(photoVerifier.captureFrame());
+  const turnedAt = Date.now();
+  preflightStatus("Now look forward at the camera again.");
+  await waitForPreflight(() => preflightYawAt > turnedAt && Math.abs(preflightYaw - baseline) < .1 && cameraAnalysisPassing,
+    "Look forward at the camera and retry verification.", 20000);
+  captures.push(photoVerifier.captureFrame());
+  preflightStatus("Verifying your identity…");
+  const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/preflight/${preflightId}/identity`, {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ captures }), signal: AbortSignal.timeout(30000),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.verified) throw new Error(data.detail?.message || data.detail || "Identity verification failed. Please retry.");
+  identityCheckedAt = Date.now();
+}
+
+async function checkPreflightItem(key, action) {
+  if (preflightChecks[key] === "passed") return;
+  preflightChecks[key] = "checking";
+  try { await action(); preflightChecks[key] = "passed"; }
+  catch (error) { failPreflight(key, error.message); }
+}
+
+async function retryPreflight(key) {
+  if (preflightBusy) return;
+  preflightChecks[key] = "pending";
+  preflightBusy = true;
+  renderPreflight();
+  if (key === "camera") {
+    preflightChecks.identity = "pending";
+    await attachDeviceTrack("video", camSelectEl.value);
+  }
+  if (key === "microphone") {
+    await attachDeviceTrack("audio", micSelectEl.value);
+    micLevelDetected = false;
+  }
+  if (key === "screen") {
+    preflightBusy = true; renderPreflight();
+    await checkPreflightItem("screen", prepareScreenShare);
+    preflightBusy = false;
+    if (preflightChecks.screen === "failed") { renderPreflight(); return; }
+  }
+  preflightBusy = false;
+  await runPreflight();
+}
+
+async function prepareScreenShare() {
+  const capture = await acquireEntireScreenShare();
+  if (preflightCancelled) { capture.stream.getTracks().forEach(track => track.stop()); throw new Error("Preparation cancelled."); }
+  screenStream = capture.stream;
+  isScreenSharing = true;
+  bindScreenShareEnded(capture.track);
+}
+
+async function runPreflight() {
+  if (preflightBusy || preflightCancelled) return;
+  preflightBusy = true;
+  const first = !preflightStarted;
+  preflightStarted = true;
+  renderPreflight();
+  document.getElementById("cam-preview").hidden = false;
+  preflightStatus("Checking your camera, microphone and interview connection…");
+  const devices = first ? initCameraCheck() : Promise.resolve();
+  try {
+    const cameraCheck = checkPreflightItem("camera", async () => {
+        await devices;
+        await waitForPreflight(() => hasLiveTrack("video") && cameraAnalysisPassing,
+          "A clear camera feed with one person is required. Check your camera and lighting.", 25000);
+      });
+    const networkCheck = checkPreflightItem("network", checkReadiness);
+    await Promise.all([
+      cameraCheck,
+      networkCheck,
+      checkPreflightItem("microphone", async () => {
+        await devices;
+        if (!hasLiveTrack("audio")) throw new Error("Allow microphone access or select a working microphone.");
+        startMicLevelTest();
+        await waitForPreflight(() => hasLiveTrack("audio") && micLevelDetected,
+          "No microphone audio was detected. Select a microphone, retry and speak briefly.", 10000);
+      }),
+      Promise.all([cameraCheck, networkCheck]).then(async () => {
+        if (preflightChecks.camera === "passed" && preflightId) {
+          await checkPreflightItem("identity", verifyPreflightIdentity);
+        }
+      }),
+    ]);
+    if (["camera", "microphone", "identity", "network"].some(key => preflightChecks[key] !== "passed")) return;
+    preflightStatus("Share your entire screen to start the interview.");
+    await checkPreflightItem("screen", prepareScreenShare);
+    if (preflightChecks.screen !== "passed") return;
+    if (Date.now() - identityCheckedAt > 240000) {
+      preflightChecks.identity = "pending";
+      await checkPreflightItem("identity", verifyPreflightIdentity);
+    }
+    if (Date.now() - servicesCheckedAt > 45000) {
+      preflightChecks.network = "pending";
+      await checkPreflightItem("network", checkReadiness);
+    }
+    if (Object.values(preflightChecks).some(value => value !== "passed")) return;
+    if (!hasLiveTrack("video") || !cameraAnalysisPassing) { failPreflight("camera", "Camera check needs attention. Retry camera."); return; }
+    if (!hasLiveTrack("audio")) { failPreflight("microphone", "Microphone disconnected. Retry microphone."); return; }
+    if (!screenStream?.getVideoTracks().some(track => track.readyState === "live" && !track.muted && track.getSettings().displaySurface === "monitor")) {
+      failPreflight("screen", "Your entire screen must remain shared. Share Screen Again."); return;
+    }
+    preflightStatus("Starting interview…");
+    const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/interview`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(30000),
+      body: JSON.stringify({ preflight_id: preflightId, camera: true, microphone: true, display_surface: "monitor" }),
+    });
+    const data = await response.json();
+    if (!response.ok || !data.session_id) throw new Error(data.detail?.message || data.detail || "Could not start the interview. Retry readiness.");
+    currentSessionId = data.session_id;
+    sessionStorage.setItem("current_session_id", currentSessionId);
+    sessionStorage.setItem("current_submission_id", currentSubmissionId);
+    await photoVerifier.load(currentSessionId);
+    if (!photoVerifier.isReady()) throw new Error("Identity verification could not be confirmed. Retry verification.");
+    stopMicLevelTest();
+    try { await document.documentElement.requestFullscreen?.(); } catch {}
+    prejoinScreen.style.display = "none";
+    callScreen.style.display = "block";
+    liveChip.style.display = "inline-flex";
+    await startInterview(currentSubmissionId);
+  } catch (error) {
+    const kind = /identity|liveness|face|photo|verification/i.test(error.message) ? "identity" : "network";
+    failPreflight(kind, error.message);
+  } finally {
+    preflightBusy = false;
+    if (!preflightCancelled) {
+      renderPreflight();
+      if (Object.values(preflightChecks).includes("failed")) preflightStatus("Fix the item below to continue. Your other checks are preserved.");
+    }
+  }
+}
+
 async function acquireMediaStream(constraints) {
-  // A combined camera+microphone request is all-or-nothing in Chromium.
-  // Keep the microphone stream available when a camera is connected later;
-  // the Continue button remains locked until both required devices work.
   try {
     return { stream: await navigator.mediaDevices.getUserMedia(constraints), hasVideo: true };
-  } catch (err) {
-    const noCamera = err && (err.name === "NotFoundError" || err.name === "OverconstrainedError" || err.name === "DevicesNotFoundError");
-    if (!constraints.video || !noCamera) throw err;
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false });
-    return { stream, hasVideo: false };
+  } catch {
+    const results = await Promise.allSettled([
+      navigator.mediaDevices.getUserMedia({ video: constraints.video, audio: false }),
+      navigator.mediaDevices.getUserMedia({ audio: constraints.audio, video: false }),
+    ]);
+    const tracks = results.flatMap(result => result.status === "fulfilled" ? result.value.getTracks() : []);
+    return { stream: new MediaStream(tracks), hasVideo: tracks.some(track => track.kind === "video") };
   }
 }
 
@@ -792,21 +862,19 @@ async function populateDeviceSelects() {
 function hasLiveTrack(kind) {
   if (!userMediaStream) return false;
   const tracks = kind === "video" ? userMediaStream.getVideoTracks() : userMediaStream.getAudioTracks();
-  return tracks.some((track) => track.readyState === "live");
-}
-
-function cameraReadyForInterview() {
-  return cameraTrackLive && cameraAnalysisPassing && photoVerifier.isReady();
+  return tracks.some((track) => track.readyState === "live" && track.enabled && !track.muted);
 }
 
 function updatePrejoinReadiness() {
   cameraTrackLive = hasLiveTrack("video");
   microphoneTrackLive = hasLiveTrack("audio");
-  if (photoCaptureBtn) photoCaptureBtn.disabled = !cameraTrackLive || photoVerifier.isBusy();
-  if (pjCamNextBtn) pjCamNextBtn.disabled = !cameraReadyForInterview();
-  if (pjMicNextBtn) pjMicNextBtn.disabled = !(microphoneTrackLive && micLevelDetected);
-  if (pjVoiceVerifyBtn) pjVoiceVerifyBtn.disabled = !(microphoneTrackLive && micSignalDetected);
-  if (pjJoinBtn) pjJoinBtn.disabled = !(cameraReadyForInterview() && microphoneTrackLive && micLevelDetected && isScreenSharing && pjGuidanceAck?.checked);
+  if (!preflightStarted || _isCallScreenActive()) return;
+  if (!cameraTrackLive && preflightChecks.camera === "passed") {
+    preflightChecks.identity = "pending";
+    failPreflight("camera", "Camera disconnected. Select a camera and retry.");
+  }
+  if (!microphoneTrackLive && preflightChecks.microphone === "passed") failPreflight("microphone", "Microphone disconnected. Select a microphone and retry.");
+  if (!isScreenSharing && preflightChecks.screen === "passed") failPreflight("screen", "Screen sharing stopped. Share Screen Again.");
 }
 
 function bindMediaTrackEnded(track) {
@@ -816,7 +884,6 @@ function bindMediaTrackEnded(track) {
     if (isVideo) {
       photoVerifier.invalidate();
       cameraTrackLive = false;
-      if (camOkBadge) camOkBadge.style.display = "none";
       showPrejoinError(camErrorEl, "Camera disconnected. Reconnect it; this page will detect it automatically.");
       if (_isCallScreenActive()) {
         if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "required_media_state", media: "camera", state: "lost" }));
@@ -854,6 +921,7 @@ function bindMediaTrackEnded(track) {
 function setupDeviceMonitoring() {
   if (!navigator.mediaDevices?.addEventListener) return;
   navigator.mediaDevices.addEventListener("devicechange", async () => {
+    if (!preflightStarted) return;
     const { cams, mics } = await populateDeviceSelects();
     if (!hasLiveTrack("video") && cams.length) await attachDeviceTrack("video", cams[0].deviceId);
     if (!hasLiveTrack("audio") && mics.length) await attachDeviceTrack("audio", mics[0].deviceId);
@@ -862,25 +930,27 @@ function setupDeviceMonitoring() {
 }
 
 async function attachDeviceTrack(kind, deviceId) {
-  if (!deviceId) return false;
   try {
     const constraints = kind === "video"
-      ? { video: { deviceId: { exact: deviceId }, width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }
-      : { audio: { deviceId: { exact: deviceId }, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } }, video: false };
+      ? { video: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }
+      : { audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } }, video: false };
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = kind === "video" ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
     if (!newTrack) return false;
+    if (preflightCancelled) { newStream.getTracks().forEach(track => track.stop()); return false; }
     if (!userMediaStream) userMediaStream = new MediaStream();
     const oldTracks = kind === "video" ? userMediaStream.getVideoTracks() : userMediaStream.getAudioTracks();
     oldTracks.forEach((track) => { userMediaStream.removeTrack(track); track.stop(); });
     userMediaStream.addTrack(newTrack);
     bindMediaTrackEnded(newTrack);
     if (kind === "video") {
+      cameraAnalysisPassing = false;
+      preflightYaw = null;
+      preflightChecks.identity = "pending";
       photoVerifier.invalidate();
       if (lobbyVideoEl) lobbyVideoEl.srcObject = userMediaStream;
       if (candidateVideoEl) candidateVideoEl.srcObject = userMediaStream;
       if (camErrorEl) camErrorEl.style.display = "none";
-      if (camOkBadge) camOkBadge.style.display = "block";
       await startCameraAnalysis();
       if (_isCallScreenActive() && ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "required_media_state", media: "camera", state: "restored" }));
@@ -889,7 +959,7 @@ async function attachDeviceTrack(kind, deviceId) {
       micLevelDetected = false;
       micSignalDetected = false;
       if (micErrorEl) micErrorEl.style.display = "none";
-      if (pjPanel2?.classList.contains("active")) startMicLevelTest();
+      if (preflightStarted && !_isCallScreenActive()) startMicLevelTest();
       if (_isCallScreenActive() && ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: "required_media_state", media: "microphone", state: "restored" }));
       }
@@ -908,6 +978,7 @@ async function initCameraCheck() {
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
       audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
     });
+    if (preflightCancelled) { result.stream.getTracks().forEach(track => track.stop()); return; }
     userMediaStream = result.stream;
     userMediaStream.getTracks().forEach(bindMediaTrackEnded);
 
@@ -915,8 +986,7 @@ async function initCameraCheck() {
       if (lobbyVideoEl) lobbyVideoEl.srcObject = userMediaStream;
       const overlay = document.getElementById("cam-overlay");
       if (overlay) overlay.style.display = "none";
-      if (camOkBadge) camOkBadge.style.display = "block";
-      await startCameraAnalysis();
+      void startCameraAnalysis();
     } else {
       const overlay = document.getElementById("cam-overlay");
       if (overlay) overlay.innerHTML = '<span>No camera detected — connect a camera to continue.</span>';
@@ -1164,6 +1234,11 @@ async function analyzeCameraFrame() {
     const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
     faceCountDetected = (result.faceLandmarks || []).length;
     landmarks = result.faceLandmarks?.[0] || null;
+    if (landmarks && faceCountDetected === 1) {
+      const left = landmarks[33].x, right = landmarks[263].x;
+      preflightYaw = (landmarks[1].x - (left + right) / 2) / Math.abs(left - right);
+      preflightYawAt = Date.now();
+    } else { preflightYaw = null; }
   } else if (nativeFaceDetector) {
     const faces = await nativeFaceDetector.detect(lobbyVideoEl);
     faceCountDetected = faces.length;
@@ -1279,9 +1354,6 @@ async function analyzeCameraFrame() {
   // have produced a result for the live frame.
   cameraAnalysisPassing = lightingPassing && exactlyOneFace && exactlyOnePerson && framingPassing &&
     !visionCheckUnavailable && !objectDetectorUnavailable && fullPersonCheckReady && !phoneDetected;
-  if (camOkBadge) camOkBadge.textContent = cameraAnalysisPassing
-    ? "● Camera checks passed"
-    : (!fullPersonCheckReady && !objectDetectorUnavailable ? "● Full person check loading" : "● Adjust camera");
   updatePrejoinReadiness();
 
   if (_isCallScreenActive()) {
@@ -1367,16 +1439,15 @@ async function startCameraAnalysis() {
   tick();
 }
 
-async function switchDevice(kind, deviceId) {
-  await attachDeviceTrack(kind, deviceId);
-}
-
 function startMicLevelTest() {
   if (!userMediaStream) return;
   try {
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
-    if (micTestContext) micTestContext.close().catch(() => {});
+    stopMicLevelTest();
+    micSignalDetected = false;
+    micLevelDetected = false;
     micTestContext = new AudioContextCtor();
+    void micTestContext.resume();
     const source = micTestContext.createMediaStreamSource(userMediaStream);
     micAnalyser = micTestContext.createAnalyser();
     micAnalyser.fftSize = 64;
@@ -1398,8 +1469,9 @@ function startMicLevelTest() {
       });
 
       if (sum > 60 && !micSignalDetected) {
+        micLevelDetected = true;
         micSignalDetected = true;
-        if (micStatusText) micStatusText.textContent = "Microphone detected. Now verify the sentence below.";
+        if (micStatusText) micStatusText.textContent = "Microphone audio detected.";
         if (micErrorEl) micErrorEl.style.display = "none";
         updatePrejoinReadiness();
       }
@@ -1422,316 +1494,6 @@ function stopMicLevelTest() {
   if (micTestContext) {
     micTestContext.close().catch(() => {});
     micTestContext = null;
-  }
-}
-
-async function verifySpokenMicSentence() {
-  if (!currentSessionId || !userMediaStream || !micTestContext) {
-    verifySpokenMicSentenceWithBrowser();
-    return;
-  }
-
-  if (micTestSocket) {
-    try { micTestSocket.close(); } catch {}
-    micTestSocket = null;
-  }
-  micLevelDetected = false;
-  updatePrejoinReadiness();
-  if (pjVoiceVerifyBtn) {
-    pjVoiceVerifyBtn.disabled = true;
-    pjVoiceVerifyBtn.textContent = "Listening…";
-  }
-  if (micErrorEl) micErrorEl.style.display = "none";
-  if (micStatusText) micStatusText.textContent = "Connecting to the interview microphone service…";
-  if (micLiveTranscriptEl) micLiveTranscriptEl.textContent = "Listening for your sentence…";
-
-  try {
-    await streamMicrophoneTest();
-  } catch (error) {
-    console.warn("Production microphone test unavailable; using browser fallback:", error);
-    if (pjVoiceVerifyBtn) {
-      pjVoiceVerifyBtn.disabled = false;
-      pjVoiceVerifyBtn.textContent = "Verify spoken sentence";
-    }
-    verifySpokenMicSentenceWithBrowser();
-  }
-}
-
-function streamMicrophoneTest() {
-  return new Promise((resolve, reject) => {
-    let source = null;
-    let silentGain = null;
-    let timer = null;
-    let providerReady = false;
-    let receivedTranscript = false;
-    let latestTranscript = "";
-    let settled = false;
-
-    const normalize = (text) => text
-      .toLowerCase()
-      .replace(/[^a-z\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-    const phrasePassed = (text) => {
-      const normalized = normalize(text);
-      const words = new Set(normalized.split(" ").filter(Boolean));
-      const negated = _NEGATION_WORDS.some((w) => words.has(w));
-      return !negated && words.has("ready") && words.has("interview") && normalized.split(" ").filter(Boolean).length >= 4;
-    };
-    const cleanup = () => {
-      if (timer) clearTimeout(timer);
-      if (micTestProcessor) {
-        micTestProcessor.port.onmessage = null;
-        try { micTestProcessor.disconnect(); } catch {}
-        micTestProcessor = null;
-      }
-      try { source?.disconnect(); } catch {}
-      try { silentGain?.disconnect(); } catch {}
-      const socket = micTestSocket;
-      micTestSocket = null;
-      if (socket && socket.readyState < WebSocket.CLOSING) socket.close(1000, "microphone test complete");
-    };
-    const finish = (passed) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      micLevelDetected = passed;
-      if (micOkWrap) micOkWrap.style.display = passed ? "block" : "none";
-      if (micStatusText) {
-        micStatusText.textContent = passed
-          ? `Sentence verified: “${normalize(latestTranscript)}”`
-          : latestTranscript
-            ? `Heard: "${normalize(latestTranscript)}" — that's not quite it.`
-            : "We didn't catch any words.";
-      }
-      if (passed) {
-        if (micErrorEl) micErrorEl.style.display = "none";
-      } else {
-        showPrejoinError(micErrorEl, "The sentence was not clear. Select Verify and say: I am ready for my interview.");
-      }
-      if (pjVoiceVerifyBtn) {
-        pjVoiceVerifyBtn.disabled = false;
-        pjVoiceVerifyBtn.textContent = "Verify spoken sentence";
-      }
-      updatePrejoinReadiness();
-      resolve();
-    };
-    const failBeforeTranscription = (error) => {
-      if (settled) return;
-      settled = true;
-      cleanup();
-      reject(error);
-    };
-
-    void (async () => {
-      try {
-        await micTestContext.resume();
-        await micTestContext.audioWorklet.addModule("pcm-worklet-processor.js");
-      source = micTestContext.createMediaStreamSource(userMediaStream);
-      micTestProcessor = new AudioWorkletNode(micTestContext, "pcm-capture-processor", {
-        processorOptions: { targetSampleRate: STT_SAMPLE_RATE },
-      });
-      silentGain = micTestContext.createGain();
-      silentGain.gain.value = 0;
-      source.connect(micTestProcessor);
-      micTestProcessor.connect(silentGain);
-      silentGain.connect(micTestContext.destination);
-
-      const socket = new WebSocket(`${WS_BASE}/ws/microphone-test/${currentSessionId}`);
-      micTestSocket = socket;
-      socket.onmessage = (event) => {
-        if (typeof event.data !== "string") return;
-        let payload;
-        try { payload = JSON.parse(event.data); } catch { return; }
-        if (payload.type === "ready") {
-          providerReady = true;
-          if (micStatusText) micStatusText.textContent = "🔴 Listening now — say: I am ready for my interview.";
-          timer = setTimeout(() => finish(false), 12000);
-          return;
-        }
-        if (payload.type === "error") {
-          failBeforeTranscription(new Error(payload.detail || "Microphone service unavailable"));
-          return;
-        }
-        if (payload.type === "transcript" && payload.text) {
-          receivedTranscript = true;
-          latestTranscript = payload.text;
-          if (micLiveTranscriptEl) micLiveTranscriptEl.textContent = latestTranscript;
-          if (micStatusText) micStatusText.textContent = "🔴 Recording and transcribing your voice…";
-          if (phrasePassed(latestTranscript)) finish(true);
-        }
-      };
-      socket.onerror = () => {
-        if (!receivedTranscript) failBeforeTranscription(new Error("Microphone WebSocket failed"));
-      };
-      socket.onclose = () => {
-        if (!settled && (!providerReady || !receivedTranscript)) {
-          failBeforeTranscription(new Error("Microphone service closed before transcription"));
-        }
-      };
-      micTestProcessor.port.onmessage = (event) => {
-        if (!providerReady || socket.readyState !== WebSocket.OPEN) return;
-        const pcmData = floatTo16BitPCM(event.data);
-        socket.send(pcmData.buffer);
-      };
-      } catch (error) {
-        failBeforeTranscription(error);
-      }
-    })();
-  });
-}
-
-function verifySpokenMicSentenceWithBrowser() {
-  const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    showPrejoinError(micErrorEl, "Spoken sentence verification is not supported by this browser. Use the latest Chrome or Edge.");
-    return;
-  }
-  if (micRecognition) {
-    try { micRecognition.abort(); } catch {}
-  }
-  micLevelDetected = false;
-  updatePrejoinReadiness();
-  const recognition = new SpeechRecognition();
-  micRecognition = recognition;
-  recognition.lang = "en-IN";
-  recognition.maxAlternatives = 1;
-  // Bluetooth headset mics (e.g. earbuds) add buffering/compression that
-  // trips Chrome's end-of-speech detector early, chopping the last word off
-  // a short sentence. Running continuous+interim and holding the mic open
-  // for a fixed window (instead of stopping at the first detected pause)
-  // gives slow or headset-delayed speech time to finish before we grade it.
-  recognition.interimResults = true;
-  recognition.continuous = true;
-  let finalTranscript = "";
-  let latestInterim = "";
-  let stopTimer = null;
-  const clearStopTimer = () => {
-    if (stopTimer) {
-      clearTimeout(stopTimer);
-      stopTimer = null;
-    }
-  };
-  const normalize = (text) =>
-    text
-      .toLowerCase()
-      .replace(/[^a-z\s]/g, " ")
-      .replace(/\s+/g, " ")
-      .trim();
-  const evaluateTranscript = () => {
-    const transcript = normalize(`${finalTranscript} ${latestInterim}`);
-    const words = new Set(transcript.split(" ").filter(Boolean));
-    const negated = _NEGATION_WORDS.some((w) => words.has(w));
-    micLevelDetected = !negated && words.has("ready") && words.has("interview") && transcript.split(" ").filter(Boolean).length >= 4;
-    if (micLevelDetected) {
-      if (micOkWrap) micOkWrap.style.display = "block";
-      if (micStatusText) micStatusText.textContent = `Sentence verified: “${transcript}”`;
-      if (micErrorEl) micErrorEl.style.display = "none";
-    } else {
-      if (micOkWrap) micOkWrap.style.display = "none";
-      if (micStatusText) {
-        micStatusText.textContent = transcript
-          ? `Heard: "${transcript}" — that's not quite it.`
-          : "We didn't catch any words.";
-      }
-      showPrejoinError(micErrorEl, "The sentence was not clear. Select Verify and say: I am ready for my interview, right after the button turns red.");
-    }
-    updatePrejoinReadiness();
-  };
-  if (pjVoiceVerifyBtn) {
-    pjVoiceVerifyBtn.disabled = true;
-    pjVoiceVerifyBtn.textContent = "Listening…";
-  }
-  if (micErrorEl) micErrorEl.style.display = "none";
-  if (micStatusText) micStatusText.textContent = "Starting microphone…";
-  if (micLiveTranscriptEl) micLiveTranscriptEl.textContent = "Listening for your sentence…";
-  recognition.onstart = () => {
-    if (micStatusText) micStatusText.textContent = "🔴 Listening now — say: I am ready for my interview.";
-    // Hard cap so a stuck/silent mic doesn't listen forever; long enough for
-    // headset latency to finish the whole sentence before we stop and grade it.
-    stopTimer = setTimeout(() => {
-      try { recognition.stop(); } catch {}
-    }, 12000);
-  };
-  recognition.onspeechstart = () => {
-    if (micStatusText) micStatusText.textContent = "🔴 Recording your voice…";
-  };
-  recognition.onspeechend = () => {
-    // Do NOT stop here: a Bluetooth headset's audio can have a brief internal
-    // gap mid-sentence that looks like speech-end but isn't — stopping on it
-    // is exactly what chopped "interview" off before this fix. The fixed
-    // stopTimer below is the only thing allowed to end the attempt.
-    if (micStatusText) micStatusText.textContent = "🔴 Recording your voice…";
-  };
-  recognition.onresult = (event) => {
-    latestInterim = "";
-    for (let i = event.resultIndex; i < event.results.length; i++) {
-      const result = event.results[i];
-      const text = result[0]?.transcript || "";
-      if (result.isFinal) {
-        finalTranscript += ` ${text}`;
-      } else {
-        latestInterim += ` ${text}`;
-      }
-    }
-    const streamedText = `${finalTranscript} ${latestInterim}`.replace(/\s+/g, " ").trim();
-    if (micLiveTranscriptEl) {
-      micLiveTranscriptEl.textContent = streamedText || "Listening… start speaking now.";
-    }
-    const liveNormalised = normalize(streamedText);
-    const liveWords = new Set(liveNormalised.split(" ").filter(Boolean));
-    if (liveWords.has("ready") && liveWords.has("interview") && liveNormalised.split(" ").filter(Boolean).length >= 4) {
-      // Finish quickly on a clear phrase, while retaining the longer hard
-      // window above for slow networks and delayed Bluetooth microphones.
-      clearStopTimer();
-      stopTimer = setTimeout(() => {
-        try { recognition.stop(); } catch {}
-      }, 700);
-    }
-  };
-  let errored = false;
-  recognition.onerror = (event) => {
-    clearStopTimer();
-    micLevelDetected = false;
-    if (event.error === "aborted") {
-      // A newer verify click or an in-flight abort() call superseded this
-      // attempt — that click's own handlers own the status text, so stay quiet.
-      return;
-    }
-    errored = true;
-    const messages = {
-      "no-speech": "We didn't hear anything. Select Verify and speak right away.",
-      "audio-capture": "No microphone was found. Check your device selection above.",
-      "not-allowed": "Microphone permission was denied. Allow mic access and try again.",
-      network: "Speech recognition needs an internet connection. Check your connection and try again.",
-    };
-    showPrejoinError(micErrorEl, messages[event.error] || "We could not validate the sentence. Check microphone permission and try again.");
-    if (micStatusText) micStatusText.textContent = "Verification stopped — try again.";
-    if (micLiveTranscriptEl && !micLiveTranscriptEl.textContent.trim()) {
-      micLiveTranscriptEl.textContent = "No speech was recognized.";
-    }
-    updatePrejoinReadiness();
-  };
-  recognition.onend = () => {
-    clearStopTimer();
-    micRecognition = null;
-    if (pjVoiceVerifyBtn) {
-      pjVoiceVerifyBtn.disabled = false;
-      pjVoiceVerifyBtn.textContent = "Verify spoken sentence";
-    }
-    if (!errored) evaluateTranscript();
-    updatePrejoinReadiness();
-  };
-  try {
-    recognition.start();
-  } catch {
-    micRecognition = null;
-    if (pjVoiceVerifyBtn) {
-      pjVoiceVerifyBtn.disabled = false;
-      pjVoiceVerifyBtn.textContent = "Verify spoken sentence";
-    }
-    showPrejoinError(micErrorEl, "Voice verification could not start. Please try again.");
-    updatePrejoinReadiness();
   }
 }
 
@@ -1777,6 +1539,8 @@ function clearLiveCaption() {
 // ============================================================
 
 function setupCallControls() {
+  if (callScreen.dataset.controlsBound) return;
+  callScreen.dataset.controlsBound = "true";
   // Strict interview: camera and microphone are locked on for the whole
   // session with no user-facing toggle at all (no button to attach a
   // handler to). Only screen-share recovery and ending the call are
@@ -1859,7 +1623,7 @@ function bindScreenShareEnded(track) {
     }
     if (pjShareAllowBtn) {
       pjShareAllowBtn.disabled = false;
-      pjShareAllowBtn.textContent = "Allow Screen Share";
+      pjShareAllowBtn.textContent = "Share Screen Again";
     }
     if (pjJoinBtn) pjJoinBtn.disabled = true;
     if (shareOkEl) shareOkEl.style.display = "none";
@@ -1871,6 +1635,7 @@ function bindScreenShareEnded(track) {
       recordIntegrityViolation("screen_share_ended", "Screen sharing stopped. Restore it immediately.");
     } else {
       showPrejoinError(shareErrorEl, "Screen sharing stopped. Share your entire screen again before joining.");
+      updatePrejoinReadiness();
     }
   };
   track.addEventListener("ended", handleLoss, { once: true });
@@ -2078,7 +1843,7 @@ function _startSuspendRecoveryWatch() {
 }
 
 function _isCallScreenActive() {
-  return !!(callScreen && callScreen.style.display !== "none");
+  return !!(callScreen && getComputedStyle(callScreen).display !== "none");
 }
 
 function setupIntegrityMonitoring() {
@@ -2160,7 +1925,7 @@ async function startMediaCapture() {
     // aiSpeaking gate is defense-in-depth alongside the server-side
     // _tts_active gate (session.py _pump_browser_in) — belt and braces,
     // not a replacement for it.
-    if (!ws || ws.readyState !== WebSocket.OPEN || micMuted || aiSpeaking) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !proctoringActive || micMuted || aiSpeaking) return;
     const pcmData = floatTo16BitPCM(e.data);
     ws.send(pcmData.buffer);
   };
@@ -2304,6 +2069,8 @@ function handleControlMessage(payload) {
     // never send this. Only from here on does a flag actually count, and
     // only from here on do queued pending events get flushed.
     case "interview_started":
+      clearTimeout(initialConnectionTimer);
+      interviewHasStarted = true;
       proctoringActive = true;
       photoVerifier.start();
       _flushPendingIntegrityEvents();
@@ -2498,6 +2265,10 @@ function handleControlMessage(payload) {
       break;
 
     case "error":
+      if (!interviewHasStarted) {
+        returnToPreflight(payload.detail || "Interview connection failed. Retry readiness.");
+        break;
+      }
       clearProcessingStatus();
       // The backend has already closed this session on its side (see
       // pipeline.py's catch-all) — this is fatal, not a transient status.
@@ -2518,24 +2289,6 @@ async function startInterview(submissionId) {
   setupCallControls();
 
   try {
-    // /upload already creates a session and returns its session_id
-    // (currentSessionId, read from the URL/sessionStorage in
-    // DOMContentLoaded) — only fall back to POSTing a new one here if
-    // nothing was passed through (e.g. a page reload that lost query
-    // params/sessionStorage, or a direct link that only carried ?id=).
-    if (!currentSessionId) {
-      const createResponse = await studentFetch(`${_HTTP_BASE}/api/resume/${submissionId}/interview`, {
-        method: "POST",
-        headers: studentAuthHeaders(),
-      });
-      const created = await createResponse.json();
-      if (!createResponse.ok) {
-        if (rndStatus) rndStatus.textContent = created.detail || "Could not start session.";
-        return;
-      }
-      currentSessionId = created.session_id;
-    }
-
     const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
     audioContext = new AudioContextCtor({ sampleRate: STT_SAMPLE_RATE, latencyHint: "interactive" });
     playbackAudioContext = new AudioContextCtor({ latencyHint: "interactive" });
@@ -2551,14 +2304,35 @@ async function startInterview(submissionId) {
     interviewStopRequested = false;
     connectInterviewSocket();
   } catch (err) {
-    if (rndStatus) rndStatus.textContent = `Connection error: ${err.message}`;
+    returnToPreflight(err.message || "Could not connect to the interview.");
   }
+}
+
+function returnToPreflight(message) {
+  clearTimeout(initialConnectionTimer);
+  const socket = ws;
+  ws = null;
+  socket?.close();
+  micProcessor?.disconnect();
+  micProcessor = null;
+  void audioContext?.close();
+  audioContext = null;
+  void playbackAudioContext?.close();
+  playbackAudioContext = null;
+  playbackAnalyser = null;
+  callScreen.style.display = "none";
+  liveChip.style.display = "none";
+  prejoinScreen.style.display = "flex";
+  const kind = /identity|liveness|face|photo|verification/i.test(message) ? "identity" : "network";
+  failPreflight(kind, message);
+  preflightStatus("Fix the item below to continue. Your other checks are preserved.");
 }
 
 function connectInterviewSocket() {
   if (interviewStopRequested || sessionCompletedCleanly || integrityEndRequested || !currentSessionId) return;
-  const socket = new WebSocket(`${WS_BASE}/ws/interview/${currentSessionId}`);
+  const socket = new WebSocket(`${WS_BASE}/ws/interview/${currentSessionId}?preflight_id=${encodeURIComponent(preflightId)}`);
   ws = socket;
+  if (!interviewHasStarted) initialConnectionTimer = setTimeout(() => returnToPreflight("Interview connection timed out. Retry readiness."), 30000);
   socket.binaryType = "arraybuffer";
   socket.onopen = () => {
     if (rndStatus) rndStatus.textContent = reconnectAttempts ? "Reconnecting interview…" : "Authenticating interview…";
@@ -2574,6 +2348,7 @@ function connectInterviewSocket() {
   socket.onclose = (event) => {
     if (ws !== socket) return;
     ws = null;
+    proctoringActive = false;
     aiSpeaking = false;
     setActivePanelTalking(false);
     resetPlaybackQueue();
@@ -2587,6 +2362,10 @@ function connectInterviewSocket() {
     }
     if (event.code === 4429) {
       showFatalError("This interview is already active in another browser. Close the other interview before resuming here.");
+      return;
+    }
+    if (!interviewHasStarted) {
+      returnToPreflight("Could not start the interview connection. Retry readiness.");
       return;
     }
     if ([4401, 4403, 4404].includes(event.code)) {
@@ -2624,6 +2403,7 @@ async function recoverCompletedSession() {
 }
 
 function stopInterview() {
+  clearTimeout(initialConnectionTimer);
   photoVerifier.stop();
   interviewStopRequested = true;
   if (reconnectTimer !== null) {

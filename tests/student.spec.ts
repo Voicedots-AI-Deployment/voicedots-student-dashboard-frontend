@@ -476,7 +476,7 @@ test("the real interview runtime restores a new-tab identity and loads device ch
   page.on("pageerror", (error) => errors.push(error.message));
   await page.goto("/interview.html?id=sub-1&session_id=s1");
   await expect(
-    page.getByRole("heading", { name: "Check your camera" }),
+    page.getByRole("heading", { name: "Start AI Interview" }),
   ).toBeVisible();
   await expect
     .poll(() =>

@@ -201,11 +201,11 @@ export const json = (body: unknown): RequestInit => ({
 });
 
 export function openInterview(submissionId?: string, sessionId?: string) {
-  if (!submissionId || !sessionId)
+  if (!submissionId)
     throw new Error("The interview is not ready yet. Refresh and try again.");
   const params = new URLSearchParams({
     id: submissionId,
-    session_id: sessionId,
   });
+  if (sessionId) params.set("session_id", sessionId);
   window.location.assign(`/interview.html?${params}`);
 }
