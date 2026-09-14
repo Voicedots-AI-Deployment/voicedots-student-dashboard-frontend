@@ -1,6 +1,10 @@
 import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
+  ArrowUpRight,
+  Eye,
+  EyeOff,
+  LockKeyhole,
   BookOpen,
   BriefcaseBusiness,
   ChartNoAxesCombined,
@@ -31,6 +35,7 @@ import { Practice } from "./practice";
 function Login() {
   const auth = useAuth();
   const [enroll, setEnroll] = useState(false);
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [replaceSession, setReplaceSession] = useState(false);
@@ -66,22 +71,31 @@ function Login() {
   }
   return (
     <div className="auth-page">
-      <div className="auth-story">
+      <header className="auth-header">
         <Brand website />
+        <a className="auth-back" href={import.meta.env.VITE_WEBSITE_URL || "https://voicedots.io"}>
+          Back to website <ArrowUpRight size={16} />
+        </a>
+      </header>
+      <div className="auth-story">
         <div className="auth-story-content">
           <span className="pill">
-            <Mic size={14} /> YOUR NEXT CHAPTER STARTS HERE
+            <Mic size={14} /> YOUR CAREER, ONE STEP CLOSER
           </span>
           <h1>
-            A little practice.
-            <br />A lot more
-            <br />
+            <span>A little practice.</span>
+            <span>A lot more</span>
             <em>confidence.</em>
           </h1>
           <p>
             Meet your AI interview panel. Find your strengths. Walk into your
             next opportunity prepared.
           </p>
+          <div className="auth-session-preview" aria-hidden="true">
+            <div className="auth-preview-top"><span className="auth-mic"><Mic size={22} /></span><div><strong>A space to find your voice.</strong><span>Your AI interview practice room</span></div></div>
+            <div className="auth-wave">{[14,24,38,21,46,62,36,76,52,30,64,86,54,36,68,48,28,58,40,22,36,18,28,12].map((height, i) => <i key={i} style={{ height }} />)}</div>
+            <div className="auth-preview-bottom"><span>Practice at your pace</span><span><ShieldCheck size={14} /> Built for your growth</span></div>
+          </div>
           <div className="auth-features">
             {[
               "Personalized practice interviews",
@@ -101,7 +115,8 @@ function Login() {
       </div>
       <div className="auth-form-wrap">
         <div className="auth-form">
-          <span className="eyebrow">VOICEDOTS STUDENT PORTAL</span>
+          <div className="auth-form-icon"><LockKeyhole size={23} /></div>
+          <span className="eyebrow">YOUR STUDENT SPACE</span>
           <h2>{enroll ? "Make it official." : "Welcome back."}</h2>
           <p>
             {enroll
@@ -142,9 +157,10 @@ function Login() {
             </label>
             <label>
               Password
+              <span className="auth-password">
               <input
                 name="password"
-                type="password"
+                type={showPassword ? "text" : "password"}
                 autoComplete={enroll ? "new-password" : "current-password"}
                 minLength={enroll ? 12 : undefined}
                 required
@@ -154,6 +170,8 @@ function Login() {
                     : "Enter your password"
                 }
               />
+              <button type="button" className="auth-password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
+              </span>
             </label>
             {conflict && !enroll && (
               <label className="checkbox">
@@ -174,6 +192,7 @@ function Login() {
             className="text-button"
             onClick={() => {
               setEnroll(!enroll);
+              setShowPassword(false);
               setError("");
               setConflict(false);
               setReplaceSession(false);
