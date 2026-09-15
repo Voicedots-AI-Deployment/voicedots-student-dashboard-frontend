@@ -42,11 +42,15 @@ export type Report = {
     status?: string;
     readiness?: string;
     executive_summary?: string;
+    priority_improvement_areas?: Array<{ focus?: string; problem?: string }>;
+    weaknesses?: Array<string | { focus?: string; area?: string }>;
+    improvements?: Array<string | { focus?: string; area?: string }>;
   } | null;
 };
 export type Drive = {
   id: string;
   company_name: string;
+  company_description?: string;
   role_title: string;
   location?: string;
   drive_date?: string;
@@ -55,9 +59,13 @@ export type Drive = {
 };
 export type DriveContext = {
   drive_id: string;
+  company_name: string;
+  company_description: string;
   role_title: string;
   job_description: string;
   duration_minutes: number;
+  attempt_number: number;
+  max_attempts: number;
   action: string;
   publication_status: string;
   decision: string;

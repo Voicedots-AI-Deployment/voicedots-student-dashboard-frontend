@@ -82,6 +82,12 @@ function ReportList({ reports }: { reports: Report[] }) {
   );
 }
 
+function improvementLabels(report: Report | undefined) {
+  const view = report?.report;
+  const values = view?.priority_improvement_areas || view?.weaknesses || view?.improvements || [];
+  return values.map((item) => typeof item === "string" ? item : item.focus || ('area' in item ? item.area : '') || "").filter(Boolean).slice(0, 4);
+}
+
 export function AttemptList({ attempts }: { attempts: Attempt[] }) {
   return (
     <div className="record-list">
@@ -224,7 +230,14 @@ export function Overview() {
                   </Link>
                 </div>
                 {data.reports.length ? (
-                  <ReportList reports={data.reports.slice(0, 3)} />
+                  <>
+                    <div className="feedback-spotlight">
+                      <div className="feedback-score"><strong>{score(data.reports[0].report?.overall_score)}</strong><span>Latest score</span></div>
+                      <div><strong>Focus before your next attempt</strong><div className="focus-chips">{improvementLabels(data.reports[0]).map(item => <span className="pill" key={item}>{item}</span>)}</div>{!improvementLabels(data.reports[0]).length && <p>Your detailed feedback is being prepared.</p>}</div>
+                    </div>
+                    {data.reports[0].drive_id && data.reports[0].report?.status !== "awaiting_release" && <Link className="button primary" to={`/coach?drive=${encodeURIComponent(data.reports[0].drive_id)}`}>Train weak areas with AI Coach <ArrowRight size={16}/></Link>}
+                    <ReportList reports={data.reports.slice(0, 3)} />
+                  </>
                 ) : (
                   <Empty
                     title="Your first insight is one interview away"
@@ -382,6 +395,7 @@ export function Placements() {
         <Dialog labelledBy="drive-title" close={() => setSelected(null)}>
           <span className="eyebrow">{selected.company_name}</span>
           <h2 id="drive-title">{selected.role_title}</h2>
+          {(selected.company_description || context?.company_description) && <section className="opportunity-company"><div className="company-avatar">{selected.company_name.slice(0,2).toUpperCase()}</div><div><h3>About {selected.company_name}</h3><p>{context?.company_description || selected.company_description}</p></div></section>}
           {busy && <p role="status">Checking your interview assignment…</p>}
           {error && <ErrorMessage message={error} />}
           {context && (
@@ -391,6 +405,7 @@ export function Placements() {
                 <span className="pill">
                   Window: {humanize(context.interview_window)}
                 </span>
+                <span className="pill">Attempt {context.attempt_number} of {context.max_attempts}</span>
               </div>
               <p>
                 {context.duration_minutes
@@ -399,7 +414,7 @@ export function Placements() {
                 Your placement cell sets the interview requirements.
               </p>
               {context.job_description && (
-                <div className="job-description">{context.job_description}</div>
+                <details className="job-description"><summary>View role description</summary><p>{context.job_description}</p></details>
               )}
               {context.publication_status === "released" && (
                 <p>
@@ -430,6 +445,7 @@ export function Placements() {
                     Prepare for interview <ArrowRight size={16} />
                   </button>
                 )}
+              {context.attempt_number > 1 && <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Prepare with your AI Coach</Link>}
               {!["start", "resume", "retry_preparation"].includes(
                 context.action,
               ) && (

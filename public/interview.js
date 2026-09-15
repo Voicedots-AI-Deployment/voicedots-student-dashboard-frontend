@@ -255,7 +255,7 @@ function setRequiredInterviewRounds(value) {
   requiredInterviewRounds = parsed;
   panelAgentEls.forEach((element) => {
     const round = Number(element.dataset.panelRound || 0);
-    element.hidden = round > requiredInterviewRounds;
+    element.hidden = round < 1 || round > requiredInterviewRounds;
   });
 }
 
@@ -2073,6 +2073,24 @@ function handleControlMessage(payload) {
     // never send this. Only from here on does a flag actually count, and
     // only from here on do queued pending events get flushed.
     case "interview_started":
+      if (Array.isArray(payload.agents) && payload.agents.length) {
+        const animations = new Map(panelAnimations);
+        panelAnimations.clear();
+        panelAgentEls.forEach(tile => {
+          const oldRound = Number(tile.dataset.panelRound);
+          const index = payload.agents.findIndex(profile => profile.agent_type === tile.dataset.agentType);
+          tile.dataset.panelRound = String(index + 1);
+          tile.style.order = String(index < 0 ? 99 : index);
+          if (index < 0) return;
+          const profile = payload.agents[index];
+          const name = tile.querySelector(".panel-agent-name");
+          const role = tile.querySelector(".panel-agent-role");
+          if (name) name.textContent = profile.name || "Interviewer";
+          if (role) role.textContent = profile.role || "Interview round";
+          if (animations.has(oldRound)) panelAnimations.set(index + 1, animations.get(oldRound));
+        });
+      }
+      setRequiredInterviewRounds(payload.total_rounds);
       clearTimeout(initialConnectionTimer);
       interviewHasStarted = true;
       proctoringActive = true;
@@ -2125,7 +2143,7 @@ function handleControlMessage(payload) {
       const profile = payload.profile || {};
       setRequiredInterviewRounds(payload.total_rounds);
       activePanelRound = roundNumber;
-      if (rndBadge) rndBadge.textContent = `Round ${roundNumber}/${payload.total_rounds || 4}`;
+      if (rndBadge) rndBadge.textContent = `Round ${roundNumber}/${requiredInterviewRounds}`;
       if (rndName) rndName.textContent = profile.round_label || "AI Panel Round";
       if (aiNameEl) aiNameEl.textContent = profile.name || "AI Panelist";
       currentAgentRole = profile.role || "Interviewer";
@@ -2249,7 +2267,7 @@ function handleControlMessage(payload) {
 
     case "session_incomplete":
       clearProcessingStatus();
-      showIncompleteInterview(payload.reason, Number(payload.completed_rounds) || completedRounds.size, Number(payload.required_rounds) || 4);
+      showIncompleteInterview(payload.reason, Number(payload.completed_rounds) || completedRounds.size, Number(payload.required_rounds) || requiredInterviewRounds);
       break;
 
     case "integrity_warning_summary":
