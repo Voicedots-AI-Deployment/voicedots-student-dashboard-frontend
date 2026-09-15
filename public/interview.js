@@ -240,7 +240,8 @@ const POOR_LIGHTING_THRESHOLD_MS = 3500;
 const GAZE_AWAY_THRESHOLD_MS = 3500;
 const PHONE_VISIBLE_THRESHOLD_MS = 2000;
 let lastVisionWarningAt = {};
-let multiplePeopleIncidentActive = false;
+let visionRecoverySince = {};
+let lastVisionObservationAt = 0;
 let activePanelRound = 1;
 // Meera has no data-panel-round tile (she's not a round -- see
 // interview.html) and no photo-based lip-sync frames, so she is driven
@@ -1195,10 +1196,23 @@ function landmarkGazeOffCamera(landmarks) {
 }
 
 function warnVisionSignal(type, message, details) {
-  const now = Date.now();
-  if (now - (lastVisionWarningAt[type] || 0) < 10000) return;
-  lastVisionWarningAt[type] = now;
+  if (!proctoringActive || integrityEndRequested || sessionCompletedCleanly || lastVisionWarningAt[type] !== undefined) return;
+  lastVisionWarningAt[type] = Date.now();
   recordIntegrityViolation(type, message, details);
+}
+
+function clearVisionSignal(type, recovered, now) {
+  if (!recovered || lastVisionWarningAt[type] === undefined) {
+    delete visionRecoverySince[type];
+    return false;
+  }
+  const previous = visionRecoverySince[type];
+  const since = previous && now - previous.last <= 3000 ? previous.since : now;
+  visionRecoverySince[type] = { since, last: now };
+  if (now - since < 2000) return false;
+  delete lastVisionWarningAt[type];
+  delete visionRecoverySince[type];
+  return true;
 }
 
 async function analyzeCameraFrame() {
@@ -1338,37 +1352,43 @@ async function analyzeCameraFrame() {
     !visionCheckUnavailable && !objectDetectorUnavailable && fullPersonCheckReady && !phoneDetected;
   updatePrejoinReadiness();
 
-  if (_isCallScreenActive()) {
+  if (!proctoringActive || now - lastVisionObservationAt > 3000) {
+    absentFaceSince = multipleFaceSince = phoneVisibleSince = poorLightingSince = gazeOffCameraSince = null;
+    visionRecoverySince = {};
+  }
+  lastVisionObservationAt = now;
+  if (_isCallScreenActive() && proctoringActive) {
     // A visible torso is not enough: the candidate's face must be in frame.
     // The body detector remains useful for distinguishing "person present"
     // from "nobody present" and for the multiple-person signal, but it must
     // not suppress the missing-face flag.
     const faceMissing = !visionCheckUnavailable && faceCountDetected === 0;
+    clearVisionSignal("candidate_not_visible", !visionCheckUnavailable && faceCountDetected > 0, now);
     absentFaceSince = _trackSince(absentFaceSince, faceMissing, now);
     if (absentFaceSince !== null) {
       const ms = now - absentFaceSince;
       if (ms >= CANDIDATE_ABSENT_THRESHOLD_MS) {
-        warnVisionSignal("candidate_not_visible", `No face detected for ${Math.round(ms / 1000)}s. Stay in frame.`, { confidence: 0.9, duration_ms: ms });
+        warnVisionSignal("candidate_not_visible", `No face detected for ${Math.round(ms / 1000)}s. Stay in frame.`, { duration_ms: ms });
       }
     }
 
-    multipleFaceSince = _trackSince(multipleFaceSince, peopleCountDetected > 1, now);
+    if (clearVisionSignal("multiple_people_visible", !objectDetectorUnavailable && fullPersonCheckReady && peopleCountDetected === 1, now)) {
+      _sendIntegrityEvent("multiple_people_cleared", "info", { people_count: peopleCountDetected });
+    }
+    multipleFaceSince = _trackSince(multipleFaceSince, !objectDetectorUnavailable && fullPersonCheckReady && peopleCountDetected > 1, now);
     if (multipleFaceSince !== null) {
       const ms = now - multipleFaceSince;
-      if (ms >= MULTIPLE_PEOPLE_THRESHOLD_MS && !multiplePeopleIncidentActive) {
-        multiplePeopleIncidentActive = true;
-        recordIntegrityViolation(
+      if (ms >= MULTIPLE_PEOPLE_THRESHOLD_MS) {
+        warnVisionSignal(
           "multiple_people_visible",
           `More than one person detected for ${Math.round(ms / 1000)}s. Only the candidate may be visible.`,
           { confidence: personDetectionConfidence, duration_ms: ms, people_count: peopleCountDetected },
         );
       }
-    } else if (multiplePeopleIncidentActive) {
-      multiplePeopleIncidentActive = false;
-      _sendIntegrityEvent("multiple_people_cleared", "info", { people_count: peopleCountDetected });
     }
 
-    phoneVisibleSince = _trackSince(phoneVisibleSince, phoneDetected, now);
+    clearVisionSignal("phone_usage_detected", !objectDetectorUnavailable && fullPersonCheckReady && !phoneDetected, now);
+    phoneVisibleSince = _trackSince(phoneVisibleSince, !objectDetectorUnavailable && fullPersonCheckReady && phoneDetected, now);
     if (phoneVisibleSince !== null) {
       const ms = now - phoneVisibleSince;
       if (ms >= PHONE_VISIBLE_THRESHOLD_MS) {
@@ -1376,20 +1396,22 @@ async function analyzeCameraFrame() {
       }
     }
 
+    clearVisionSignal("poor_lighting", lightingPassing, now);
     poorLightingSince = _trackSince(poorLightingSince, !lightingPassing, now);
     if (poorLightingSince !== null) {
       const ms = now - poorLightingSince;
       if (ms >= POOR_LIGHTING_THRESHOLD_MS) {
-        warnVisionSignal("poor_lighting", `Lighting has been poor for ${Math.round(ms / 1000)}s. Adjust lighting.`, { confidence: 0.8, luminance: Math.round(luminance), duration_ms: ms });
+        warnVisionSignal("poor_lighting", `Lighting has been poor for ${Math.round(ms / 1000)}s. Adjust lighting.`, { luminance: Math.round(luminance), duration_ms: ms });
       }
     }
 
     const gazeAway = !!(landmarks && landmarkGazeOffCamera(landmarks));
+    clearVisionSignal("gaze_off_camera", !!landmarks && !gazeAway, now);
     gazeOffCameraSince = _trackSince(gazeOffCameraSince, gazeAway, now);
     if (gazeOffCameraSince !== null) {
       const ms = now - gazeOffCameraSince;
       if (ms >= GAZE_AWAY_THRESHOLD_MS) {
-        warnVisionSignal("gaze_off_camera", `Gaze away from camera for ${Math.round(ms / 1000)}s. Keep attention on screen.`, { confidence: 0.7, duration_ms: ms });
+        warnVisionSignal("gaze_off_camera", `Gaze away from camera for ${Math.round(ms / 1000)}s. Keep attention on screen.`, { duration_ms: ms });
       }
     }
   }
