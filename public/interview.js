@@ -679,12 +679,12 @@ async function checkReadiness() {
 }
 
 async function verifyPreflightIdentity() {
-  preflightStatus("Verifying your identity across several camera frames. Face the camera naturally.");
+  preflightStatus("Verifying your identity across several camera frames. Look toward the camera and blink naturally.");
   const captures = [];
   for (let index = 0; index < 6; index++) {
     if (preflightCancelled || !hasLiveTrack("video")) throw new Error("Camera unavailable. Retry verification.");
     captures.push(photoVerifier.captureFrame());
-    if (index < 5) await new Promise(resolve => setTimeout(resolve, 300));
+    if (index < 5) await new Promise(resolve => setTimeout(resolve, 500));
   }
   const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/preflight/${preflightId}/identity`, {
     method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ captures }), signal: AbortSignal.timeout(30000),
