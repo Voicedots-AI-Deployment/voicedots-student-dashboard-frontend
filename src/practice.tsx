@@ -47,6 +47,12 @@ export function Practice() {
   const [file, setFile] = useState<File | null>(null);
   const [role, setRole] = useState(identity!.student.target_role || "");
   const [duration, setDuration] = useState("30");
+  const [difficulty, setDifficulty] = useState<"beginner" | "intermediate" | "advanced">(() => {
+    const graduationYear = identity!.student.graduation_year;
+    if (!graduationYear) return "intermediate";
+    const academicYear = Math.max(1, 4 - (graduationYear - new Date().getFullYear()));
+    return academicYear === 1 ? "beginner" : academicYear === 2 ? "intermediate" : "advanced";
+  });
   const [jd, setJd] = useState("");
   const [context, setContext] = useState<DriveContext | null>(null);
   const [contextLoading, setContextLoading] = useState(!!driveId);
@@ -194,6 +200,7 @@ export function Practice() {
     body.set("resume", file);
     body.set("target_role", role.trim());
     body.set("interview_time_minutes", duration);
+    if (!driveId) body.set("difficulty_tier", difficulty);
     body.set("job_description", jd);
     if (driveId) body.set("drive_id", driveId);
     const fingerprint = JSON.stringify([
@@ -202,6 +209,7 @@ export function Practice() {
       file.lastModified,
       role.trim(),
       duration,
+      driveId ? "drive-locked" : difficulty,
       jd,
       driveId,
     ]);
@@ -590,6 +598,15 @@ export function Practice() {
                   ))}
                 </select>
               </label>
+              {!driveId && <label>
+                Interview difficulty
+                <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
+                  <option value="beginner">Beginner</option>
+                  <option value="intermediate">Intermediate</option>
+                  <option value="advanced">Advanced</option>
+                </select>
+                <span className="optional">Recommended from your academic year. This level is fixed for this attempt.</span>
+              </label>}
               <label>
                 Job description{" "}
                 <span className="optional">
