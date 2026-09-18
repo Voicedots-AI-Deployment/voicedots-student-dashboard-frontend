@@ -88,16 +88,9 @@
     .panel-agent.active{border-color:var(--accent-bright);box-shadow:0 0 0 2px rgba(var(--accent-rgb),.24),0 18px 45px rgba(0,0,0,.36);transform:none;}
     .panel-agent.complete{border-color:rgba(74,222,128,.35);}
     .panel-agent-visual{position:absolute;inset:0;overflow:hidden;background:#fff;}
-    .panel-agent-canvas,.panel-agent-eyes,.panel-agent-mouth{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;object-position:center center;background:#fff;image-rendering:auto;}
+    .panel-agent-canvas{position:absolute;inset:0;display:block;width:100%;height:100%;object-fit:contain;object-position:center center;background:#fff;image-rendering:auto;}
     .panel-full-frame{opacity:0;visibility:hidden;pointer-events:none;transition:none;}
     .panel-full-frame.is-visible{opacity:1;visibility:visible;}
-    .panel-agent-eyes,.panel-agent-mouth{opacity:0;pointer-events:none;background:transparent;transition:none;}
-    .panel-agent-eyes{z-index:1;-webkit-mask-image:radial-gradient(ellipse 7% 6% at 44% 31%,#000 45%,transparent 100%),radial-gradient(ellipse 7% 6% at 56% 31%,#000 45%,transparent 100%);mask-image:radial-gradient(ellipse 7% 6% at 44% 31%,#000 45%,transparent 100%),radial-gradient(ellipse 7% 6% at 56% 31%,#000 45%,transparent 100%);}
-    .panel-agent-eyes.blink-frame{opacity:1;}
-    .panel-agent-mouth{z-index:2;clip-path:ellipse(10% 5.5% at 50% var(--mouth-y,46%));-webkit-mask-image:radial-gradient(ellipse 10% 5.5% at 50% var(--mouth-y,46%),#000 72%,transparent 100%);mask-image:radial-gradient(ellipse 10% 5.5% at 50% var(--mouth-y,46%),#000 72%,transparent 100%);}
-    .panel-agent-mouth.speaking-frame{opacity:1;}
-    .panel-agent[data-agent-type="hr"]{--mouth-y:46%;}
-    .panel-agent[data-agent-type="domain"]{--mouth-y:45%;}
     .panel-agent-meta{position:absolute;z-index:4;left:14px;right:14px;bottom:11px;display:flex;align-items:flex-end;justify-content:space-between;gap:10px;}
     .panel-agent-name{font-size:.83rem;font-weight:800;color:#fff;}
     .panel-agent-role{font-size:.66rem;line-height:1.35;color:#cbd5e1;margin-top:2px;}
@@ -331,16 +324,14 @@
       <div class="question-focus-text" id="current-question-text">The panel is preparing your first question…</div>
     </div>
 
-    <!-- All four interviewers stay visible for the entire call. Their neutral
-         portraits remain fixed; only the active speaker's clipped mouth layer
-         changes while that panelist's audio is actually playing. -->
+    <!-- All four interviewers stay visible for the entire call. -->
     <div class="call-main">
       <div class="interview-grid">
         <article class="panel-agent active" data-panel-round="1" data-agent-type="hr">
-          <div class="panel-agent-visual">
-            <img class="panel-agent-canvas" src="/assets/panel/stills/hr-neutral.png" alt="HR interviewer Priya Sharma" draggable="false">
-            <img class="panel-agent-eyes" src="/assets/panel/stills/hr-idle.png" alt="" draggable="false" aria-hidden="true">
-            <img class="panel-agent-mouth" src="/assets/panel/stills/hr-talking.png" data-talking-srcs="/assets/panel/stills/hr-talking.png" alt="" draggable="false" aria-hidden="true">
+          <div class="panel-agent-visual" data-frame-avatar>
+            <img class="panel-agent-canvas panel-full-frame is-visible" data-frame-state="idle" src="/assets/panel/stills/hr-neutral.png?v=2" alt="HR interviewer Priya Sharma" draggable="false">
+            <img class="panel-agent-canvas panel-full-frame" data-frame-state="blink" src="/assets/panel/stills/hr-idle.png?v=2" alt="" draggable="false" aria-hidden="true">
+            <img class="panel-agent-canvas panel-full-frame" data-frame-state="talk" src="/assets/panel/stills/hr-talking.png?v=2" alt="" draggable="false" aria-hidden="true">
           </div>
           <div class="panel-agent-meta">
             <div><div class="panel-agent-name">Priya Sharma</div><div class="panel-agent-role">HR Interviewer</div></div>
@@ -348,10 +339,10 @@
           </div>
         </article>
         <article class="panel-agent" data-panel-round="2" data-agent-type="domain">
-          <div class="panel-agent-visual">
-            <img class="panel-agent-canvas" src="/assets/panel/stills/domain-neutral.png" alt="Technical interviewer Arjun Mehta" draggable="false">
-            <img class="panel-agent-eyes" src="/assets/panel/stills/domain-idle.png" alt="" draggable="false" aria-hidden="true">
-            <img class="panel-agent-mouth" src="/assets/panel/stills/domain-talking.png" data-talking-srcs="/assets/panel/stills/domain-talking.png" alt="" draggable="false" aria-hidden="true">
+          <div class="panel-agent-visual" data-frame-avatar>
+            <img class="panel-agent-canvas panel-full-frame is-visible" data-frame-state="idle" src="/assets/panel/stills/domain-neutral.png?v=2" alt="Technical interviewer Arjun Mehta" draggable="false">
+            <img class="panel-agent-canvas panel-full-frame" data-frame-state="blink" src="/assets/panel/stills/domain-idle.png?v=2" alt="" draggable="false" aria-hidden="true">
+            <img class="panel-agent-canvas panel-full-frame" data-frame-state="talk" src="/assets/panel/stills/domain-talking.png?v=2" alt="" draggable="false" aria-hidden="true">
           </div>
           <div class="panel-agent-meta">
             <div><div class="panel-agent-name">Arjun Mehta</div><div class="panel-agent-role">Technical Interviewer</div></div>

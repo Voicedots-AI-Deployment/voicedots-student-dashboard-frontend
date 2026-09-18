@@ -377,40 +377,6 @@ async function tryResumeCompletedSessionOnLoad() {
 }
 
 function initializePanelAnimations() {
-  document.querySelectorAll(".panel-agent-mouth[data-talking-srcs]").forEach((mouthImage) => {
-    const tile = mouthImage.closest("[data-panel-round]");
-    const round = Number(tile?.dataset.panelRound || 0);
-    if (!round) return;
-    const talkingFrames = String(mouthImage.dataset.talkingSrcs || "")
-      .split(",")
-      .map((src) => src.trim())
-      .filter(Boolean);
-    if (!talkingFrames.length) return;
-
-    // Priya and Arjun retain their existing eye/mouth layer animation.
-    talkingFrames.forEach((src) => {
-      const preload = new Image();
-      preload.src = src;
-    });
-    const eyeImage = tile.querySelector(".panel-agent-eyes");
-    if (eyeImage?.src) {
-      const preload = new Image();
-      preload.src = eyeImage.src;
-    }
-    const controller = {
-      mode: "layers",
-      mouthImage,
-      eyeImage,
-      talkingFrames,
-      frameIndex: -1,
-      agentType: String(tile.dataset.agentType || ""),
-    };
-    panelAnimations.set(round, controller);
-    mouthImage.src = talkingFrames[0];
-    mouthImage.classList.remove("speaking-frame");
-    startPanelBlinkLoop(controller);
-  });
-
   document.querySelectorAll("[data-frame-avatar]").forEach((frameStage) => {
     const tile = frameStage.closest("[data-panel-round]");
     const round = Number(tile?.dataset.panelRound || 0);
@@ -422,7 +388,6 @@ function initializePanelAnimations() {
 
     const frameImages = [idleFrame, blinkFrame, ...talkingFrames].filter(Boolean);
     const controller = {
-      mode: "frames",
       frameImages,
       idleFrame,
       blinkFrame,
@@ -459,13 +424,7 @@ function startPanelLipLoop(controller) {
   stopPanelBlinkLoop(controller);
   const waveform = playbackAnalyser ? new Uint8Array(playbackAnalyser.fftSize) : null;
   let openness = 0;
-  if (controller.mode === "frames") {
-    controller.frameIndex = -1;
-  } else {
-    controller.mouthImage.src = controller.talkingFrames[0];
-    controller.frameIndex = 0;
-    controller.mouthImage.classList.add("speaking-frame");
-  }
+  controller.frameIndex = -1;
 
   // Follow the amplitude of the audio that is actually reaching the user's
   // speakers. This avoids the robotic fixed-rate open/close loop and keeps
@@ -484,19 +443,12 @@ function startPanelLipLoop(controller) {
     }
     const response = target > openness ? 0.58 : 0.3;
     openness += (target - openness) * response;
-    if (controller.mode === "frames") {
-      // Neha and Vikram are full-frame poses extracted directly from the
-      // supplied Lotties. Swapping the complete portrait guarantees that the
-      // face, eyes and lips always stay in their authored positions.
-      const nextFrame = openness < 0.055
-        ? -1
-        : Math.min(Math.floor(openness * controller.talkingFrames.length), controller.talkingFrames.length - 1);
-      if (nextFrame !== controller.frameIndex) {
-        controller.frameIndex = nextFrame;
-        showPanelFrame(controller, nextFrame < 0 ? controller.idleFrame : controller.talkingFrames[nextFrame]);
-      }
-    } else {
-      controller.mouthImage.style.opacity = openness < 0.045 ? "0" : String(0.2 + openness * 0.8);
+    const nextFrame = openness < 0.055
+      ? -1
+      : Math.min(Math.floor(openness * controller.talkingFrames.length), controller.talkingFrames.length - 1);
+    if (nextFrame !== controller.frameIndex) {
+      controller.frameIndex = nextFrame;
+      showPanelFrame(controller, nextFrame < 0 ? controller.idleFrame : controller.talkingFrames[nextFrame]);
     }
     const animationFrame = window.requestAnimationFrame(animate);
     panelLipTimers.set(controller, animationFrame);
@@ -510,19 +462,13 @@ function stopPanelLipLoop(controller) {
     window.cancelAnimationFrame(animationFrame);
     panelLipTimers.delete(controller);
   }
-  if (controller.mode === "frames") {
-    controller.frameIndex = -1;
-    showPanelFrame(controller, controller.idleFrame);
-  } else {
-    controller.mouthImage.classList.remove("speaking-frame");
-    controller.mouthImage.style.removeProperty("opacity");
-    controller.mouthImage.style.removeProperty("--lip-scale");
-  }
+  controller.frameIndex = -1;
+  showPanelFrame(controller, controller.idleFrame);
   startPanelBlinkLoop(controller);
 }
 
 function startPanelBlinkLoop(controller) {
-  if ((!controller.eyeImage && !(controller.idleFrame && controller.blinkFrame)) || panelBlinkTimers.has(controller)) return;
+  if (!(controller.idleFrame && controller.blinkFrame) || panelBlinkTimers.has(controller)) return;
   const state = { waitTimer: null, closeTimer: null };
   panelBlinkTimers.set(controller, state);
   const schedule = () => {
@@ -530,11 +476,9 @@ function startPanelBlinkLoop(controller) {
     // so speech can no longer trigger repeated or held-eye blinks.
     const delay = 6500 + Math.random() * 5000;
     state.waitTimer = window.setTimeout(() => {
-      if (controller.mode === "frames") showPanelFrame(controller, controller.blinkFrame);
-      else controller.eyeImage.classList.add("blink-frame");
+      showPanelFrame(controller, controller.blinkFrame);
       state.closeTimer = window.setTimeout(() => {
-        if (controller.mode === "frames") showPanelFrame(controller, controller.idleFrame);
-        else controller.eyeImage.classList.remove("blink-frame");
+        showPanelFrame(controller, controller.idleFrame);
         if (panelBlinkTimers.get(controller) === state) schedule();
       }, 105);
     }, delay);
@@ -549,8 +493,7 @@ function stopPanelBlinkLoop(controller) {
     if (state.closeTimer !== null) window.clearTimeout(state.closeTimer);
     panelBlinkTimers.delete(controller);
   }
-  if (controller.mode === "frames") showPanelFrame(controller, controller.idleFrame);
-  else controller.eyeImage?.classList.remove("blink-frame");
+  showPanelFrame(controller, controller.idleFrame);
 }
 
 async function requestInterviewFullscreen() {
