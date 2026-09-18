@@ -30,6 +30,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/coach/session",
+      "destination": "/index.html"
+    },
+    {
       "source": "/academics",
       "destination": "/index.html"
     }

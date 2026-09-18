@@ -35,6 +35,7 @@ import { Academics } from "./academics";
 import { Coach } from "./coach";
 import { Practice } from "./practice";
 import { PhotoVerification } from "./PhotoVerification";
+import { CoachSession } from "./coach-session";
 
 type PendingPhotoLogin = {
   email: string;
@@ -443,6 +444,7 @@ export function App() {
             <Route path="/growth" element={<Growth />} />
             <Route path="/academics" element={<Academics />} />
             <Route path="/coach" element={<Coach />} />
+            <Route path="/coach/session" element={<CoachSessionRoute />} />
             <Route path="/profile" element={<Profile />} />
             <Route
               path="*"
@@ -464,4 +466,9 @@ export function App() {
       </div>
     </div>
   );
+}
+
+function CoachSessionRoute() {
+  const planId = new URLSearchParams(window.location.search).get("plan");
+  return planId ? <CoachSession planId={planId} /> : <Navigate to="/coach" replace />;
 }
