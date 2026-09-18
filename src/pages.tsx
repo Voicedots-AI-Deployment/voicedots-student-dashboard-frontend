@@ -121,7 +121,6 @@ export function Overview() {
   const { identity } = useAuth();
   const resource = useResource<Dashboard>("/api/student/dashboard");
   const data = resource.data;
-  const latestDrive = data?.drives?.[0];
   return (
     <>
       <PageHeading
@@ -132,7 +131,6 @@ export function Overview() {
       </PageHeading>
       <div className="career-actions"><Link className="button secondary" to="/profile">{identity!.student.current_resume_submission_id ? "Manage your saved resume" : "Set up your resume"}</Link><Link className="button secondary" to="/coach">Learn with your AI coach</Link></div>
       <AcademicOverview />
-      {latestDrive && <section className="panel latest-drive-card"><div><span className="eyebrow">LATEST PLACEMENT DRIVE</span><h2>{latestDrive.role_title}</h2><p>{latestDrive.company_name}{latestDrive.location ? ` · ${latestDrive.location}` : ""}</p><span className="pill">{humanize(latestDrive.status)}</span></div><div className="career-actions"><Link className="button secondary" to={`/coach?drive=${encodeURIComponent(latestDrive.id)}`}>AI Coach <ArrowRight size={16}/></Link><Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Start AI Interview <ArrowRight size={16}/></Link></div></section>}
       <section className="welcome-banner">
         <div>
           <span className="pill">

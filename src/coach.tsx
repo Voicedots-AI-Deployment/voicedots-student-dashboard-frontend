@@ -1,10 +1,11 @@
 import { useEffect, useState } from 'react';
 import { Bot, CalendarDays, CheckCircle2, MessageCircle, Mic, Sparkles, Target } from 'lucide-react';
-import { Link, useNavigate, useSearchParams } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api,json,Drive,DriveContext } from './api';
 import { useAuth } from './auth';
 import { ErrorMessage,PageHeading,useResource } from './ui';
 import { download } from './career-profile';
+import { CoachVoice } from './coach-voice';
 type Topic={topic:string;why:string;outcome:string;priority:string};
 type Plan={id:string;drive_id?:string;role_title:string;company_name:string;target_date:string;plan:{summary:string;goal:string;priority_topics:Topic[];daily_roadmap:{day:number;title:string;focus:string;activities:string[];success_check:string}[];discussion_starters:string[]};messages?:{id:string;role:string;content:string}[]};
 export function Coach(){
@@ -22,14 +23,13 @@ export function Coach(){
  {selected&&<PlanDetail key={selected} id={selected} onDelete={()=>{setSelected('');plans.reload()}}/>}<p><Link to="/profile">Update your projects and tailor your resume</Link> · <Link to="/practice">Put your learning into interview practice</Link></p></>
 }
 function PlanDetail({id,onDelete}:{id:string;onDelete:()=>void}){
- const navigate=useNavigate();
  const resource=useResource<Plan>(`/api/student/coach/plans/${id}`),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[error,setError]=useState('');const p=resource.data;
  async function send(text:string){if(!text.trim()||busy)return;setBusy(true);setError('');try{await api(`/api/student/coach/plans/${id}/messages`,{...json({message:text}),timeoutMs:180000});setMessage('');resource.reload()}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
  return <section className="coach-room">{(error||resource.error)&&<ErrorMessage message={error||resource.error} retry={resource.reload}/>} {p&&<><header className="panel coach-room-header"><div className="mini-coach large"><Bot size={28}/></div><div><span className="eyebrow">ACTIVE COACHING PLAN</span><h2>{p.role_title}</h2><p>{p.company_name} · Target {p.target_date?.slice(0,10)}</p></div><div className="career-actions"><button className="button secondary" onClick={()=>void download(`/api/student/coach/plans/${id}/pdf`,'Preparation-plan.pdf').catch(e=>setError(e.message))}>Download plan</button><button className="text-button" disabled={busy} onClick={()=>{if(confirm('Delete this preparation plan and its conversation?')){setBusy(true);void api(`/api/student/coach/plans/${id}`,{method:'DELETE'}).then(onDelete).catch(e=>setError(e.message)).finally(()=>setBusy(false))}}}>Delete</button></div></header>
  <section className="panel"><h3>{p.plan.goal}</h3><p>{p.plan.summary}</p><div className="coach-topic-grid">{p.plan.priority_topics.map((t,i)=><article className="coach-topic" key={i}><span className={`priority priority-${t.priority}`}>{t.priority}</span><h3>{t.topic}</h3><p>{t.why}</p><div><CheckCircle2 size={16}/><span>{t.outcome}</span></div></article>)}</div></section>
  <section className="panel"><div className="section-heading"><div><span className="eyebrow">STEP BY STEP</span><h3>Your roadmap</h3></div></div><div className="roadmap-timeline">{p.plan.daily_roadmap.map((d,i)=><details key={i}><summary><span>{d.day}</span><div><strong>Day {d.day}: {d.title}</strong><small>{d.focus}</small></div></summary><ul>{d.activities.map((a,j)=><li key={j}>{a}</li>)}</ul><p><CheckCircle2 size={15}/> {d.success_check}</p></details>)}</div></section>
  </>}
- <section className="coach-voice-launch"><div><span className="eyebrow">LIVE AI COACH</span><h3>Talk through the role with Neha</h3><p>Connect for a private voice preparation session. Your completed discussion is saved to this coaching room.</p></div><button className="button primary" onClick={()=>navigate(`/coach/session?plan=${encodeURIComponent(id)}`)}><Mic size={17}/> Connect · 10 mins</button></section>
+ <CoachVoice planId={id} onComplete={resource.reload}/>
  <section className="panel coach-chat"><div className="section-heading"><div><span className="eyebrow">CONTINUE THE LESSON</span><h3>Chat with your coach</h3></div><MessageCircle size={23}/></div><div className="coach-messages" aria-label="Saved coach conversation">{p?.messages?.map((m,i)=><article key={m.id||i} className={`coach-message ${m.role==='student'?'student':''}`}><span className="message-avatar">{m.role==='student'?'You':<Bot size={17}/>}</span><div><strong>{m.role==='student'?'You':'AI Coach'}</strong><p>{m.content}</p></div></article>)}</div>
  <div className="coach-starters">{p?.plan.discussion_starters?.map((s,i)=><button className="text-button" disabled={busy} key={i} onClick={()=>void send(s)}>{s}</button>)}</div><form className="coach-compose" onSubmit={e=>{e.preventDefault();void send(message)}}><textarea aria-label="Ask your coach" required maxLength={4000} value={message} onChange={e=>setMessage(e.target.value)} placeholder="Ask for an explanation, example, or what to study next…"/><button className="button primary" disabled={busy||!p}>{busy?'Coach is thinking…':'Send message'}</button></form></section>
  </section>
