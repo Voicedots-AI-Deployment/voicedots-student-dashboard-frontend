@@ -236,7 +236,12 @@ export function Practice() {
     ]);
     let saved: { fingerprint?: string; key?: string } = {};
     try {
-      saved = JSON.parse(sessionStorage.getItem(`${key}_upload`) || "{}");
+      // A reopened placement drive is a new attempt. Never reuse the
+      // previous attempt's idempotency key, even when the resume and JD are
+      // unchanged; doing so replays the old preparation operation.
+      if (!(driveId && context?.can_start_next_attempt)) {
+        saved = JSON.parse(sessionStorage.getItem(`${key}_upload`) || "{}");
+      }
     } catch {
       /* Generate a fresh key. */
     }
