@@ -9,6 +9,7 @@ import {
   BookOpen,
   BriefcaseBusiness,
   ChartNoAxesCombined,
+  Compass,
   FileText,
   House,
   LogOut,
@@ -36,6 +37,7 @@ import { Coach } from "./coach";
 import { Practice } from "./practice";
 import { PhotoVerification } from "./PhotoVerification";
 import { CoachSession } from "./coach-session";
+import { CareerCoach } from "./career-coach";
 
 type PendingPhotoLogin = {
   email: string;
@@ -260,6 +262,7 @@ const nav = [
   { to: "/", label: "Overview", icon: House },
   { to: "/academics", label: "Marks and attendance", icon: BookOpen },
   { to: "/coach", label: "AI coach", icon: BookOpen },
+  { to: "/career", label: "Career coach", icon: Compass },
   { to: "/practice", label: "Interview practice", icon: Mic },
   { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
   { to: "/reports", label: "My reports", icon: FileText },
@@ -444,6 +447,7 @@ export function App() {
             <Route path="/growth" element={<Growth />} />
             <Route path="/academics" element={<Academics />} />
             <Route path="/coach" element={<Coach />} />
+            <Route path="/career" element={<CareerCoach />} />
             <Route path="/coach/session" element={<CoachSessionRoute />} />
             <Route path="/profile" element={<Profile />} />
             <Route
