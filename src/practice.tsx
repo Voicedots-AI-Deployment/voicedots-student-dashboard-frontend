@@ -223,6 +223,7 @@ export function Practice() {
     if (!driveId) body.set("difficulty_tier", difficulty);
     body.set("job_description", jd);
     if (driveId) body.set("drive_id", driveId);
+    if (coachCycleId) body.set("coach_cycle_id", coachCycleId);
     const fingerprint = JSON.stringify([
       file.name,
       file.size,
@@ -255,12 +256,20 @@ export function Practice() {
         await api("/api/student/resume-library", { method: "POST", body: savedBody });
         savedFile.current = file; library.reload();
       }
-      const result = await api<Preparation>("/api/student/interview/start", {
+      const startRequest = () => api<Preparation>("/api/student/interview/start", {
         method: "POST",
         body,
         headers: { "Idempotency-Key": idempotencyKey },
         signal: controller.signal,
       });
+      let result: Preparation;
+      try {
+        result = await startRequest();
+      } catch (firstError) {
+        if (!(firstError instanceof ApiError) || firstError.status < 500) throw firstError;
+        await new Promise((resolve) => setTimeout(resolve, 1200));
+        result = await startRequest();
+      }
       if (alive.current) remember(result);
     } catch (e) {
       if (alive.current)
