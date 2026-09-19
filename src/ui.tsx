@@ -63,9 +63,11 @@ export const humanize = (s?: string) =>
   (s || "").replace(/_/g, " ").replace(/^./, (c) => c.toUpperCase());
 export const date = (s?: string) =>
   s && !Number.isNaN(Date.parse(s))
-    ? new Intl.DateTimeFormat("en-IN", { dateStyle: "medium" }).format(
-        new Date(s),
-      )
+    ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "2-digit", year: "numeric", timeZone: "Asia/Kolkata" }).format(new Date(s))
+    : "To be announced";
+export const dateTime = (s?: string) =>
+  s && !Number.isNaN(Date.parse(s))
+    ? new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true, timeZone: "Asia/Kolkata" }).format(new Date(s))
     : "To be announced";
 export const score = (n?: number | null) =>
   typeof n === "number" && Number.isFinite(n)
