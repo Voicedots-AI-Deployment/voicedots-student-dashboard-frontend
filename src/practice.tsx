@@ -107,6 +107,15 @@ export function Practice() {
     )
       .then((data) => {
         if (controller.signal.aborted) return;
+        const nextAttemptAvailable = Boolean(data.can_start_next_attempt) ||
+          (data.action === "completed" && Number(data.attempt_number) < Number(data.max_attempts));
+        if (nextAttemptAvailable && preparation) {
+          // A drive-scoped preparation is tied to one placement attempt. Do
+          // not reopen the previous attempt's ready session for a retake.
+          sessionStorage.removeItem(key);
+          sessionStorage.removeItem(`${key}_upload`);
+          setPreparation(null);
+        }
         setContext(data);
         setRole(data.role_title);
         setJd(data.job_description);
