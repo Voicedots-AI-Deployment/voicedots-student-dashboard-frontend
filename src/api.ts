@@ -188,8 +188,10 @@ export async function request(
   }
   if (!response.ok) {
     const body = await response.json().catch(() => null);
-    if (response.status === 401 && !path.includes("/auth/"))
+    if (response.status === 401 && !path.includes("/auth/")) {
       window.dispatchEvent(new Event("student-session-expired"));
+      throw new ApiError("Your student session has expired. Please sign in again.", response.status, body);
+    }
     throw new ApiError(errorMessage(body), response.status, body);
   }
   return response;
