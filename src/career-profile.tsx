@@ -19,10 +19,10 @@ export function CareerProfile(){
  const saveProfile=()=>api('/api/student/portfolio',{...json(profile),method:'PUT'});
  return <div className="career-tools">
  {error&&<ErrorMessage message={error}/>} {message&&<p role="status">{message}</p>}
- <section className="panel"><h2>Your saved resumes</h2><p className="muted">Upload once. Choose a main resume to reuse in interview practice.</p>
+ <section className="panel"><h2>Your saved resumes</h2><p className="muted">Upload once. Choose a Main Resume to reuse in interview practice.</p>
  {library.error&&<ErrorMessage message={library.error} retry={library.reload}/>}
  <label>Save a PDF or DOCX (up to 5 MB)<input type="file" accept=".pdf,.docx" disabled={busy} onChange={e=>{const file=e.target.files?.[0];e.target.value='';if(!file)return;if(!/\.(pdf|docx)$/i.test(file.name)||!file.size||file.size>5*1024*1024){setError('Choose a non-empty PDF or DOCX up to 5 MB.');return}void run(async()=>{const body=new FormData();body.set('resume',file);await api('/api/student/resume-library',{method:'POST',body});library.reload()},'Resume saved.')}}/></label>
- {library.data?.resumes.map(resume=><div className="record" key={resume.resume_id}><div className="record-main"><strong>{resume.label||resume.original_filename}</strong><p>{resume.is_primary?'Main resume':'Saved resume'}</p></div><div className="career-actions">
+ {library.data?.resumes.map(resume=><div className="record" key={resume.resume_id}><div className="record-main"><strong>{resume.label||resume.original_filename}</strong><p>{resume.is_primary?'Main Resume':'Saved Resume'}</p></div><div className="career-actions">
  <button className="button secondary" disabled={busy} onClick={()=>void run(()=>download(`/api/student/resume-library/${resume.resume_id}/file`,resume.original_filename),'Download ready.')}>Download</button>
  {!resume.is_primary&&<button className="button secondary" disabled={busy} onClick={()=>void run(async()=>{await api(`/api/student/resume-library/${resume.resume_id}/primary`,json({}));library.reload();await refresh()},'Main resume updated.')}>Set as main</button>}
  <button className="text-button" disabled={busy} onClick={()=>{if(confirm('Delete this saved resume? Previous interview reports will remain available.'))void run(async()=>{await api(`/api/student/resume-library/${resume.resume_id}`,{method:'DELETE'});library.reload();await refresh()},'Resume deleted.')}}>Delete</button></div></div>)}

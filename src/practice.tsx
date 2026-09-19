@@ -43,7 +43,8 @@ export function Practice() {
   const { identity } = useAuth();
   const [params] = useSearchParams();
   const driveId = params.get("drive");
-  const key = `vd_preparation_${identity!.student.id}_${driveId || "practice"}`;
+  const coachCycleId = params.get("coach_cycle");
+  const key = `vd_preparation_${identity!.student.id}_${driveId || coachCycleId || "practice"}`;
   const [file, setFile] = useState<File | null>(null);
   const [role, setRole] = useState(identity!.student.target_role || "");
   const [duration, setDuration] = useState("30");
@@ -55,7 +56,7 @@ export function Practice() {
   });
   const [jd, setJd] = useState("");
   const [context, setContext] = useState<DriveContext | null>(null);
-  const [contextLoading, setContextLoading] = useState(!!driveId);
+  const [contextLoading, setContextLoading] = useState(!!driveId||!!coachCycleId);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
@@ -95,7 +96,7 @@ export function Practice() {
   useEffect(() => {
     if (!driveId) {
       setContext(null);
-      setContextLoading(false);
+      if(!coachCycleId)setContextLoading(false);
       return;
     }
     const controller = new AbortController();
@@ -118,7 +119,17 @@ export function Practice() {
         if (!controller.signal.aborted) setContextLoading(false);
       });
     return () => controller.abort();
-  }, [driveId]);
+  }, [driveId,coachCycleId]);
+
+  useEffect(()=>{
+    if(!coachCycleId)return;
+    const controller=new AbortController();setContextLoading(true);
+    api<{role_title:string;job_description:string;duration_minutes:number;difficulty:"beginner"|"intermediate"|"advanced";focus_skills:{focus?:string}[]}>(`/api/student/coach/training-cycles/${encodeURIComponent(coachCycleId)}/practice-context`,{signal:controller.signal})
+      .then(data=>{if(controller.signal.aborted)return;setRole(data.role_title);setJd(data.job_description);setDuration(String(data.duration_minutes||30));setDifficulty(data.difficulty||'intermediate');setNotice(`Focused practice: ${data.focus_skills.map(item=>item.focus).filter(Boolean).join(', ')||'your Coach session priorities'}.`)})
+      .catch(e=>{if(!controller.signal.aborted)setError(e.message)})
+      .finally(()=>{if(!controller.signal.aborted)setContextLoading(false)});
+    return()=>controller.abort();
+  },[coachCycleId]);
 
   function remember(result: Preparation) {
     sessionStorage.setItem(key, JSON.stringify(result));
@@ -574,7 +585,7 @@ export function Practice() {
                   onChange={(e) => setRole(e.target.value)}
                   maxLength={120}
                   required
-                  readOnly={!!driveId}
+                  readOnly={!!driveId||!!coachCycleId}
                   placeholder="e.g. Software engineer"
                 />
               </label>
@@ -583,7 +594,7 @@ export function Practice() {
                 <select
                   value={duration}
                   onChange={(e) => setDuration(e.target.value)}
-                  disabled={!!driveId}
+                  disabled={!!driveId||!!coachCycleId}
                 >
                   {[
                     ...new Set([
@@ -600,7 +611,7 @@ export function Practice() {
               </label>
               {!driveId && <label>
                 Interview difficulty
-                <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
+                <select disabled={!!coachCycleId} value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
                   <option value="beginner">Beginner</option>
                   <option value="intermediate">Intermediate</option>
                   <option value="advanced">Advanced</option>
@@ -610,13 +621,13 @@ export function Practice() {
               <label>
                 Job description{" "}
                 <span className="optional">
-                  {driveId ? "Set by your placement cell" : "Optional"}
+                  {driveId ? "Set by your placement cell" : coachCycleId ? "Set by your coaching plan" : "Optional"}
                 </span>
                 <textarea
                   value={jd}
                   onChange={(e) => setJd(e.target.value)}
                   maxLength={8000}
-                  readOnly={!!driveId}
+                  readOnly={!!driveId||!!coachCycleId}
                   rows={5}
                   placeholder="Paste a job description for more focused practice…"
                 />
@@ -712,7 +723,7 @@ export function Practice() {
                     <strong>{resume.label || resume.original_filename}</strong>
                     <span>
                       {date(resume.uploaded_at)}{" "}
-                      {resume.is_primary && "· Main resume"}
+                      {resume.is_primary && "· Main Resume"}
                     </span>
                   </div>
                   {!resume.is_primary && (
