@@ -19,7 +19,6 @@ import {
   ShieldCheck,
   Sun,
   UserRound,
-  X,
 } from "lucide-react";
 import {
   NavLink,
@@ -336,6 +335,10 @@ export function App() {
       setLoggingOut(false);
     }
   }
+  function toggleSidebar() {
+    if (window.matchMedia("(max-width: 760px)").matches) setMobileOpen((value) => !value);
+    else setSidebarCollapsed((value) => !value);
+  }
   return (
     <div className={`dashboard-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#main-content">
@@ -351,13 +354,6 @@ export function App() {
       <aside ref={sidebarRef} className={`sidebar ${mobileOpen ? "open" : ""}`} aria-label="Student workspace" role={mobileOpen ? "dialog" : undefined} aria-modal={mobileOpen || undefined}>
         <div className="sidebar-brand">
           <Brand />
-          <button
-            className="icon-button sidebar-close"
-            aria-label="Close navigation"
-            onClick={() => { setMobileOpen(false); setSidebarCollapsed(true); }}
-          >
-            <X size={20} />
-          </button>
         </div>
         <div className="sidebar-content">
         <span className="portal-label">STUDENT WORKSPACE</span>
@@ -407,9 +403,9 @@ export function App() {
           <div>
             <button
               className="icon-button"
-              aria-label="Open navigation"
-              aria-expanded={mobileOpen}
-              onClick={() => { setMobileOpen(true); setSidebarCollapsed(false); }}
+              aria-label={mobileOpen || !sidebarCollapsed ? "Close navigation" : "Open navigation"}
+              aria-expanded={mobileOpen || !sidebarCollapsed}
+              onClick={toggleSidebar}
             >
               <Menu size={22} />
             </button>
