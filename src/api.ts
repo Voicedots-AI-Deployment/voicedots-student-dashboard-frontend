@@ -54,6 +54,8 @@ export type Drive = {
   role_title: string;
   location?: string;
   drive_date?: string;
+  window_start_at?: string;
+  window_end_at?: string;
   application_deadline?: string;
   status: string;
 };
@@ -75,6 +77,7 @@ export type DriveContext = {
   interview_window: string;
   interview_window_start_at?: string;
   interview_window_end_at?: string;
+  location?: string;
 };
 export type Readiness = {
   overall_score: number | null;

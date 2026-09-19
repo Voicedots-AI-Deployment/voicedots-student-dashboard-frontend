@@ -32,6 +32,7 @@ import {
 import { useAuth } from "./auth";
 import {
   date,
+  dateTime,
   Dialog,
   Empty,
   ErrorMessage,
@@ -368,7 +369,7 @@ export function Placements() {
                 </p>
                 <p>
                   <CalendarDays size={15} />
-                  {date(drive.drive_date)}
+                  {drive.window_start_at ? dateTime(drive.window_start_at) : date(drive.drive_date)}
                 </p>
                 <button
                   className="button secondary"
@@ -415,6 +416,11 @@ export function Placements() {
                   : ""}
                 Your placement cell sets the interview requirements.
               </p>
+              <div className="opportunity-details">
+                <div><span>Interview window</span><strong>{context.interview_window_start_at ? `${dateTime(context.interview_window_start_at)} – ${context.interview_window_end_at ? dateTime(context.interview_window_end_at) : "To be announced"}` : humanize(context.interview_window)}</strong></div>
+                <div><span>Location</span><strong>{context.location || selected.location || "To be announced"}</strong></div>
+                <div><span>Attempts</span><strong>{context.attempt_number} of {context.max_attempts}</strong></div>
+              </div>
               {context.job_description && (
                 <details className="job-description"><summary>View role description</summary><p>{context.job_description}</p></details>
               )}
