@@ -268,7 +268,14 @@ export function Practice() {
       } catch (firstError) {
         if (!(firstError instanceof ApiError) || firstError.status < 500) throw firstError;
         await new Promise((resolve) => setTimeout(resolve, 1200));
-        result = await startRequest();
+        // A failed preparation can leave a transient operation record behind;
+        // retry with a fresh idempotency key so the next attempt can claim a
+        // clean preparation operation instead of replaying the failed one.
+        const retryKey = crypto.randomUUID();
+        sessionStorage.setItem(`${key}_upload`, JSON.stringify({ fingerprint, key: retryKey }));
+        result = await api<Preparation>("/api/student/interview/start", {
+          method: "POST", body, headers: { "Idempotency-Key": retryKey }, signal: controller.signal,
+        });
       }
       if (alive.current) remember(result);
     } catch (e) {
