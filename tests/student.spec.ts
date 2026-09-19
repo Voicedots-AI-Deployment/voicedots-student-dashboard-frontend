@@ -49,6 +49,8 @@ async function mockStudent(page: Page, options: { signedIn?: boolean } = {}) {
       "/api/student/reports": { reports: [] },
       "/api/student/resume-library": { resumes: [] },
       "/api/student/practice/resumable": { attempts: [] },
+      "/api/student/coach/latest-recommendation": { available: false, weak_skills: [], message: "Complete a placement interview to receive focused coaching recommendations." },
+      "/api/student/coach/training-cycles": { cycles: [] },
     };
     return route.fulfill({
       status: path in responses ? 200 : 404,
@@ -582,6 +584,7 @@ test('coach creates a saved roadmap and continues the conversation',async({page}
 
 test('coach voice acknowledges played audio and releases the microphone on navigation',async({page})=>{
  await mockStudent(page);const plan={id:'voice-1',role_title:'Engineer',target_date:'2027-01-01',plan:{summary:'Learn APIs',goal:'Understand requests',priority_topics:[],daily_roadmap:[],discussion_starters:[]},messages:[]};
+ await page.route('**/api/student/coach/training-cycles',r=>r.fulfill({json:{cycles:[{id:'cycle-1',plan_id:'voice-1',focus_skills:[],call_scheduled_for:'2026-09-20T10:00:00Z',call_duration_minutes:10,practice_status:'pending'}]}}));
  await page.route('**/api/student/coach/plans**',r=>r.fulfill({json:new URL(r.request().url()).pathname.endsWith('/plans')?{plans:[plan]}:plan}));
  await page.addInitScript(()=>{Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);track.stop=()=>{(window as any).micReleased=true;stop();void ctx.close()};return destination.stream}})});
  let acknowledged=false,ended=false;
