@@ -260,11 +260,11 @@ function Login() {
 
 const nav = [
   { to: "/", label: "Overview", icon: House },
-  { to: "/academics", label: "Marks and attendance", icon: BookOpen },
+  { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
+  { to: "/practice", label: "Interview practice", icon: Mic },
   { to: "/coach", label: "AI coach", icon: BookOpen },
   { to: "/career", label: "Career coach", icon: Compass },
-  { to: "/practice", label: "Interview practice", icon: Mic },
-  { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
+  { to: "/academics", label: "Marks and attendance", icon: BookOpen },
   { to: "/reports", label: "My reports", icon: FileText },
   { to: "/growth", label: "My growth", icon: ChartNoAxesCombined },
   { to: "/profile", label: "My profile", icon: UserRound },
@@ -274,6 +274,7 @@ export function App() {
   const auth = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const [dark, setDark] = useState(
     () => localStorage.getItem("theme") === "dark",
@@ -336,7 +337,7 @@ export function App() {
     }
   }
   return (
-    <div className="dashboard-shell">
+    <div className={`dashboard-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#main-content">
         Skip to content
       </a>
@@ -351,9 +352,9 @@ export function App() {
         <div className="sidebar-brand">
           <Brand />
           <button
-            className="icon-button mobile-only"
+            className="icon-button sidebar-close"
             aria-label="Close navigation"
-            onClick={() => setMobileOpen(false)}
+            onClick={() => { setMobileOpen(false); setSidebarCollapsed(true); }}
           >
             <X size={20} />
           </button>
@@ -405,10 +406,10 @@ export function App() {
         <header className="dashboard-topbar">
           <div>
             <button
-              className="icon-button mobile-only"
+              className="icon-button"
               aria-label="Open navigation"
               aria-expanded={mobileOpen}
-              onClick={() => setMobileOpen(true)}
+              onClick={() => { setMobileOpen(true); setSidebarCollapsed(false); }}
             >
               <Menu size={22} />
             </button>
