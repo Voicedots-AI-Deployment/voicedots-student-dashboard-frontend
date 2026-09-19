@@ -362,6 +362,12 @@ export function Practice() {
       setResumeBusy(false);
     }
   }
+  async function deleteResume(id: string) {
+    if (!window.confirm("Delete this saved resume? Completed interview records will remain available.")) return;
+    setError(""); setResumeBusy(true);
+    try { await api(`/api/student/resume-library/${encodeURIComponent(id)}`, { method: "DELETE" }); library.reload(); setNotice("Resume deleted."); }
+    catch (e) { setError((e as Error).message); } finally { setResumeBusy(false); }
+  }
   const pending = preparation?.status === "in_progress";
   const needsClarification = preparation?.status === "needs_clarification";
   const ready =
@@ -741,6 +747,9 @@ export function Practice() {
                     onClick={() => void useResume(resume)}
                   >
                     Use resume
+                  </button>
+                  <button className="text-button" disabled={resumeBusy || !!preparation || busy} onClick={() => void deleteResume(resume.resume_id)}>
+                    Delete
                   </button>
                 </div>
               ))}
