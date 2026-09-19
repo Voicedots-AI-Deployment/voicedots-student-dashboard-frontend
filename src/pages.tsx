@@ -434,7 +434,7 @@ export function Placements() {
                   Resume interview
                 </button>
               )}
-              {["start", "retry_preparation"].includes(context.action) &&
+              {(["start", "retry_preparation"].includes(context.action) || context.can_start_next_attempt || (context.action === "completed" && context.attempt_number < context.max_attempts)) &&
                 context.interview_window === "open" && (
                   <button
                     className="button primary"
@@ -450,7 +450,7 @@ export function Placements() {
               {context.attempt_number > 1 && <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Prepare with your AI Coach</Link>}
               {!["start", "resume", "retry_preparation"].includes(
                 context.action,
-              ) && (
+              ) && !(context.action === "completed" && context.attempt_number < context.max_attempts) && (
                 <p>
                   Your assignment is {humanize(context.action).toLowerCase()}.
                   Refresh to check for updates.

@@ -67,6 +67,7 @@ export type DriveContext = {
   attempt_number: number;
   max_attempts: number;
   action: string;
+  can_start_next_attempt?: boolean;
   publication_status: string;
   decision: string;
   submission_id?: string;
