@@ -434,8 +434,7 @@ export function Placements() {
                   Resume interview
                 </button>
               )}
-              {(["start", "retry_preparation"].includes(context.action) || context.can_start_next_attempt || (context.action === "completed" && context.attempt_number < context.max_attempts)) &&
-                context.interview_window === "open" && (
+              {(["start", "retry_preparation"].includes(context.action) || context.can_start_next_attempt || (context.action === "completed" && Number(context.attempt_number) < Number(context.max_attempts))) && (
                   <button
                     className="button primary"
                     onClick={() =>
