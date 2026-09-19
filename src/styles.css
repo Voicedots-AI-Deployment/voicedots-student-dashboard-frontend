@@ -1715,6 +1715,7 @@ dialog.modal::backdrop {
 .coach-message p,.voice-caption { white-space:pre-wrap; overflow-wrap:anywhere; }
 .dark .coach-message { background:#221d32; }
 .coach-hero{display:grid;grid-template-columns:180px 1fr;align-items:center;gap:32px;padding:32px;background:linear-gradient(135deg,#f4efff,#fff 58%,#eff8ff)}
+.coach-next-drives{margin-top:20px}.coach-drive-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:12px;margin-top:18px}.coach-drive-card{display:grid;gap:6px;padding:16px;border:1px solid var(--border,#e7e1f2);border-radius:16px;text-align:left;background:var(--panel,#fff);color:inherit;transition:.18s ease}.coach-drive-card:hover,.coach-drive-card.selected{border-color:#7656d8;box-shadow:0 8px 24px #7656d81c;transform:translateY(-1px)}.coach-drive-card span{font-size:14px;color:var(--muted,#716b7d)}.coach-drive-card small{font-size:12px;color:var(--muted,#716b7d)}
 .dark .coach-hero{background:linear-gradient(135deg,#271f3b,#17131f 58%,#14202d)}
 .coach-avatar{position:relative;display:grid;place-items:center;width:150px;height:150px;margin:auto}
 .coach-avatar span{position:relative;z-index:3;display:grid;place-items:center;width:94px;height:94px;border-radius:32px;color:#fff;background:linear-gradient(145deg,#7656d8,#3d8fe8);box-shadow:0 18px 42px rgba(79,70,229,.28)}
