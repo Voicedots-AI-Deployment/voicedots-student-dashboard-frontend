@@ -1718,6 +1718,7 @@ dialog.modal::backdrop {
 .dark .coach-hero{background:linear-gradient(135deg,#271f3b,#17131f 58%,#14202d)}
 .coach-avatar{position:relative;display:grid;place-items:center;width:150px;height:150px;margin:auto}
 .coach-avatar span{position:relative;z-index:3;display:grid;place-items:center;width:94px;height:94px;border-radius:32px;color:#fff;background:linear-gradient(145deg,#7656d8,#3d8fe8);box-shadow:0 18px 42px rgba(79,70,229,.28)}
+.coach-avatar-photo img{position:relative;z-index:2;width:120px;height:120px;object-fit:contain;border-radius:36px;filter:drop-shadow(0 18px 26px rgba(79,70,229,.25))}.coach-avatar-photo span{display:none}
 .coach-avatar i{position:absolute;border:1px solid rgba(99,102,241,.22);border-radius:50%;animation:coach-pulse 3s ease-out infinite}
 .coach-avatar i:nth-of-type(1){inset:16px}.coach-avatar i:nth-of-type(2){inset:4px;animation-delay:1s}.coach-avatar i:nth-of-type(3){inset:-8px;animation-delay:2s}
 @keyframes coach-pulse{0%{transform:scale(.8);opacity:.8}80%,100%{transform:scale(1.08);opacity:0}}
