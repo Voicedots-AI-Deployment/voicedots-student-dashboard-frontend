@@ -292,6 +292,8 @@ export function Overview() {
   );
 }
 
+const decisionLabel = (value?: string) => { const key = (value || "undecided").toLowerCase().replace(/[-\s]+/g, "_"); return key.includes("shortlist") ? "Shortlisted" : key.includes("reject") ? "Rejected" : key.includes("hold") ? "On Hold" : "Undecided"; };
+
 const decisionTone = (value?: string) => {
   const key = (value || "undecided").toLowerCase().replace(/[-\s]+/g, "_");
   if (key.includes("shortlist")) return "shortlisted";
@@ -431,7 +433,7 @@ export function Placements() {
       {selected && (
         <Dialog labelledBy="drive-title" close={() => setSelected(null)}>
           <span className="eyebrow">{selected.company_name}</span>
-          <h2 id="drive-title">{selected.role_title}</h2>{context?.decision && <div className={`placement-decision placement-decision-${decisionTone(context.decision)}`}><span>Placement decision</span><strong>{humanize(context.decision)}</strong></div>}
+          <h2 id="drive-title">{selected.role_title}</h2>{context?.decision && <div className={`placement-decision placement-decision-${decisionTone(context.decision)}`}><span>Placement decision</span><strong>{decisionLabel(context.decision)}</strong></div>}
           {(selected.company_description || context?.company_description) && <section className="opportunity-company"><div className="company-avatar">{selected.company_name.slice(0,2).toUpperCase()}</div><div><h3>About {selected.company_name}</h3><p>{context?.company_description || selected.company_description}</p></div></section>}
           {busy && <p role="status">Checking your interview assignment…</p>}
           {error && <ErrorMessage message={error} />}
