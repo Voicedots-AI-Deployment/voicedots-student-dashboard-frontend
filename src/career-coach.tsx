@@ -1,35 +1,13 @@
 import { useEffect, useState, type FormEvent } from "react";
 import { Compass, Target } from "lucide-react";
-import { api, json, Resume } from "./api";
+import { api, json, type Resume } from "./api";
 import { ErrorMessage, PageHeading, useResource } from "./ui";
-
-type CareerResult = { summary?: string; recommended_roles?: { role?: string; why?: string; missing_skills?: string[] }[]; what_to_learn_next?: string[]; career_gap_analysis?: string; alternative_careers?: string[] };
-
-export function CareerCoach() {
-  const resumes = useResource<{ resumes: Resume[] }>("/api/student/resume-library");
-  const [resume, setResume] = useState("");
-  const [industry, setIndustry] = useState("");
-  const [goals, setGoals] = useState("");
-  const [result, setResult] = useState<CareerResult | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-  useEffect(() => { const primary = resumes.data?.resumes.find(item => item.is_primary && item.submission_id) || resumes.data?.resumes.find(item => item.submission_id); if (primary?.submission_id) setResume(primary.submission_id); }, [resumes.data]);
-  async function submit(e: FormEvent) {
-    e.preventDefault(); setBusy(true); setError("");
-    try { setResult(await api<CareerResult>("/api/student/career/finder", { ...json({ submission_id: resume, industry, interests: industry, work_style: "Not specified", goals }), timeoutMs: 180000 })); }
-    catch (err) { setError((err as Error).message); } finally { setBusy(false); }
-  }
-  return <div className="career-tools"><PageHeading eyebrow="CAREER COACH" title="Find your next direction">Use your saved resume, interests, and goals to explore evidence-based career paths.</PageHeading>
-    {error && <ErrorMessage message={error} />}
-    <section className="panel"><form onSubmit={submit}><fieldset disabled={busy || resumes.loading}>
-      <label>Resume to use<select required value={resume} onChange={e => setResume(e.target.value)}>
-        <option value="">{resumes.loading ? "Loading saved resumes…" : "Choose a saved resume"}</option>
-        {(resumes.data?.resumes || []).filter(item => item.submission_id).map(item => <option key={item.submission_id} value={item.submission_id}>{item.label || item.original_filename}{item.is_primary ? " · Main resume" : ""}</option>)}
-      </select></label>
-      {!resumes.loading && !(resumes.data?.resumes || []).some(item => item.submission_id) && <p className="muted">Save a resume in your profile before using Career Coach.</p>}
-      <label>Industry or field<select required value={industry} onChange={e => setIndustry(e.target.value)}><option value="">Choose an industry</option><option>Technology and software</option><option>Data and analytics</option><option>Finance and banking</option><option>Healthcare</option><option>Marketing and communications</option><option>Design and product</option><option>Manufacturing and engineering</option><option>Education</option><option>Other</option></select></label>
-      <label>Career goal<textarea required minLength={3} value={goals} onChange={e => setGoals(e.target.value)} placeholder="What role or outcome are you working toward?" /></label><button className="button primary" disabled={!resume || !industry || goals.trim().length < 3}><Compass size={16} />{busy ? "Analysing your profile…" : "Explore career paths"}</button>
-    </fieldset></form></section>
-    {result && <section className="panel career-result"><h2>{result.summary || "Career directions grounded in your resume"}</h2>{result.career_gap_analysis && <p>{result.career_gap_analysis}</p>}<div className="coach-topic-grid">{(result.recommended_roles || []).map((role, i) => <article className="coach-topic" key={i}><Target size={18} /><h3>{role.role}</h3><p>{role.why}</p>{role.missing_skills?.length ? <small>Build evidence in {role.missing_skills.join(", ")}</small> : null}</article>)}</div>{result.what_to_learn_next?.length ? <><h3>What to learn next</h3><ul>{result.what_to_learn_next.map((item, i) => <li key={i}>{item}</li>)}</ul></> : null}</section>}
-  </div>;
-}
+type CareerResult={summary?:string;recommended_roles?:{role?:string;suitability_score?:number;why?:string;matched_skills?:string[];missing_skills?:string[]}[];what_to_learn_next?:string[];career_gap_analysis?:string;market_data_note?:string;reused?:boolean};
+const questions=[
+ ["interests","What kind of work or topics are you interested in?","Tell us what interests you. It can be anything.","Example: I like working with data, solving problems and using technology."],
+ ["preferred_work","What kind of work do you enjoy doing most?","Tell us what activities you enjoy.","Example: I enjoy analysing information, building things and solving problems."],
+ ["career_direction","Do you already have a career or role in mind?","If you're not sure, just tell us that.","Example: I want to become a Data Analyst. / I'm not sure yet."],
+ ["priorities","What matters most to you in your career?","Tell us what is important to you.","Example: Good growth, decent salary, learning opportunities and meaningful work."],
+ ["learning_openness","How open are you to learning new skills or moving into another field?","Tell us how much change you're comfortable with.","Example: I'm happy to learn new skills and explore related careers."]
+] as const;
+export function CareerCoach(){const resumes=useResource<{resumes:Resume[]}>("/api/student/resume-library");const[resume,setResume]=useState("");const[answers,setAnswers]=useState<Record<string,string>>({});const[result,setResult]=useState<CareerResult|null>(null);const[busy,setBusy]=useState(false);const[error,setError]=useState("");useEffect(()=>{const r=resumes.data?.resumes.find(x=>x.is_primary&&x.submission_id)||resumes.data?.resumes.find(x=>x.submission_id);if(r?.submission_id)setResume(r.submission_id)},[resumes.data]);async function submit(e:FormEvent){e.preventDefault();setError("");setBusy(true);try{setResult(await api<CareerResult>("/api/student/career/finder",{...json({submission_id:resume,...answers}),timeoutMs:180000}))}catch{setError("We couldn't generate your career analysis right now. Please try again.")}finally{setBusy(false)}}return <div className="career-tools"><PageHeading eyebrow="CAREER COACH" title="AI Career Path Finder">Explore career paths based on your resume, interests and goals.</PageHeading>{error&&<ErrorMessage message={error}/>}<section className="panel"><form onSubmit={submit}><fieldset disabled={busy||resumes.loading}><label>Which resume should I use?<select required value={resume} onChange={e=>setResume(e.target.value)}><option value="">Choose a saved resume</option>{(resumes.data?.resumes||[]).filter(x=>x.submission_id).map(x=><option key={x.submission_id} value={x.submission_id}>{x.label||x.original_filename}{x.is_primary?" · Main resume":""}</option>)}</select></label>{questions.map(([key,title,help,placeholder])=><label key={key}>{title}<small>{help}</small><textarea required minLength={3} value={answers[key]||""} onChange={e=>setAnswers({...answers,[key]:e.target.value})} placeholder={placeholder}/></label>)}<button className="button primary" disabled={!resume||questions.some(([key])=>(answers[key]||"").trim().length<3)}><Compass size={16}/>{busy?"Understanding your career profile…":"Find my career paths"}</button></fieldset></form></section>{result&&<section className="panel career-result"><h2>{result.reused?"Your career analysis is already available.":result.summary||"Your career profile"}</h2>{result.career_gap_analysis&&<p>{result.career_gap_analysis}</p>}<h3>Best career paths</h3><div className="coach-topic-grid">{(result.recommended_roles||[]).map((role,i)=><article className="coach-topic" key={i}><Target size={18}/><h3>{role.role} {role.suitability_score!=null&&<span className="pill">{role.suitability_score}/100</span>}</h3><p>{role.why}</p>{role.matched_skills?.length&&<small>Evidence: {role.matched_skills.join(", ")}</small>}{role.missing_skills?.length&&<small>Build: {role.missing_skills.join(", ")}</small>}</article>)}</div>{result.what_to_learn_next?.length&&<><h3>What should I learn next?</h3><ul>{result.what_to_learn_next.map(x=><li key={x}>{x}</li>)}</ul></>}</section>}</div>}
