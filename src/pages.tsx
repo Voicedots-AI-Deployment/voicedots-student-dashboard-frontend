@@ -448,11 +448,15 @@ export function Placements() {
               {context.action === "resume" && (
                 <button
                   className="button primary"
-                  onClick={() =>
-                    openInterview(context.submission_id, context.session_id)
-                  }
+                  onClick={() => {
+                    if (context.session_id) {
+                      openInterview(context.submission_id, context.session_id);
+                    } else {
+                      navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
+                    }
+                  }}
                 >
-                  Resume interview
+                  {context.session_id ? "Resume interview" : `Resume attempt ${context.attempt_number}`}
                 </button>
               )}
               {(["start", "retry_preparation"].includes(context.action) || context.can_start_next_attempt || (context.action === "completed" && Number(context.attempt_number) < Number(context.max_attempts))) && (
