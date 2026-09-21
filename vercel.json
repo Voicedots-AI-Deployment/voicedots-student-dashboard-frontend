@@ -36,6 +36,10 @@
     {
       "source": "/academics",
       "destination": "/index.html"
+    },
+    {
+      "source": "/career",
+      "destination": "/index.html"
     }
   ],
   "headers": [
