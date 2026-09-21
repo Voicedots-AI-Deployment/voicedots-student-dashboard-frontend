@@ -78,6 +78,24 @@ export type DriveContext = {
   interview_window_start_at?: string;
   interview_window_end_at?: string;
   location?: string;
+  difficulty_tier?: string;
+  round_count?: number;
+  eligibility?: { status: string; reason?: string | null };
+  attempts_used?: number;
+  attempts_remaining?: number;
+  attempt_history?: Array<{
+    attempt_number: number;
+    submission_id?: string;
+    session_id?: string;
+    evaluation_status?: string;
+    overall_score?: number | null;
+    started_at?: string;
+    completed_at?: string;
+    is_current_attempt?: boolean;
+  }>;
+  current_attempt?: { attempt_number: number; status: string; started_at?: string; completed_at?: string };
+  can_start?: boolean;
+  can_resume?: boolean;
 };
 export type Readiness = {
   overall_score: number | null;

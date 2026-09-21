@@ -1,7 +1,7 @@
 import { AcademicOverview } from "./academics";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
-import { useState, type FormEvent } from "react";
+import { useEffect, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -296,10 +296,24 @@ export function Placements() {
   const resource = useResource<Drive[]>("/api/student/drives");
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
+  const [contexts, setContexts] = useState<Record<string, DriveContext>>({});
   const [context, setContext] = useState<DriveContext | null>(null);
   const [selected, setSelected] = useState<Drive | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  useEffect(() => {
+    let cancelled = false;
+    const drives = resource.data || [];
+    if (!drives.length) return;
+    Promise.all(drives.map(async (drive) => {
+      try {
+        return [drive.id, await api<DriveContext>(`/api/student/drives/${encodeURIComponent(drive.id)}/interview-context`)] as const;
+      } catch { return null; }
+    })).then((rows) => {
+      if (!cancelled) setContexts(Object.fromEntries(rows.filter(Boolean) as Array<readonly [string, DriveContext]>));
+    });
+    return () => { cancelled = true; };
+  }, [resource.data]);
   async function select(drive: Drive) {
     setSelected(drive);
     setContext(null);
@@ -355,11 +369,19 @@ export function Placements() {
           <div className="drive-grid">
             {items.map((drive) => (
               <article className="panel drive-card" key={drive.id}>
+                {(() => {
+                  const live = contexts[drive.id];
+                  const windowLabel = live?.interview_window === "open" ? "Interview open" : humanize(live?.interview_window || drive.status);
+                  const attempts = live?.attempts_remaining;
+                  const attemptLabel = live?.current_attempt?.status === "in_progress" ? "Interview in progress" :
+                    attempts === 0 ? "Attempts completed" :
+                    live?.attempts_used ? `Attempt ${live.attempts_used} completed · ${attempts} remaining` : `${attempts ?? live?.max_attempts ?? ""} attempt${(attempts ?? 1) === 1 ? "" : "s"} available`;
+                  return <>
                 <div className="drive-card-top">
                   <span className="company-avatar">
                     {(drive.company_name || "C").slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="pill">Eligible</span>
+                  <span className="pill">{windowLabel}</span>
                 </div>
                 <span className="eyebrow">{drive.company_name}</span>
                 <h2>{drive.role_title}</h2>
@@ -369,14 +391,18 @@ export function Placements() {
                 </p>
                 <p>
                   <CalendarDays size={15} />
-                  {drive.window_start_at ? dateTime(drive.window_start_at) : date(drive.drive_date)}
+                  {drive.window_start_at ? `${date(drive.window_start_at)} – ${drive.window_end_at ? date(drive.window_end_at) : "To be announced"}` : date(drive.drive_date)}
                 </p>
+                <p className="drive-attempt-summary">{attemptLabel}</p>
+                <p className="drive-interview-summary">{live?.duration_minutes || "—"} minutes · {humanize(live?.difficulty_tier || "")} · {live?.round_count || "—"} rounds</p>
                 <button
                   className="button secondary"
                   onClick={() => void select(drive)}
                 >
                   View opportunity <ArrowRight size={16} />
                 </button>
+                  </>;
+                })()}
               </article>
             ))}
           </div>
@@ -403,24 +429,13 @@ export function Placements() {
           {error && <ErrorMessage message={error} />}
           {context && (
             <>
-              <div className="detail-chips">
-                <span className="pill">{humanize(context.action)}</span>
-                <span className="pill">
-                  Window: {humanize(context.interview_window)}
-                </span>
-                <span className="pill">Attempt {context.attempt_number} of {context.max_attempts}</span>
-              </div>
-              <p>
-                {context.duration_minutes
-                  ? `${context.duration_minutes} minutes · `
-                  : ""}
-                Your placement cell sets the interview requirements.
-              </p>
+              <div className="detail-chips"><span className="pill">Eligible</span><span className="pill">Interview window {humanize(context.interview_window)}</span></div>
               <div className="opportunity-details">
-                <div><span>Interview window</span><strong>{context.interview_window_start_at ? `${dateTime(context.interview_window_start_at)} – ${context.interview_window_end_at ? dateTime(context.interview_window_end_at) : "To be announced"}` : humanize(context.interview_window)}</strong></div>
+                <div><span>Interview window</span><strong>{context.interview_window_start_at ? `${dateTime(context.interview_window_start_at)} → ${context.interview_window_end_at ? dateTime(context.interview_window_end_at) : "To be announced"}` : humanize(context.interview_window)}</strong></div>
                 <div><span>Location</span><strong>{context.location || selected.location || "To be announced"}</strong></div>
-                <div><span>Attempts</span><strong>{context.attempt_number} of {context.max_attempts}</strong></div>
+                <div><span>Interview</span><strong>{context.duration_minutes || "—"} min · {humanize(context.difficulty_tier || "")} · {context.round_count || "—"} rounds</strong></div>
               </div>
+              <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={attempt.attempt_number}><div><strong>Attempt {attempt.attempt_number}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{(context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {context.attempt_number} {context.attempts_used ? "next" : "1"}</strong><span>Available to start</span></div></div>}</section>
               {context.job_description && (
                 <details className="job-description"><summary>View role description</summary><p>{context.job_description}</p></details>
               )}
@@ -449,7 +464,7 @@ export function Placements() {
                       )
                     }
                   >
-                    Prepare for interview <ArrowRight size={16} />
+                  {context.attempts_used ? `Start attempt ${context.attempt_number}` : "Start interview"} <ArrowRight size={16} />
                   </button>
                 )}
               {context.attempt_number > 1 && <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Prepare with your AI Coach</Link>}
