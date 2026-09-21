@@ -1,14 +1,17 @@
-import { CalendarDays, Clock, MapPin } from "lucide-react";
+import { CalendarDays, Clock, MapPin, ChevronLeft, ChevronRight } from "lucide-react";
+import { useMemo, useState } from "react";
 import { type Drive } from "./api";
 import { dateTime, Empty, PageHeading, ResourceState, useResource } from "./ui";
 
-export function Calendar() {
-  const drives = useResource<Drive[]>("/api/student/drives");
-  const events = (drives.data || []).filter(d => d.window_start_at || d.drive_date).sort((a,b) => String(a.window_start_at || a.drive_date).localeCompare(String(b.window_start_at || b.drive_date)));
-  return <div className="calendar-page">
-    <PageHeading eyebrow="YOUR SCHEDULE" title="Calendar">Keep track of placement interviews and important interview windows.</PageHeading>
-    <ResourceState resource={drives}>
-      {events.length ? <section className="panel calendar-events"><div className="calendar-events-header"><div><span className="eyebrow">UPCOMING</span><h2>Placement schedule</h2></div><CalendarDays size={24}/></div>{events.map(drive => <article className="calendar-event" key={drive.id}><div className="calendar-event-date"><CalendarDays size={18}/><span>{drive.window_start_at ? dateTime(drive.window_start_at) : "Date to be confirmed"}</span></div><div className="calendar-event-main"><strong>{drive.role_title}</strong><span>{drive.company_name}</span><div className="calendar-event-meta">{drive.location && <span><MapPin size={14}/>{drive.location}</span>}{drive.window_end_at && <span><Clock size={14}/>Until {dateTime(drive.window_end_at)}</span>}</div></div></article>)}</section> : <Empty title="Your calendar is clear">Placement interview windows will appear here when they are published.</Empty>}
-    </ResourceState>
-  </div>;
+type CoachPlan={id:string;role_title:string;company_name:string;target_date:string};
+type Event={id:string;date:string;title:string;subtitle:string;kind:"placement"|"coach";time?:string;location?:string};
+function isoDay(value:string){return value.slice(0,10)}
+function monthLabel(value:Date){return value.toLocaleDateString(undefined,{month:"long",year:"numeric"})}
+export function Calendar(){
+ const drives=useResource<Drive[]>("/api/student/drives"),plans=useResource<{plans:CoachPlan[]}>("/api/student/coach/plans");
+ const [month,setMonth]=useState(()=>{const d=new Date();return new Date(d.getFullYear(),d.getMonth(),1)});
+ const events=useMemo<Event[]>(()=>[...(drives.data||[]).flatMap(d=>d.window_start_at||d.drive_date?[{id:d.id,date:isoDay(d.window_start_at||d.drive_date||""),title:d.role_title,subtitle:d.company_name,kind:"placement" as const,time:d.window_start_at?dateTime(d.window_start_at):undefined,location:d.location}]:[]),...(plans.data?.plans||[]).filter(p=>p.target_date).map(p=>({id:`coach-${p.id}`,date:isoDay(p.target_date),title:"AI Coach session",subtitle:`${p.role_title} · ${p.company_name}`,kind:"coach" as const}))], [drives.data,plans.data]);
+ const first=new Date(month.getFullYear(),month.getMonth(),1), start=new Date(first); start.setDate(1-first.getDay()); const days=Array.from({length:42},(_,i)=>{const d=new Date(start);d.setDate(start.getDate()+i);return d});
+ const upcoming=events.filter(e=>e.date>=new Date().toISOString().slice(0,10)).sort((a,b)=>a.date.localeCompare(b.date)).slice(0,5);
+ return <div className="calendar-page"><PageHeading eyebrow="YOUR SCHEDULE" title="Calendar">See placement interviews and AI Coach sessions in one place.</PageHeading><ResourceState resource={drives}><div className="calendar-layout"><section className="panel calendar-month"><header className="calendar-toolbar"><button className="icon-button" aria-label="Previous month" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()-1,1))}><ChevronLeft size={18}/></button><h2>{monthLabel(month)}</h2><button className="icon-button" aria-label="Next month" onClick={()=>setMonth(new Date(month.getFullYear(),month.getMonth()+1,1))}><ChevronRight size={18}/></button></header><div className="calendar-weekdays">{["Sun","Mon","Tue","Wed","Thu","Fri","Sat"].map(d=><span key={d}>{d}</span>)}</div><div className="calendar-grid">{days.map(day=>{const key=day.toISOString().slice(0,10),items=events.filter(e=>e.date===key),outside=day.getMonth()!==month.getMonth(),today=key===new Date().toISOString().slice(0,10);return <div className={`calendar-day${outside?" outside":""}${today?" today":""}`} key={key}><span className="calendar-day-number">{day.getDate()}</span>{items.map(e=><div className={`calendar-chip ${e.kind}`} title={`${e.title} · ${e.subtitle}`} key={e.id}><b>{e.title}</b><small>{e.time||e.subtitle}</small></div>)}</div>})}</div></section><aside className="panel calendar-upcoming"><div className="section-heading"><div><span className="eyebrow">NEXT UP</span><h2>Upcoming</h2></div><CalendarDays size={22}/></div>{upcoming.length?upcoming.map(e=><article className="calendar-upcoming-event" key={e.id}><span className={`calendar-kind ${e.kind}`}>{e.kind==="placement"?"Interview":"AI Coach"}</span><strong>{e.title}</strong><small>{e.subtitle}</small><span><Clock size={13}/>{e.time||new Date(`${e.date}T12:00:00`).toLocaleDateString(undefined,{month:"short",day:"numeric"})}</span>{e.location&&<span><MapPin size={13}/>{e.location}</span>}</article>):<Empty title="Nothing scheduled">Your upcoming events will appear here.</Empty>}</aside></div></ResourceState></div>;
 }
