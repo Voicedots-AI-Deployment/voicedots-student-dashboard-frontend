@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, json, request, Resume } from './api';
 import { useAuth } from './auth';
@@ -7,16 +7,10 @@ export async function download(path:string, name:string, options?:RequestInit) {
   const response=await request(path,options); const url=URL.createObjectURL(await response.blob());
   const a=document.createElement('a');a.href=url;a.download=name;a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);
 }
-type Project={name:string;description:string;tools:string;outcome:string;link:string};
-type Portfolio={summary:string;skills:string;topics:string;education:string;achievements:string;projects:Project[]};
-const blank:Portfolio={summary:'',skills:'',topics:'',education:'',achievements:'',projects:[]};
 export function CareerProfile(){
- const {identity,refresh}=useAuth(); const library=useResource<{resumes:Resume[]}>('/api/student/resume-library');
- const [profile,setProfile]=useState<Portfolio>(blank),[loaded,setLoaded]=useState(false),[error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
- const [role,setRole]=useState(identity?.student.target_role||''),[jd,setJd]=useState(''),[base,setBase]=useState(''),[draft,setDraft]=useState(''),[warnings,setWarnings]=useState<string[]>([]),[ats,setAts]=useState<{score?:number;missing_skills?:string[]}|null>(null);
- useEffect(()=>{const c=new AbortController();api<{profile?:Portfolio;draft?:{resume_text:string;target_role:string;job_description:string;warnings?:string[]}}>('/api/student/portfolio',{signal:c.signal}).then(x=>{setProfile({...blank,...x.profile});if(x.draft){setDraft(x.draft.resume_text);setWarnings(x.draft.warnings||[]);setRole(x.draft.target_role||'');setJd(x.draft.job_description||'');}setLoaded(true)}).catch(e=>{if(!c.signal.aborted)setError(e.message)});return()=>c.abort()},[]);
+ const {refresh}=useAuth(); const library=useResource<{resumes:Resume[]}>('/api/student/resume-library');
+ const [error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
  async function run(action:()=>Promise<unknown>,success:string){setBusy(true);setError('');setMessage('');try{await action();setMessage(success)}catch(e){setError((e as Error).message)}finally{setBusy(false)}}
- const saveProfile=()=>api('/api/student/portfolio',{...json(profile),method:'PUT'});
  return <div className="career-tools">
  {error&&<ErrorMessage message={error}/>} {message&&<p role="status">{message}</p>}
  <section className="panel saved-resumes-panel"><div className="saved-resumes-heading"><div><span className="eyebrow">RESUME LIBRARY</span><h2>Your saved resumes</h2><p className="muted">Keep your verified resumes in one place and choose which one powers interviews and coaching.</p></div><span className="saved-resumes-count">{library.data?.resumes.length || 0} saved</span></div>
@@ -27,9 +21,5 @@ export function CareerProfile(){
  {!resume.is_primary&&<button className="button secondary" disabled={busy} onClick={()=>void run(async()=>{await api(`/api/student/resume-library/${resume.resume_id}/primary`,json({}));library.reload();await refresh()},'Main resume updated.')}>Set as main</button>}
  <button className="text-button" disabled={busy} onClick={()=>{if(confirm('Delete this saved resume? Previous interview reports will remain available.'))void run(async()=>{await api(`/api/student/resume-library/${resume.resume_id}`,{method:'DELETE'});library.reload();await refresh()},'Resume deleted.')}}>Delete</button></div></div>)}
  {!library.loading&&!library.data?.resumes.length&&<p>No saved resumes yet.</p>}<Link to="/practice">Use your resume in interview practice →</Link></section>
- <section className="panel"><h2>Tailor your resume</h2><p className="muted">Build from your saved experience and an optional resume. Review the draft for accuracy before using it.</p><form onSubmit={e=>{e.preventDefault();void run(async()=>{await saveProfile();const result=await api<{resume_text:string;warnings?:string[];ats_match?:{score?:number;missing_skills?:string[]}}>('/api/student/portfolio/build',{...json({target_role:role,job_description:jd,resume_id:base||null}),timeoutMs:180000});setDraft(result.resume_text);setWarnings(result.warnings||[]);setAts(result.ats_match||null)},'Resume draft created. Review and edit it below.')}}><fieldset disabled={busy||!loaded}>
- <label>Base resume<select value={base} onChange={e=>setBase(e.target.value)}><option value="">Use profile details only</option>{library.data?.resumes.map(r=><option key={r.resume_id} value={r.resume_id}>{r.label||r.original_filename}</option>)}</select></label>
- <label>Target role<input required minLength={2} maxLength={200} value={role} onChange={e=>setRole(e.target.value)}/></label><label>Job description<textarea required minLength={20} maxLength={20000} rows={6} value={jd} onChange={e=>setJd(e.target.value)}/></label><button className="button primary">{busy?'Working…':'Create tailored draft'}</button></fieldset></form>
- {draft&&<>{ats?.score!==undefined&&<p className="pill" role="status">ATS alignment: {ats.score}/100{ats.missing_skills?.length?` · Missing evidence: ${ats.missing_skills.join(', ')}`:''}</p>}{warnings.map((w,i)=><p role="status" key={i}>{w}</p>)}<label>Editable resume draft<textarea className="resume-draft" rows={22} maxLength={30000} value={draft} onChange={e=>setDraft(e.target.value)}/></label><div className="career-actions"><button className="button secondary" disabled={busy||draft.length<20} onClick={()=>void run(()=>api('/api/student/portfolio/draft',{...json({resume_text:draft}),method:'PUT'}),'Draft saved.')}>Save draft</button><button className="button secondary" disabled={busy||draft.length<20} onClick={()=>void run(()=>download('/api/student/portfolio/export.pdf','My-resume.pdf',json({resume_text:draft})),'PDF downloaded.')}>Download PDF</button><button className="button primary" disabled={busy||draft.length<20} onClick={()=>void run(async()=>{await api('/api/student/portfolio/save-resume',json({resume_text:draft}));library.reload()},'Resume added to your library. You can now set it as your main resume.')}>Save to resume library</button></div></>}
- <p><Link to="/coach">Prepare for the role with your AI coach →</Link></p></section></div>
+</div>
 }
