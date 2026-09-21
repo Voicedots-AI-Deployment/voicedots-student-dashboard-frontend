@@ -60,8 +60,8 @@ function ReportList({ reports }: { reports: Report[] }) {
           </div>
           <div className="record-result">
             <strong>{score(report.report?.overall_score)}</strong>
-            <span>{humanize(report.report?.status || report.status)}</span>
-          </div>
+            <span>{humanize(report.report?.readiness || "Readiness pending")}</span>
+          </div>{report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
           {report.report?.status === "awaiting_release" ? (
             <span className="pill">Awaiting release</span>
           ) : report.status === "released" ? (
