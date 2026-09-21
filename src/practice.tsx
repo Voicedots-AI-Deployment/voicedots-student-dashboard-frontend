@@ -441,16 +441,6 @@ export function Practice() {
                 ? `Interview window: ${humanize(context.interview_window)}. Your placement team controls access to this attempt.`
                 : "Return to Placements to check your assignment."}
             </p>
-            {context?.action === "resume" && (
-              <button
-                className="button primary"
-                onClick={() =>
-                  openInterview(context.submission_id, context.session_id)
-                }
-              >
-                Resume interview
-              </button>
-            )}
           </div>
         </div>
       )}
