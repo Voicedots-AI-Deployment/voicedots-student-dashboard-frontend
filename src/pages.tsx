@@ -404,7 +404,7 @@ export function Placements() {
                   {drive.window_start_at ? `${date(drive.window_start_at)} – ${drive.window_end_at ? date(drive.window_end_at) : "To be announced"}` : date(drive.drive_date)}
                 </p>
                 <p className="drive-attempt-summary">{attemptLabel}</p>
-                <p className="drive-interview-summary">{live?.duration_minutes || "—"} minutes · {humanize(live?.difficulty_tier || "")} · {live?.round_count || "—"} rounds</p>
+                <p className="drive-interview-summary">{live?.duration_minutes || drive.interview_duration_minutes || "—"} minutes · {humanize(live?.difficulty_tier || drive.difficulty_tier || "Difficulty not set")} · {live?.round_count || drive.agent_selection?.length || drive.round_configuration?.length || "—"} rounds</p>
                 <button
                   className="button secondary"
                   onClick={() => void select(drive)}

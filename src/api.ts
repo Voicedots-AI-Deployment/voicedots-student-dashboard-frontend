@@ -59,6 +59,10 @@ export type Drive = {
   window_end_at?: string;
   application_deadline?: string;
   status: string;
+  interview_duration_minutes?: number;
+  difficulty_tier?: string;
+  agent_selection?: unknown[];
+  round_configuration?: unknown[];
 };
 export type DriveContext = {
   drive_id: string;
