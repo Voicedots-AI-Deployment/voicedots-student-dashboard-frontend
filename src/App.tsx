@@ -9,6 +9,7 @@ import {
   BookOpen,
   BriefcaseBusiness,
   ChartNoAxesCombined,
+  CalendarDays,
   Compass,
   FileText,
   House,
@@ -32,6 +33,7 @@ import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Loading } from "./ui";
 import { Overview, Placements, Growth, Profile, Reports } from "./pages";
 import { Academics } from "./academics";
+import { Calendar } from "./calendar";
 import { Coach } from "./coach";
 import { Practice } from "./practice";
 import { PhotoVerification } from "./PhotoVerification";
@@ -260,6 +262,7 @@ function Login() {
 const nav = [
   { to: "/", label: "Overview", icon: House },
   { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
+  { to: "/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/practice", label: "Interview practice", icon: Mic },
   { to: "/coach", label: "AI coach", icon: BookOpen },
   { to: "/career", label: "Career coach", icon: Compass },
@@ -440,6 +443,7 @@ export function App() {
               element={<Practice key={location.search} />}
             />
             <Route path="/placements" element={<Placements />} />
+            <Route path="/calendar" element={<Calendar />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/growth" element={<Growth />} />
             <Route path="/academics" element={<Academics />} />
