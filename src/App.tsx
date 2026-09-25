@@ -39,6 +39,7 @@ import { Practice } from "./practice";
 import { PhotoVerification } from "./PhotoVerification";
 import { CoachSession } from "./coach-session";
 import { CareerCoach } from "./career-coach";
+import { ResumeStudio } from "./resume-studio";
 
 type PendingPhotoLogin = {
   email: string;
@@ -265,6 +266,7 @@ const nav = [
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/practice", label: "Interview practice", icon: Mic },
   { to: "/coach", label: "AI coach", icon: BookOpen },
+  { to: "/resume-studio", label: "Resume Studio", icon: FileText },
   { to: "/career", label: "Career coach", icon: Compass },
   { to: "/academics", label: "Marks and attendance", icon: BookOpen },
   { to: "/reports", label: "My reports", icon: FileText },
@@ -448,6 +450,7 @@ export function App() {
             <Route path="/growth" element={<Growth />} />
             <Route path="/academics" element={<Academics />} />
             <Route path="/coach" element={<Coach />} />
+            <Route path="/resume-studio" element={<ResumeStudio />} />
             <Route path="/career" element={<CareerCoach />} />
             <Route path="/coach/session" element={<CoachSessionRoute />} />
             <Route path="/profile" element={<Profile />} />
@@ -474,6 +477,8 @@ export function App() {
 }
 
 function CoachSessionRoute() {
-  const planId = new URLSearchParams(window.location.search).get("plan");
-  return planId ? <CoachSession planId={planId} /> : <Navigate to="/coach" replace />;
+  const params = new URLSearchParams(window.location.search);
+  const planId = params.get("plan");
+  const sessionId = params.get("session") || undefined;
+  return planId ? <CoachSession planId={planId} sessionId={sessionId} /> : <Navigate to="/coach" replace />;
 }

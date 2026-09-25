@@ -11,6 +11,7 @@ export type Student = {
   program?: string;
   department_code?: string;
   graduation_year?: number;
+  date_of_birth?: string | null;
   cgpa?: number;
   target_role?: string;
   current_resume_submission_id?: string;

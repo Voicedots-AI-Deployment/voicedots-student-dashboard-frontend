@@ -43,6 +43,14 @@ import {
   useResource,
 } from "./ui";
 
+function safeAttemptNumber(value: unknown, fallback = 1, maximum?: unknown): number {
+  const parsed = Number(value);
+  const cap = Number(maximum);
+  if (!Number.isFinite(parsed) || parsed < 1) return fallback;
+  const normalized = Math.floor(parsed);
+  return Number.isFinite(cap) && cap >= 1 ? Math.min(normalized, Math.floor(cap)) : normalized;
+}
+
 function ReportList({ reports }: { reports: Report[] }) {
   return (
     <div className="record-list">
@@ -445,7 +453,7 @@ export function Placements() {
                 <div><span>Location</span><strong>{context.location || selected.location || "To be announced"}</strong></div>
                 <div><span>Interview</span><strong>{context.duration_minutes || "—"} min · {humanize(context.difficulty_tier || "")} · {context.round_count || "—"} rounds</strong></div>
               </div>
-              <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={attempt.attempt_number}><div><strong>Attempt {attempt.attempt_number}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{(context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {context.attempt_number} {context.attempts_used ? "next" : "1"}</strong><span>Available to start</span></div></div>}</section>
+              <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={safeAttemptNumber(attempt.attempt_number)}><div><strong>Attempt {safeAttemptNumber(attempt.attempt_number, 1, context.max_attempts)}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{(context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {safeAttemptNumber(context.attempt_number, 1, context.max_attempts)}</strong><span>Available to start</span></div></div>}</section>
               {context.job_description && (
                 <details className="job-description"><summary>View role description</summary><p>{context.job_description}</p></details>
               )}
@@ -633,10 +641,10 @@ export function Profile() {
     const form = new FormData(event.currentTarget);
     try {
       await api("/api/student/profile", {
-        ...json({ target_role: String(form.get("target_role")).trim() }),
+        ...json({ target_role: String(form.get("target_role")).trim(), date_of_birth: form.get("date_of_birth") || null }),
         method: "PATCH",
       });
-      setMessage("Your career preference has been saved.");
+      setMessage("Your profile details have been saved.");
       await refresh();
     } catch (e) {
       setError((e as Error).message);
@@ -672,6 +680,7 @@ export function Profile() {
             ["Department", student.department_code],
             ["Graduation year", student.graduation_year],
             ["CGPA", student.cgpa],
+            ["Date of birth", student.date_of_birth ? new Date(`${student.date_of_birth.slice(0,10)}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }) : null],
           ].map(([key, value]) => (
             <div key={key}>
               <dt>{key}</dt>
@@ -698,6 +707,16 @@ export function Profile() {
               maxLength={120}
               placeholder="e.g. Software engineer"
             />
+          </label>
+          <label>
+            Date of birth
+            <input
+              name="date_of_birth"
+              type="date"
+              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)}
+              defaultValue={student.date_of_birth?.slice(0, 10) || ""}
+            />
+            <small>Choose a date from the date picker.</small>
           </label>
           <button className="button primary" disabled={busy}>
             {busy ? "Saving…" : "Save preference"}

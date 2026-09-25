@@ -405,7 +405,7 @@ export function Practice() {
   const driveBlocked =
     !!driveId &&
     (!context ||
-      (!["start", "retry_preparation"].includes(context.action) &&
+      (!["start", "resume", "retry_preparation"].includes(context.action) &&
         !(context.can_start_next_attempt || (context.action === "completed" && Number(context.attempt_number) < Number(context.max_attempts)))) ||
       (context.interview_window !== "open" && !context.can_start_next_attempt));
   return (
