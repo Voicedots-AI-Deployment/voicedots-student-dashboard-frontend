@@ -621,6 +621,7 @@ test('Resume Studio saves project evidence and reloads it from the student API',
  });
  await page.goto('/resume-studio');
  await page.getByRole('button',{name:'Create resume',exact:true}).click();
+ await page.getByRole('tab',{name:'Resume editor'}).click();
  await page.getByLabel('Add resume section').selectOption('projects');
  await page.getByRole('button',{name:'Add Project',exact:true}).click();
  await page.getByLabel('Title',{exact:true}).fill('Library API');
@@ -630,6 +631,7 @@ test('Resume Studio saves project evidence and reloads it from the student API',
  expect(savedProject.revision).toBe(2);
  await page.reload();
  await page.getByRole('button',{name:/Resume 1 Revision 2/}).click();
+ await page.getByRole('tab',{name:'Resume editor'}).click();
  await expect(page.getByLabel('Title',{exact:true})).toHaveValue('Library API');
  await expect(page.getByLabel('Description / details',{exact:true})).toHaveValue('Built a Python API with book search.');
 });
@@ -714,4 +716,28 @@ test('academics distinguishes missing records and service errors without invente
  await mockStudent(page);let unavailable=false;
  await page.route('**/api/student/academics',r=>r.fulfill({status:unavailable?503:200,json:unavailable?{detail:'Academic records are temporarily unavailable.'}:{status:'not_found',message:'No academic record matches your registered roll number.'}}));
  await page.goto('/academics');await expect(page.getByText('No academic record matches your registered roll number.')).toBeVisible();await expect(page.getByRole('button',{name:'Download report'})).toHaveCount(0);unavailable=true;await page.reload();await expect(page.getByText('Academic records are temporarily unavailable.')).toBeVisible();
+});
+
+test('AI Coach blocks premature teaching checks and gives a useful next step after a 409',async({page})=>{
+ await mockStudent(page);
+ const planId='teaching-guard-plan',sessionId='teaching-guard-session';
+ const plan={id:planId,company_name:'Example Company',role_title:'Backend Engineer',target_date:'2026-10-01',plan:{summary:'Prepare',goal:'Explain the fundamentals',priority_topics:[],daily_roadmap:[{day:1,session_id:sessionId,title:'Database indexes',focus:'Index tradeoffs',activities:['Explain an index'],success_check:'Describe index tradeoffs'}],discussion_starters:[]},messages:[{id:'m1',role:'student',content:'An index speeds up lookup.'}]};
+ let studentTurns=1;
+ await page.route('**/api/student/coach/plans**',async route=>{
+  const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
+  if(path.endsWith('/messages')&&method==='POST'){studentTurns++;return route.fulfill({json:{ok:true}})}
+  if(path.endsWith('/sessions/'+sessionId)&&method==='GET')return route.fulfill({json:{id:sessionId,stage:'teaching',skill:'Database indexes',learning_objective:'Explain index tradeoffs'}});
+  if(path.endsWith('/sessions/'+sessionId+'/teaching')&&method==='POST')return route.fulfill({status:409,json:{detail:'The saved conversation does not yet cover the learning objective. Add another example and try again.'}});
+  if(path==='/api/student/coach/plans'&&method==='GET')return route.fulfill({json:{plans:[plan]}});
+  if(path==='/api/student/coach/plans/'+planId&&url.searchParams.has('session_id'))return route.fulfill({json:{...plan,messages:Array.from({length:studentTurns},(_,i)=>({id:'m'+i,role:'student',content:i?'An index improves lookup but has write and storage costs.':'An index speeds up lookup.'}))}});
+  return route.fulfill({status:404,json:{detail:'Not found'}});
+ });
+ await page.goto('/coach?plan='+planId+'&session='+sessionId);
+ const complete=page.getByRole('button',{name:'Complete Teaching'});
+ await expect(complete).toBeDisabled();await expect(page.getByText('1 of 2 saved student responses.')).toBeVisible();
+ await page.getByLabel('Ask your coach').fill('An index can speed lookup, but adds storage and write costs.');await page.getByRole('button',{name:'Send message'}).click();
+ await expect(complete).toBeEnabled();await complete.click();
+ await expect(page.getByRole('alert')).toContainText('does not yet cover the learning objective');
+ await expect(complete).toBeDisabled();
+ await expect(page.getByText('Add another response to the saved conversation, then try again.')).toBeVisible();
 });

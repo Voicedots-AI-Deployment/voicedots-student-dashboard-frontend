@@ -36,6 +36,7 @@ test("Resume Studio appears below AI Coach and saves project content through the
  expect(studio).toBe(coach+1);
  await page.getByRole("link",{name:"Resume Studio"}).click();
  await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Kumar");
  await page.getByRole("button",{name:"Save resume"}).click();
  await expect(page.getByRole("status")).toContainText("Resume saved as a new revision");
@@ -44,6 +45,7 @@ test("Resume Studio appears below AI Coach and saves project content through the
 test("Resume Studio reports stale revision conflicts and offers a safe reload",async({page})=>{
  await mockResumeStudio(page,true);await page.goto("/resume-studio");
  await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Unsaved draft");
  await page.getByRole("button",{name:"Save resume"}).click();
  await expect(page.getByRole("alert").filter({hasText:"changed elsewhere"})).toBeVisible();
@@ -54,7 +56,7 @@ test("Resume Studio reports stale revision conflicts and offers a safe reload",a
 test("Resume Studio reviews and applies proposals as a revision",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");
  await page.getByRole("button",{name:/Resume 1 Revision/}).click();
- await page.getByRole("button",{name:"AI tools"}).click();
+ await page.getByRole("tab",{name:"AI tools"}).click();
  await page.getByRole("button",{name:"Review resume"}).click();
  await expect(page.getByRole("heading",{name:"Suggested changes"})).toBeVisible();
  await page.getByRole("button",{name:"Accept proposal"}).click();
@@ -68,4 +70,12 @@ test("Resume Studio imports a file and downloads an export",async({page})=>{
  await page.getByRole("button",{name:"Import",exact:true}).click();
  await expect(page.getByRole("heading",{name:"Imported resume"})).toBeVisible();
  const download=page.waitForEvent("download");await page.getByRole("button",{name:"PDF"}).click();expect((await download).suggestedFilename()).toContain("Imported-resume.pdf");
+});
+
+test("Resume Studio opens with the guided overview and keeps workspace navigation usable on mobile",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:390,height:844});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await expect(page.getByRole("heading",{name:"Build a resume that gets interviews"})).toBeVisible();
+ await expect(page.getByRole("tab",{name:"Overview"})).toHaveAttribute("aria-selected","true");
+ await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.getByRole("heading",{name:"Choose a resume style"})).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
