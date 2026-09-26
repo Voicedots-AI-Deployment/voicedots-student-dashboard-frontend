@@ -547,6 +547,35 @@ test("sidebar keeps the account visible at desktop and short viewport heights", 
   }
 });
 
+test("wider desktop sidebar stays aligned and does not overflow tablet or mobile layouts", async ({ page }) => {
+  await mockStudent(page);
+  for (const [width, expectedSidebarWidth] of [[1440, 264], [1024, 218]]) {
+    await page.setViewportSize({ width, height: 800 });
+    await page.goto("/practice");
+    await expect(page.getByRole("heading", { name: "Let’s get you interview-ready" })).toBeVisible();
+    const layout = await page.evaluate(() => ({
+      sidebar: document.querySelector(".sidebar")!.getBoundingClientRect(),
+      pageWidth: document.documentElement.scrollWidth,
+      viewportWidth: window.innerWidth,
+    }));
+    expect(layout.sidebar.width).toBe(expectedSidebarWidth);
+    expect(layout.pageWidth).toBeLessThanOrEqual(layout.viewportWidth);
+  }
+
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto("/practice");
+  const opener = page.getByRole("button", { name: "Open navigation" });
+  await opener.click();
+  await expect.poll(() => page.locator(".sidebar").evaluate(el => el.getBoundingClientRect().left)).toBe(0);
+  const mobile = await page.evaluate(() => ({
+    sidebar: document.querySelector(".sidebar")!.getBoundingClientRect(),
+    pageWidth: document.documentElement.scrollWidth,
+    viewportWidth: window.innerWidth,
+  }));
+  expect(mobile.sidebar.left).toBe(0);
+  expect(mobile.pageWidth).toBeLessThanOrEqual(mobile.viewportWidth);
+});
+
 test("mobile navigation traps focus, closes with Escape and restores scrolling", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockStudent(page);
@@ -609,6 +638,59 @@ test('coach creates a saved roadmap and continues the conversation',async({page}
  await mockStudent(page);const plan={id:'plan-1',role_title:'Backend engineer',target_date:'2027-01-01',plan:{summary:'Learn reliable API design',goal:'Explain and build APIs',priority_topics:[],daily_roadmap:[{day:1,title:'Python APIs',focus:'Request handling',activities:['Build one endpoint'],success_check:'Explain a request'}],discussion_starters:['Show today’s plan']},messages:[{id:'m1',role:'coach',content:'Let’s learn API design.'}]};let created=false;
  await page.route('**/api/student/coach/plans**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/messages')){plan.messages.push({id:'m2',role:'coach',content:'An API receives a request and returns a response.'});return route.fulfill({json:{reply:plan.messages[1].content}})}if(path.endsWith('/plans')){if(route.request().method()==='POST'){created=true;return route.fulfill({json:plan})}return route.fulfill({json:{plans:created?[plan]:[]}})}return route.fulfill({json:plan})});
  await page.goto('/coach');await page.getByLabel('Target role',{exact:true}).fill('Backend engineer');await page.getByLabel('Interview date').fill('2027-01-01');await page.getByLabel('Job description',{exact:true}).fill('Build Python APIs and reliable database services.');await page.getByRole('button',{name:'Create preparation plan'}).click();await expect(page.getByText('Learn reliable API design')).toBeVisible();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await page.getByLabel('Ask your coach').fill('Explain APIs');await page.getByRole('button',{name:'Send message'}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();await page.getByText('Python APIs',{exact:true}).locator('xpath=ancestor::article[1]').click();await page.getByRole('button',{name:'Connect',exact:true}).click();await expect(page).toHaveURL(/\/coach\/session\?plan=plan-1&session=/);await expect(page.getByRole('heading',{name:'VoiceDot AI Coach'})).toBeVisible();
+});
+
+test("Calendar opens the exact persisted AI Coach session from its event", async ({ page }) => {
+  await mockStudent(page);
+  const sessionId = "session-exact-calendar";
+  const plan = {
+    id: "plan-calendar", company_name: "Example Company", role_title: "Backend Engineer",
+    target_date: "2026-09-26",
+    plan: {
+      summary: "Prepare for the role", goal: "Understand backend reliability", priority_topics: [],
+      daily_roadmap: [{ day: 1, session_id: sessionId, title: "Database indexes", focus: "Query performance",
+        activities: ["Review query plans"], success_check: "Explain index tradeoffs" }],
+      discussion_starters: [],
+    },
+  };
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [] }));
+  await page.route("**/api/student/coach/calendar", route => route.fulfill({ json: { events: [{
+    id: "calendar-event-1", date: new Date().toISOString().slice(0, 10), title: "Database indexes",
+    subtitle: "Example Company · Backend Engineer", kind: "coach", plan_id: plan.id, session_id: sessionId,
+  }] } }));
+  await page.route(`**/api/student/coach/plans/${plan.id}`, route => route.fulfill({ json: plan }));
+  await page.route(`**/api/student/coach/plans/${plan.id}/sessions/${sessionId}`, route => route.fulfill({ json: {
+    id: sessionId, stage: "teaching", skill: "Database indexes", learning_objective: "Explain index tradeoffs",
+  } }));
+
+  await page.goto("/calendar");
+  await page.locator(".calendar-upcoming-event").filter({ hasText: "Database indexes" }).click();
+  await expect(page).toHaveURL(new RegExp(`/coach/session\\?plan=${plan.id}&session=${sessionId}`));
+  await expect(page.getByRole("heading", { name: "VoiceDot AI Coach" })).toBeVisible();
+  await expect(page.getByText("Explain index tradeoffs")).toBeVisible();
+});
+
+test("student can save, reload, and view a valid date of birth", async ({ page }) => {
+  await mockStudent(page);
+  let dateOfBirth: string | null = null;
+  await page.route("**/api/auth/student-me", route => route.fulfill({
+    json: { ...identity, student: { ...identity.student, date_of_birth: dateOfBirth } },
+  }));
+  await page.route("**/api/student/profile", async route => {
+    if (route.request().method() !== "PATCH") return route.fallback();
+    const payload = route.request().postDataJSON();
+    dateOfBirth = payload.date_of_birth;
+    await route.fulfill({ json: { target_role: payload.target_role || null, date_of_birth: dateOfBirth } });
+  });
+
+  await page.goto("/profile");
+  await page.getByLabel("Date of birth").fill("2005-01-02");
+  await page.getByRole("button", { name: "Save preference" }).click();
+  await expect(page.getByRole("status")).toContainText("profile details have been saved");
+  await expect(page.getByText("02/01/2005", { exact: true })).toBeVisible();
+  await page.reload();
+  await expect(page.getByText("02/01/2005", { exact: true })).toBeVisible();
+  expect(dateOfBirth).toBe("2005-01-02");
 });
 
 test('coach voice acknowledges played audio and releases the microphone on navigation',async({page})=>{
