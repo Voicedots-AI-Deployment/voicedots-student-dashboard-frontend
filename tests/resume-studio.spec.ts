@@ -116,3 +116,9 @@ test("Resume Studio editor stays within phone, tablet and laptop viewports",asyn
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  }
 });
+
+test("Resume Studio keeps controls compact, fields aligned and preview tall on desktop",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ const save=await page.getByRole("button",{name:"Save now"}).boundingBox();const name=await page.getByLabel("Full name").boundingBox();const preview=await page.locator(".rs-preview-frame").boundingBox();const previewPanel=await page.locator(".rs-preview-panel").boundingBox();
+ expect(save?.height).toBeLessThanOrEqual(40);expect(name?.height).toBeGreaterThanOrEqual(40);expect(name?.height).toBeLessThanOrEqual(44);expect(preview?.height).toBeGreaterThanOrEqual(600);expect(previewPanel?.width).toBeGreaterThanOrEqual(420);
+});
