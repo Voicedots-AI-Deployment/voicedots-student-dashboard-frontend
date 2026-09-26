@@ -1699,6 +1699,40 @@ dialog.modal::backdrop {
 }
 @media (max-width: 420px) {
   .profile-details { grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  .dashboard-content > .career-actions {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .dashboard-content > .career-actions > .button {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    max-width: 100%;
+    white-space: normal;
+    overflow-wrap: anywhere;
+  }
+  .welcome-banner {
+    box-sizing: border-box;
+    min-width: 0;
+    padding: 22px 18px;
+  }
+  .welcome-banner > div:first-child {
+    min-width: 0;
+    max-width: 100%;
+  }
+  .welcome-banner h2 {
+    max-width: 100%;
+    font-size: clamp(24px, 7vw, 29px);
+    overflow-wrap: anywhere;
+  }
+  .welcome-banner p {
+    max-width: 100%;
+    overflow-wrap: anywhere;
+  }
+  .voice-art {
+    right: -130px;
+    opacity: 0.14;
+  }
 }
 
 .career-tools { display:grid; gap:24px; }

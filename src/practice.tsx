@@ -273,14 +273,11 @@ export function Practice() {
       } catch (firstError) {
         if (!(firstError instanceof ApiError) || firstError.status < 500) throw firstError;
         await new Promise((resolve) => setTimeout(resolve, 1200));
-        // A failed preparation can leave a transient operation record behind;
-        // retry with a fresh idempotency key so the next attempt can claim a
-        // clean preparation operation instead of replaying the failed one.
-        const retryKey = crypto.randomUUID();
-        sessionStorage.setItem(`${key}_upload`, JSON.stringify({ fingerprint, key: retryKey }));
-        result = await api<Preparation>("/api/student/interview/start", {
-          method: "POST", body, headers: { "Idempotency-Key": retryKey }, signal: controller.signal,
-        });
+        // Reuse the same key after an ambiguous 5xx. The server returns a
+        // completed operation or reclaims a failed one for this request hash;
+        // generating a new key here could create a second submission if the
+        // first request committed before its response was lost.
+        result = await startRequest();
       }
       if (alive.current) remember(result);
     } catch (e) {

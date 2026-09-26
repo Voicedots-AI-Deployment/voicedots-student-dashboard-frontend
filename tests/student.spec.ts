@@ -129,11 +129,27 @@ test("overview is honest about missing data and is responsive", async ({
     fullPage: true,
   });
   await page.setViewportSize({ width: 390, height: 844 });
-  expect(
-    await page.evaluate(
-      () => document.documentElement.scrollWidth <= innerWidth,
-    ),
-  ).toBe(true);
+  await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  const mobileLayout = await page.evaluate(() => ({
+    fits: document.documentElement.scrollWidth <= innerWidth,
+    documentWidth: document.documentElement.scrollWidth,
+    content: (() => {
+      const main = document.querySelector<HTMLElement>(".dashboard-content")!;
+      const actions = main.querySelector<HTMLElement>(".career-actions")!;
+      const button = actions.querySelector<HTMLElement>(".button")!;
+      return { main: main.getBoundingClientRect().toJSON(), actions: actions.getBoundingClientRect().toJSON(), button: button.getBoundingClientRect().toJSON(), display: getComputedStyle(actions).display, grid: getComputedStyle(actions).gridTemplateColumns, width: getComputedStyle(actions).width, minWidth: getComputedStyle(actions).minWidth };
+    })(),
+    overflowing: Array.from(document.querySelectorAll<HTMLElement>("body *"))
+      .filter((element) => element.getBoundingClientRect().right > innerWidth + 1)
+      .slice(0, 10)
+      .map((element) => ({
+        tag: element.tagName,
+        className: typeof element.className === "string" ? element.className : "",
+        right: Math.round(element.getBoundingClientRect().right),
+        width: Math.round(element.getBoundingClientRect().width),
+      })),
+  }));
+  expect(mobileLayout.fits, JSON.stringify(mobileLayout)).toBe(true);
   await page.getByRole("button", { name: "Open navigation" }).click();
   await page.getByRole("link", { name: "My profile", exact: true }).click();
   await expect(page.getByRole("heading", { name: "My profile" })).toBeVisible();
@@ -418,8 +434,6 @@ test("retrying an ambiguous upload reuses its idempotency key", async ({
     .getByLabel("Target role", { exact: true })
     .fill("Software engineer");
   await page.getByRole("button", { name: "Prepare my interview" }).click();
-  await expect(page.getByRole("alert")).toContainText("Please retry.");
-  await page.getByRole("button", { name: "Prepare my interview" }).click();
   await expect(
     page.getByRole("heading", { name: "Your panel is ready." }),
   ).toBeVisible();
@@ -563,23 +577,38 @@ test("long placement company names fit a narrow phone screen", async ({ page }) 
   expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(320);
 });
 
-test('profile persists project evidence, drafts a resume, and saves it to the library',async({page})=>{
- await mockStudent(page);let profile:any={},draft:any={},saved=false;
- await page.route('**/api/student/portfolio**',route=>{const path=new URL(route.request().url()).pathname,body=route.request().postDataJSON();
- if(path.endsWith('/build')){expect(body.job_description).toContain('Python');draft={resume_text:'Asha Kumar\nBuilt a Python library API with search.',warnings:[]};return route.fulfill({json:draft})}
- if(path.endsWith('/save-resume')){saved=true;return route.fulfill({json:{resume_id:'saved-1'}})}
- if(route.request().method()==='PUT'){profile=body;return route.fulfill({json:{status:'saved'}})}
- return route.fulfill({json:{profile,draft:Object.keys(draft).length?draft:undefined}})
+test('Resume Studio saves project evidence and reloads it from the student API',async({page})=>{
+ await mockStudent(page);
+ let savedProject:any=null;
+ await page.route('**/api/student/resume-studio/**',route=>{
+  const path=new URL(route.request().url()).pathname,method=route.request().method();
+  if(path.endsWith('/templates'))return route.fulfill({json:[]});
+  if(path.endsWith('/resumes')&&method==='GET')return route.fulfill({json:savedProject?[savedProject]:[]});
+  if(path.endsWith('/resumes')&&method==='POST'){savedProject={id:'studio-1',title:'Resume 1',revision:1,document:route.request().postDataJSON().document,presentation:{},updated_at:'2026-09-26T10:00:00Z'};return route.fulfill({status:201,json:savedProject})}
+  if(path.endsWith('/studio-1/preview'))return route.fulfill({contentType:'text/html',body:'<html><body>Resume preview</body></html>'});
+  if(path.endsWith('/studio-1')&&method==='GET')return route.fulfill({json:savedProject});
+  if(path.endsWith('/studio-1')&&method==='PUT'){const body=route.request().postDataJSON();savedProject={...savedProject,...body,revision:savedProject.revision+1};return route.fulfill({json:savedProject})}
+  return route.fulfill({status:404,json:{detail:`Not found ${method} ${path}`}});
  });
- await page.goto('/profile');await page.getByLabel('Topics you have worked on').fill('Python APIs');await page.getByRole('button',{name:'Add project',exact:true}).click();await page.getByLabel('Project name').fill('Library API');await page.getByLabel('What you built and your contribution').fill('Built a Python API with book search.');await page.getByRole('button',{name:'Save profile details',exact:true}).click();await expect(page.getByText('Profile details saved.',{exact:true})).toBeVisible();expect(profile.projects[0].name).toBe('Library API');
- await page.getByLabel('Target role',{exact:true}).last().fill('Backend engineer');await page.getByLabel('Job description',{exact:true}).fill('Build Python APIs and reliable database services.');await page.getByRole('button',{name:'Create tailored draft'}).click();await expect(page.getByLabel('Editable resume draft')).toContainText('Python library API');await page.getByRole('button',{name:'Save to resume library'}).click();await expect.poll(()=>saved).toBe(true);
- await page.reload();await expect(page.getByLabel('Project name')).toHaveValue('Library API');await expect(page.getByLabel('Editable resume draft')).toHaveValue(draft.resume_text);
+ await page.goto('/resume-studio');
+ await page.getByRole('button',{name:'Create resume',exact:true}).click();
+ await page.getByLabel('Add resume section').selectOption('projects');
+ await page.getByRole('button',{name:'Add Project',exact:true}).click();
+ await page.getByLabel('Title',{exact:true}).fill('Library API');
+ await page.getByLabel('Description / details',{exact:true}).fill('Built a Python API with book search.');
+ await page.getByRole('button',{name:'Save resume',exact:true}).click();
+ await expect(page.getByRole('status')).toContainText('Resume saved as a new revision');
+ expect(savedProject.revision).toBe(2);
+ await page.reload();
+ await page.getByRole('button',{name:/Resume 1 Revision 2/}).click();
+ await expect(page.getByLabel('Title',{exact:true})).toHaveValue('Library API');
+ await expect(page.getByLabel('Description / details',{exact:true})).toHaveValue('Built a Python API with book search.');
 });
 
 test('coach creates a saved roadmap and continues the conversation',async({page})=>{
  await mockStudent(page);const plan={id:'plan-1',role_title:'Backend engineer',target_date:'2027-01-01',plan:{summary:'Learn reliable API design',goal:'Explain and build APIs',priority_topics:[],daily_roadmap:[{day:1,title:'Python APIs',focus:'Request handling',activities:['Build one endpoint'],success_check:'Explain a request'}],discussion_starters:['Show today’s plan']},messages:[{id:'m1',role:'coach',content:'Let’s learn API design.'}]};let created=false;
  await page.route('**/api/student/coach/plans**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/messages')){plan.messages.push({id:'m2',role:'coach',content:'An API receives a request and returns a response.'});return route.fulfill({json:{reply:plan.messages[1].content}})}if(path.endsWith('/plans')){if(route.request().method()==='POST'){created=true;return route.fulfill({json:plan})}return route.fulfill({json:{plans:created?[plan]:[]}})}return route.fulfill({json:plan})});
- await page.goto('/coach');await page.getByLabel('Target role',{exact:true}).fill('Backend engineer');await page.getByLabel('Interview date').fill('2027-01-01');await page.getByLabel('Job description',{exact:true}).fill('Build Python APIs and reliable database services.');await page.getByRole('button',{name:'Create preparation plan'}).click();await expect(page.getByText('Learn reliable API design')).toBeVisible();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await page.getByLabel('Ask your coach').fill('Explain APIs');await page.getByRole('button',{name:'Send message'}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();await expect(page.getByRole('button',{name:'Connect AI Coach'})).toBeVisible();
+ await page.goto('/coach');await page.getByLabel('Target role',{exact:true}).fill('Backend engineer');await page.getByLabel('Interview date').fill('2027-01-01');await page.getByLabel('Job description',{exact:true}).fill('Build Python APIs and reliable database services.');await page.getByRole('button',{name:'Create preparation plan'}).click();await expect(page.getByText('Learn reliable API design')).toBeVisible();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await page.getByLabel('Ask your coach').fill('Explain APIs');await page.getByRole('button',{name:'Send message'}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();await page.getByText('Python APIs',{exact:true}).locator('xpath=ancestor::article[1]').click();await page.getByRole('button',{name:'Connect',exact:true}).click();await expect(page).toHaveURL(/\/coach\/session\?plan=plan-1&session=/);await expect(page.getByRole('heading',{name:'VoiceDot AI Coach'})).toBeVisible();
 });
 
 test('coach voice acknowledges played audio and releases the microphone on navigation',async({page})=>{
@@ -589,7 +618,7 @@ test('coach voice acknowledges played audio and releases the microphone on navig
  await page.addInitScript(()=>{Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);track.stop=()=>{(window as any).micReleased=true;stop();void ctx.close()};return destination.stream}})});
  let acknowledged=false,ended=false;
  await page.routeWebSocket('**/ws/coach/**',ws=>{ws.onMessage(message=>{if(typeof message==='string'){const p=JSON.parse(message);if(p.type==='playback_complete'&&p.audio_epoch===1)acknowledged=true;if(p.type==='end_interview')ended=true}});ws.send(JSON.stringify({type:'tts_begin',audio_epoch:1,text:'Welcome to your lesson.'}));const packet=Buffer.alloc(964);packet.writeUInt32BE(1);ws.send(packet);ws.send(JSON.stringify({type:'tts_end',audio_epoch:1}));});
- await page.goto('/coach');await page.getByRole('button',{name:'Engineer · 2027-01-01'}).click();await page.getByRole('button',{name:'Connect AI Coach'}).click();await page.getByRole('button',{name:'Connect AI Coach'}).click();await expect.poll(()=>acknowledged).toBe(true);await expect(page.getByText('Listening to you',{exact:true})).toBeVisible();await page.getByRole('button',{name:'Back to AI Coach'}).click();await expect.poll(()=>ended).toBe(true);await expect.poll(()=>page.evaluate(()=>(window as any).micReleased)).toBe(true);
+ await page.goto('/coach/session?plan=voice-1&session=voice-1%3Aday%3A1');await page.getByRole('button',{name:'Connect AI Coach'}).click();await expect.poll(()=>acknowledged).toBe(true);await expect(page.getByText('Listening to you',{exact:true})).toBeVisible();await page.getByRole('button',{name:'Back to AI Coach'}).click();await expect.poll(()=>ended).toBe(true);await expect.poll(()=>page.evaluate(()=>(window as any).micReleased)).toBe(true);
 });
 
 test('academics shows source dates, attendance and private marks reports on mobile',async({page})=>{

@@ -278,6 +278,7 @@ export function App() {
   const auth = useAuth();
   const location = useLocation();
   const [mobileOpen, setMobileOpen] = useState(false);
+  const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
   const [dark, setDark] = useState(
@@ -294,10 +295,14 @@ export function App() {
     window.scrollTo(0, 0);
   }, [location.pathname]);
   useEffect(() => {
-    const desktop = window.matchMedia("(min-width: 761px)");
-    const closeOnDesktop = () => { if (desktop.matches) setMobileOpen(false); };
-    desktop.addEventListener("change", closeOnDesktop);
-    return () => desktop.removeEventListener("change", closeOnDesktop);
+    const viewport = window.matchMedia("(max-width: 760px)");
+    const syncViewport = () => {
+      setIsMobile(viewport.matches);
+      if (!viewport.matches) setMobileOpen(false);
+    };
+    syncViewport();
+    viewport.addEventListener("change", syncViewport);
+    return () => viewport.removeEventListener("change", syncViewport);
   }, []);
   useEffect(() => {
     if (!mobileOpen) return;
@@ -341,9 +346,10 @@ export function App() {
     }
   }
   function toggleSidebar() {
-    if (window.matchMedia("(max-width: 760px)").matches) setMobileOpen((value) => !value);
+    if (isMobile) setMobileOpen((value) => !value);
     else setSidebarCollapsed((value) => !value);
   }
+  const navigationExpanded = isMobile ? mobileOpen : !sidebarCollapsed;
   return (
     <div className={`dashboard-shell${sidebarCollapsed ? " sidebar-collapsed" : ""}`}>
       <a className="skip-link" href="#main-content">
@@ -408,8 +414,8 @@ export function App() {
           <div>
             <button
               className="icon-button"
-              aria-label={mobileOpen || !sidebarCollapsed ? "Close navigation" : "Open navigation"}
-              aria-expanded={mobileOpen || !sidebarCollapsed}
+              aria-label={navigationExpanded ? "Close navigation" : "Open navigation"}
+              aria-expanded={navigationExpanded}
               onClick={toggleSidebar}
             >
               <Menu size={22} />
