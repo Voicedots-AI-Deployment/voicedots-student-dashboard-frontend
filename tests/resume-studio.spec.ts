@@ -10,6 +10,7 @@ async function mockResumeStudio(page:Page, conflict=false){
   const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
   if(path==="/api/auth/student-me")return route.fulfill({json:student});
   if(path==="/api/student/resume-studio/templates")return route.fulfill({json:[{id:"classic",name:"Classic",description:"ATS-friendly",ats_safe:true,tags:["ATS"]}]});
+  if(path==="/api/student/resume-studio/ai/status")return route.fulfill({json:{provider:"openai",model:"test-model",live_model_configured:true}});
   if(path==="/api/student/resume-studio/resumes"&&method==="GET")return route.fulfill({json:[project]});
   if(path==="/api/student/resume-studio/resumes"&&method==="POST"){project={...project,...route.request().postDataJSON(),revision:1};return route.fulfill({status:201,json:project})}
   if(path==="/api/student/resume-studio/resumes/rs-1"&&method==="GET")return route.fulfill({json:project});
@@ -39,8 +40,17 @@ test("Resume Studio appears below AI Coach and saves project content through the
  await page.getByRole("button",{name:/Resume 1 Revision/}).click();
  await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Kumar");
- await page.getByRole("button",{name:"Save resume"}).click();
- await expect(page.getByRole("status")).toContainText("Resume saved as a new revision");
+ await page.getByRole("button",{name:"Save now"}).click();
+ await expect(page.locator(".rs-save-state")).toHaveText("Saved");
+});
+
+test("Resume Studio autosaves edits and keeps the save state tied to the backend",async({page})=>{
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.getByLabel("Full name").fill("Asha Autosaved");
+ await expect(page.locator(".rs-save-state")).toHaveText("Unsaved changes");
+ await expect(page.locator(".rs-save-state")).toHaveText("Saved",{timeout:5000});
+ await expect(page.getByText(/RESUME STUDIO · REVISION 2/)).toBeVisible();
+ await expect(page.getByRole("button",{name:"Save now"})).toBeDisabled();
 });
 
 test("Resume Studio reports stale revision conflicts and offers a safe reload",async({page})=>{
@@ -48,7 +58,7 @@ test("Resume Studio reports stale revision conflicts and offers a safe reload",a
  await page.getByRole("button",{name:/Resume 1 Revision/}).click();
  await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Unsaved draft");
- await page.getByRole("button",{name:"Save resume"}).click();
+ await page.getByRole("button",{name:"Save now"}).click();
  await expect(page.getByRole("alert").filter({hasText:"changed elsewhere"})).toBeVisible();
  await expect(page.getByRole("button",{name:"Reload latest"})).toBeVisible();
 });
@@ -58,17 +68,18 @@ test("Resume Studio reviews and applies proposals as a revision",async({page})=>
  await mockResumeStudio(page);await page.goto("/resume-studio");
  await page.getByRole("button",{name:/Resume 1 Revision/}).click();
  await page.getByRole("tab",{name:"AI tools"}).click();
+ await expect(page.getByText("AI assistance is connected · test-model")).toBeVisible();
  await page.getByRole("button",{name:"Review resume"}).click();
  await expect(page.getByRole("heading",{name:"Suggested changes"})).toBeVisible();
  await page.getByRole("button",{name:"Accept proposal"}).click();
  await page.getByRole("button",{name:"Apply as revision"}).click();
- await expect(page.getByRole("status")).toContainText("applied as a new revision");
+ await expect(page.locator(".rs-notice")).toContainText("applied as a new revision");
 });
 
 test("Resume Studio imports a file and downloads an export",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");
  await page.locator('input[type="file"]').setInputFiles({name:"resume.txt",mimeType:"text/plain",buffer:Buffer.from("Asha Kumar\nPython and SQL")});
- await page.getByRole("button",{name:"Import",exact:true}).click();
+ await page.getByRole("button",{name:"Import resume",exact:true}).click();
  await expect(page.getByRole("heading",{name:"Imported resume"})).toBeVisible();
  const download=page.waitForEvent("download");await page.getByRole("button",{name:"PDF"}).click();expect((await download).suggestedFilename()).toContain("Imported-resume.pdf");
 });

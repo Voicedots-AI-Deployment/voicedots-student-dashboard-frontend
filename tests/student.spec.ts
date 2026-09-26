@@ -620,20 +620,20 @@ test('Resume Studio saves project evidence and reloads it from the student API',
   return route.fulfill({status:404,json:{detail:`Not found ${method} ${path}`}});
  });
  await page.goto('/resume-studio');
- await page.getByRole('button',{name:'Create resume',exact:true}).click();
+ await page.getByRole('button',{name:'Create manually',exact:true}).click();
  await page.getByRole('tab',{name:'Resume editor'}).click();
  await page.getByLabel('Add resume section').selectOption('projects');
  await page.getByRole('button',{name:'Add Project',exact:true}).click();
- await page.getByLabel('Title',{exact:true}).fill('Library API');
- await page.getByLabel('Description / details',{exact:true}).fill('Built a Python API with book search.');
- await page.getByRole('button',{name:'Save resume',exact:true}).click();
- await expect(page.getByRole('status')).toContainText('Resume saved as a new revision');
+ await page.getByLabel('Project title',{exact:true}).fill('Library API');
+ await page.getByLabel('Description / achievements',{exact:true}).fill('Built a Python API with book search.');
+ await page.getByRole('button',{name:'Save now',exact:true}).click();
+ await expect(page.locator('.rs-save-state')).toHaveText('Saved');
  expect(savedProject.revision).toBe(2);
  await page.reload();
  await page.getByRole('button',{name:/Resume 1 Revision 2/}).click();
  await page.getByRole('tab',{name:'Resume editor'}).click();
- await expect(page.getByLabel('Title',{exact:true})).toHaveValue('Library API');
- await expect(page.getByLabel('Description / details',{exact:true})).toHaveValue('Built a Python API with book search.');
+ await expect(page.getByLabel('Project title',{exact:true})).toHaveValue('Library API');
+ await expect(page.getByLabel('Description / achievements',{exact:true})).toContainText('Built a Python API with book search.');
 });
 
 test('coach creates a saved roadmap and continues the conversation',async({page})=>{
