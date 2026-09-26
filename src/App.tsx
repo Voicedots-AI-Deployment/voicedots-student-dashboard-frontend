@@ -486,5 +486,6 @@ function CoachSessionRoute() {
   const params = new URLSearchParams(window.location.search);
   const planId = params.get("plan");
   const sessionId = params.get("session") || undefined;
-  return planId ? <CoachSession planId={planId} sessionId={sessionId} /> : <Navigate to="/coach" replace />;
+  const cycleId = params.get("cycle") || undefined;
+  return planId ? <CoachSession planId={planId} sessionId={sessionId} cycleId={cycleId} /> : <Navigate to="/coach" replace />;
 }
