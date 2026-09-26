@@ -9,13 +9,19 @@ import { AlertCircle, ArrowRight, LoaderCircle, Sparkles } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api } from "./api";
 
-export function useResource<T>(path: string) {
+export function useResource<T>(path: string | null) {
   const [data, setData] = useState<T | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [version, setVersion] = useState(0);
   const reload = useCallback(() => setVersion((v) => v + 1), []);
   useEffect(() => {
+    if (!path) {
+      setData(null);
+      setError("");
+      setLoading(false);
+      return;
+    }
     const controller = new AbortController();
     setLoading(true);
     setError("");

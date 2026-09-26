@@ -26,6 +26,10 @@
       "destination": "/index.html"
     },
     {
+      "source": "/resume-studio",
+      "destination": "/index.html"
+    },
+    {
       "source": "/coach",
       "destination": "/index.html"
     },
