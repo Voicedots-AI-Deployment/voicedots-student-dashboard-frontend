@@ -1825,3 +1825,60 @@ dialog.modal::backdrop {
 @media(max-width:1080px){.rs-workspace{grid-template-columns:minmax(0,1fr) minmax(300px,.8fr)}.rs-overview-grid{grid-template-columns:1fr}.rs-overview-card{min-height:unset}}
 @media(max-width:780px){.rs-tabs{position:static;overflow-x:auto;scrollbar-width:thin}.rs-tabs button{flex:0 0 auto}.rs-workspace{grid-template-columns:minmax(0,1fr)}.rs-preview-panel{position:static}.rs-overview-summary{grid-template-columns:1fr}.rs-overview-hero{padding:20px}}
 @media(max-width:480px){.rs-overview-hero{align-items:flex-start;flex-direction:column}.rs-progress{width:86px;height:86px;flex-basis:86px}.rs-overview-card{padding:15px}.rs-snapshot-stats{display:grid;grid-template-columns:repeat(3,minmax(0,1fr))}.rs-snapshot-stats span{padding:8px;font-size:11px}.rs-tabs{margin-inline:-2px}.rs-tabs button{padding-inline:12px;font-size:13px}}
+
+/* Resume Studio — a focused writing atelier with a stable paper preview. */
+.resume-studio{--rs-ink:#242238;--rs-violet:#7041e5;--rs-line:#e8e3ef;max-width:1640px;gap:20px;padding-bottom:32px}
+.resume-studio .rs-editor-heading{position:relative;grid-template-columns:auto minmax(0,1fr) auto;gap:20px;padding:22px 24px;border:1px solid var(--rs-line);border-radius:22px;background:radial-gradient(ellipse at 8% 0%,#f1eaff 0,transparent 40%),var(--surface,#fff);box-shadow:0 14px 42px #32204d0b}
+.dark .resume-studio .rs-editor-heading{background:radial-gradient(ellipse at 8% 0%,#312348 0,transparent 42%),var(--surface,#201c29);border-color:#3b3349}
+.resume-studio .rs-editor-heading>div:nth-child(2){min-width:0}
+.resume-studio .rs-editor-heading h1{font-size:clamp(25px,2.6vw,36px);line-height:1.12}
+.resume-studio .rs-editor-heading p{font-size:13px}
+.resume-studio .rs-heading-actions{align-items:center}
+.resume-studio .rs-tabs{position:static;z-index:auto;width:max-content;max-width:100%;gap:5px;padding:6px;border:1px solid var(--rs-line);border-radius:14px;background:var(--surface,#fff);box-shadow:0 6px 20px #32204d08;backdrop-filter:none}
+.resume-studio .rs-tabs button{min-height:40px;padding:0 16px;font-size:13px;transition:background .16s,color .16s}
+.resume-studio .rs-tabs button:hover{background:#f8f5fd;color:var(--rs-violet)}
+.resume-studio .rs-workspace{grid-template-columns:minmax(0,1.08fr) minmax(370px,.92fr);gap:18px}
+.resume-studio .rs-editor,.resume-studio .rs-preview-panel{border-color:var(--rs-line);border-radius:20px;box-shadow:0 14px 40px #32204d0a}
+.resume-studio .rs-panel-content{gap:20px;padding:22px}
+.resume-studio .rs-panel-content>div:first-child>h2,.resume-studio .rs-panel-content .rs-section-heading h2{font-size:22px;letter-spacing:-.025em}
+.resume-studio .rs-form-section{gap:17px;padding:20px;border-color:#ebe6f1;border-radius:17px;background:color-mix(in srgb,var(--surface,#fff) 97%,#f7f3ff)}
+.dark .resume-studio .rs-form-section{border-color:#3a3347;background:#211e29}
+.resume-studio .rs-fields{gap:16px}
+.resume-studio .rs-fields label,.resume-studio .rs-field label,.resume-studio .rs-entry-body{gap:8px;color:var(--text,#272238);font-size:12px;font-weight:650}
+.resume-studio .rs-fields input,.resume-studio .rs-fields select,.resume-studio .rs-field input,.resume-studio .rs-entry-body textarea,.resume-studio .rs-jd textarea,.resume-studio .rs-chat-form textarea,.resume-studio .rs-edit-answer textarea{min-height:42px;border-color:#e5e0ed;border-radius:11px;transition:border-color .16s,box-shadow .16s}
+.resume-studio .rs-fields input:focus,.resume-studio .rs-fields select:focus,.resume-studio .rs-field input:focus,.resume-studio textarea:focus{outline:0;border-color:#a487ee;box-shadow:0 0 0 3px #7c52e51c}
+.resume-studio .rs-entry{gap:14px;padding:17px;border-color:#e9e4ef;border-radius:15px;background:#faf9fc}
+.dark .resume-studio .rs-entry{border-color:#3b3449;background:#25212e}
+.resume-studio .rs-template-grid{grid-template-columns:repeat(auto-fill,minmax(190px,1fr));gap:14px}
+.resume-studio .rs-template-card{height:100%;padding:14px;border-radius:15px;transition:border-color .18s,transform .18s,box-shadow .18s}
+.resume-studio .rs-template-card:hover{transform:translateY(-2px);border-color:#bba5f3;box-shadow:0 10px 24px #39286612}
+.resume-studio .rs-template-card.selected{border-color:#8359e9;box-shadow:0 0 0 3px #8359e91c}
+.resume-studio .rs-preview-panel{top:18px;grid-template-rows:auto minmax(470px,calc(100vh - 210px)) auto auto}
+.resume-studio .rs-preview-head{min-height:62px;padding:13px 17px;background:var(--surface,#fff)}
+.resume-studio .rs-preview-head strong{font-size:13px}
+.resume-studio .rs-preview-frame{min-height:470px;background:#f2eff6}
+.dark .resume-studio .rs-preview-frame{background:#17151d}
+.resume-studio .rs-preview-panel .rs-preview-frame iframe{min-height:470px;background:#fff}
+.resume-studio .rs-preview-placeholder{display:grid;place-items:center;align-content:center;gap:10px;min-height:470px;padding:36px;text-align:center;color:var(--muted,#706a7c)}
+.resume-studio .rs-preview-placeholder strong{color:var(--text,#272238);font-size:15px}
+.resume-studio .rs-preview-placeholder p{max-width:290px;margin:0;font-size:13px;line-height:1.6}
+.resume-studio .rs-preview-mark{display:grid;place-items:center;width:48px;height:48px;border:1px solid #e6dcfa;border-radius:15px;background:#f4efff;color:#7041e5}
+.resume-studio .rs-preview-status{inset:10px 10px auto;justify-items:end}
+.resume-studio .rs-preview-status>span{margin:0;border-color:#e5def0;background:#fff;font-weight:600}
+.resume-studio .rs-export-actions{padding:12px;background:var(--surface,#fff)}
+.resume-studio .rs-export-actions button{min-height:38px;padding-inline:14px;border-radius:11px}
+.resume-studio .rs-history-button{min-height:43px}
+.resume-studio .rs-overview-hero{min-height:200px;padding:30px;border-radius:22px;background:radial-gradient(ellipse at 5% 5%,#e9ddff,transparent 44%),linear-gradient(115deg,#faf8ff,#fff 72%)}
+.dark .resume-studio .rs-overview-hero{background:radial-gradient(ellipse at 5% 5%,#382957,transparent 44%),linear-gradient(115deg,#252031,#201d2c 72%)}
+.resume-studio .rs-overview-grid{gap:14px}
+.resume-studio .rs-overview-card{min-height:206px;padding:20px;border-color:var(--rs-line);border-radius:17px;transition:transform .16s,border-color .16s,box-shadow .16s}
+.resume-studio .rs-overview-card:hover{transform:translateY(-2px);border-color:#c8b8ed;box-shadow:0 12px 28px #3928660e}
+.resume-studio .rs-overview-summary{padding:21px;border-color:var(--rs-line);border-radius:17px}
+.resume-studio .rs-chat-builder{padding:20px;border:1px solid var(--rs-line);border-radius:17px;background:linear-gradient(140deg,#f8f5ff,#fbfaff 64%,#f5f9ff)}
+.dark .resume-studio .rs-chat-builder{border-color:#3b3349;background:#211e29}
+.resume-studio :where(button,input,select,textarea):focus-visible{outline:3px solid #9676ec;outline-offset:2px}
+.resume-studio button:disabled{cursor:not-allowed}
+@media(max-width:1100px){.resume-studio .rs-workspace{grid-template-columns:minmax(0,1fr) minmax(310px,.8fr);gap:14px}.resume-studio .rs-panel-content{padding:17px}.resume-studio .rs-preview-panel{top:12px}}
+@media(max-width:780px){.resume-studio .rs-editor-heading{grid-template-columns:auto minmax(0,1fr);padding:18px}.resume-studio .rs-heading-actions{grid-column:1/-1;justify-content:flex-end}.resume-studio .rs-tabs{width:100%;overflow-x:auto;scrollbar-width:thin}.resume-studio .rs-workspace{grid-template-columns:minmax(0,1fr)}.resume-studio .rs-preview-panel{position:static;grid-template-rows:auto minmax(380px,70vh) auto auto}.resume-studio .rs-preview-frame,.resume-studio .rs-preview-placeholder,.resume-studio .rs-preview-panel .rs-preview-frame iframe{min-height:380px}.resume-studio .rs-overview-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:520px){.resume-studio{gap:14px}.resume-studio .rs-editor-heading{gap:12px;padding:15px;border-radius:17px}.resume-studio .rs-editor-heading>button{padding-inline:10px}.resume-studio .rs-heading-actions{justify-content:stretch}.resume-studio .rs-heading-actions>*{flex:1;justify-content:center}.resume-studio .rs-tabs button{padding-inline:12px}.resume-studio .rs-panel-content{gap:16px;padding:14px}.resume-studio .rs-fields.two{grid-template-columns:minmax(0,1fr)}.resume-studio .rs-template-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.resume-studio .rs-overview-grid{grid-template-columns:minmax(0,1fr)}.resume-studio .rs-overview-hero{align-items:flex-start;flex-direction:column;padding:20px}.resume-studio .rs-overview-card{min-height:unset}.resume-studio .rs-preview-panel{grid-template-rows:auto minmax(350px,65vh) auto auto}.resume-studio .rs-preview-frame,.resume-studio .rs-preview-placeholder,.resume-studio .rs-preview-panel .rs-preview-frame iframe{min-height:350px}}
+@media print{.resume-studio .rs-editor-heading,.resume-studio .rs-tabs,.resume-studio .rs-preview-panel,.resume-studio .rs-heading-actions{display:none!important}.resume-studio{max-width:none;padding:0}.resume-studio .rs-workspace{display:block}.resume-studio .rs-editor{border:0;box-shadow:none}}

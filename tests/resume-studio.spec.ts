@@ -86,3 +86,22 @@ test("Resume Studio preview renders the unsaved editor draft",async({page})=>{
  await page.getByLabel("Full name").fill("Asha Draft Preview");
  await expect(page.frameLocator('iframe[title="Resume preview"]').locator("body")).toContainText("Asha Draft Preview");
 });
+
+test("Resume Studio preview exposes a retry state after a rendering request fails",async({page})=>{
+ await mockResumeStudio(page);let failed=false;
+ await page.route("**/api/student/resume-studio/resumes/rs-1/preview",async route=>{
+  if(route.request().method()==="POST"&&!failed){failed=true;return route.abort("failed")}return route.fallback();
+ });
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await expect(page.getByText("Preview unavailable")).toBeVisible();
+ await page.getByRole("button",{name:"Try again"}).click();
+ await expect(page.frameLocator('iframe[title="Resume preview"]').locator("body")).toContainText("Resume 1");
+});
+
+test("Resume Studio editor stays within phone, tablet and laptop viewports",async({page})=>{
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ for(const width of [390,768,1024]){
+  await page.setViewportSize({width,height:900});
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ }
+});
