@@ -614,7 +614,7 @@ test('Resume Studio saves project evidence and reloads it from the student API',
   if(path.endsWith('/templates'))return route.fulfill({json:[]});
   if(path.endsWith('/resumes')&&method==='GET')return route.fulfill({json:savedProject?[savedProject]:[]});
   if(path.endsWith('/resumes')&&method==='POST'){savedProject={id:'studio-1',title:'Resume 1',revision:1,document:route.request().postDataJSON().document,presentation:{},updated_at:'2026-09-26T10:00:00Z'};return route.fulfill({status:201,json:savedProject})}
-  if(path.endsWith('/studio-1/preview'))return route.fulfill({contentType:'text/html',body:'<html><body>Resume preview</body></html>'});
+  if(path.endsWith('/studio-1/preview')&&method==='POST'){const draft=route.request().postDataJSON();return route.fulfill({contentType:'text/html',body:`<html><body><h1>${draft.document.personal_details.full_name||draft.title}</h1></body></html>`})}
   if(path.endsWith('/studio-1')&&method==='GET')return route.fulfill({json:savedProject});
   if(path.endsWith('/studio-1')&&method==='PUT'){const body=route.request().postDataJSON();savedProject={...savedProject,...body,revision:savedProject.revision+1};return route.fulfill({json:savedProject})}
   return route.fulfill({status:404,json:{detail:`Not found ${method} ${path}`}});

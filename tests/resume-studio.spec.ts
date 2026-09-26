@@ -23,7 +23,8 @@ async function mockResumeStudio(page:Page, conflict=false){
   if(path==="/api/student/resume-studio/proposals/p-1/accept"&&method==="POST")return route.fulfill({json:{id:"p-1",operation:"review",status:"accepted",source_revision:project.revision,proposal:{changes:[{id:"c-1",target:"headline",field:"headline",before:"",after:"Data Analyst"}],grounding:{grounded:true,unsupported_claims:[]}}}});
   if(path==="/api/student/resume-studio/proposals/p-1/apply"&&method==="POST"){project={...project,revision:project.revision+1};return route.fulfill({json:{resume:project,revision:project.revision,applied_ids:["c-1"]}})}
   if(path==="/api/student/resume-studio/resumes/rs-1/export"&&method==="POST")return route.fulfill({status:200,contentType:"application/pdf",body:"%PDF-1.4 test"});
-  if(path==="/api/student/resume-studio/resumes/rs-1/preview")return route.fulfill({contentType:"text/html",body:"<html><body>Resume preview</body></html>"});
+  if(path==="/api/student/resume-studio/resumes/rs-1/preview"&&method==="POST"){const draft=route.request().postDataJSON();return route.fulfill({contentType:"text/html",body:`<html><body><h1>${draft.document.personal_details.full_name||draft.title}</h1></body></html>`})}
+  if(path==="/api/student/resume-studio/resumes/rs-1/preview"&&method==="GET")return route.fulfill({contentType:"text/html",body:"<html><body>Saved resume preview</body></html>"});
   return route.fulfill({status:404,json:{detail:`Not found ${method} ${path}`}});
  });
 }
@@ -78,4 +79,10 @@ test("Resume Studio opens with the guided overview and keeps workspace navigatio
  await expect(page.getByRole("tab",{name:"Overview"})).toHaveAttribute("aria-selected","true");
  await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.getByRole("heading",{name:"Choose a resume style"})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test("Resume Studio preview renders the unsaved editor draft",async({page})=>{
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.getByLabel("Full name").fill("Asha Draft Preview");
+ await expect(page.frameLocator('iframe[title="Resume preview"]').locator("body")).toContainText("Asha Draft Preview");
 });
