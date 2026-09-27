@@ -178,7 +178,7 @@ test("overview follows the requested section order and keeps feedback percentage
   });
   await page.route("**/api/student/dashboard", route => route.fulfill({ json: {
     reports: [{ evaluation_id: "report-1", session_id: "session-1", submission_id: "submission-1", status: "released", created_at: "2026-09-20T12:00:00Z", completed_at: "2026-09-20T12:30:00Z", target_role: "Data Analyst", drive_id: "drive-1", report: { overall_score: 21, status: "released", priority_improvement_areas: [{ focus: "SQL" }] } }],
-    attempts: [],
+    attempts: [{ submission_id: "sub-drive-1", session_id: "session-drive-1", target_role: "Data Analyst", duration_minutes: 30, submitted_at: "2026-09-26T09:00:00Z", drive_id: "drive-1", company_name: "Example Co", source: "placement" }],
     readiness: { ...readiness, overall_score: 72 },
     drives: [{ id: "drive-1", company_name: "Example Co", role_title: "Data Analyst", status: "active" }],
   } }));
@@ -205,6 +205,10 @@ test("overview follows the requested section order and keeps feedback percentage
   });
   expect(scoreIsCentered).toBe(true);
   await expect(page.getByTestId("overview-latest-drive").getByRole("link", { name: /Start AI Interview/ })).toHaveAttribute("href", /\/practice\?drive=drive-1/);
+  const resumableKpi = page.locator(".stat-card").filter({ hasText: "Interviews to resume" });
+  await expect(resumableKpi.locator("strong")).toHaveText("1");
+  await expect(page.getByRole("heading", { name: "Ready when you are" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
   await expect(page.getByRole("link", { name: "Prepare with your AI Coach" })).toHaveAttribute("href", "/coach");
   const quickActions = page.getByTestId("overview-next-steps").getByRole("link");
   await expect(quickActions).toHaveCount(5);
@@ -382,6 +386,7 @@ test("eligibility without assignment is explained and does not enable interview 
           company_name: "Example Company",
           role_title: "Graduate engineer",
           status: "active",
+          eligibility_status: "eligible",
         },
       ],
     }),
@@ -429,6 +434,42 @@ test("API failures show retry and expired sessions return to sign in", async ({
   await expect(page.getByRole("alert")).toContainText(
     "Your session has expired.",
   );
+});
+
+test("campus placements show eligible drives only and filter by interview window", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [
+    { id: "eligible-open", company_name: "Zoho", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", job_type: "full_time", salary_currency: "INR", salary_min_amount: 500000, salary_max_amount: 700000, salary_period: "annual" },
+    { id: "eligible-upcoming", company_name: "Razorpay", role_title: "Backend Developer", status: "scheduled", eligibility_status: "eligible", job_type: "internship" },
+    { id: "ineligible", company_name: "VoiceDot", role_title: "Software Engineer", status: "active", eligibility_status: "ineligible" },
+  ] }));
+  await page.goto("/placements");
+  await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Software Engineer" })).toHaveCount(0);
+  await expect(page.getByText("2 eligible opportunities")).toBeVisible();
+  await page.getByLabel("Interview window").selectOption("open");
+  await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Backend Developer" })).toHaveCount(0);
+  const topbar = page.locator(".dashboard-topbar");
+  const scrollPosition = await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); return window.scrollY; });
+  expect(scrollPosition).toBeGreaterThan(0);
+  expect(await topbar.evaluate(element => Math.round(element.getBoundingClientRect().top))).toBe(0);
+});
+
+test("placement opportunity details show compensation, deadlines and interview setup", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [
+    { id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", location: "Chennai", job_type: "full_time", window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30", application_deadline: "2026-09-30T17:00:00+05:30", interview_duration_minutes: 30, difficulty_tier: "intermediate", salary_type: "range", salary_min_amount: 500000, salary_max_amount: 700000, salary_currency: "INR", salary_period: "annual" },
+  ] }));
+  await page.route("**/api/student/drives/zoho/interview-context", route => route.fulfill({ status: 404, json: { detail: "Placement drive assignment not found." } }));
+  await page.goto("/placements");
+  await page.getByRole("button", { name: "View opportunity" }).click();
+  const opportunityDialog = page.getByRole("dialog");
+  await expect(opportunityDialog.getByText(/₹5,00,000/)).toBeVisible();
+  await expect(opportunityDialog.getByText("Interview setup")).toBeVisible();
+  await expect(opportunityDialog.getByText("Apply by")).toBeVisible();
+  await expect(page.getByText(/has not assigned an interview yet/)).toBeVisible();
 });
 
 test("replacing an active login requires selecting the replacement checkbox", async ({
@@ -654,6 +695,7 @@ test("long placement company names fit a narrow phone screen", async ({ page }) 
   await page.route("**/api/student/drives", route => route.fulfill({ json: [{
     id: "long-company", company_name: "InternationalSoftwareEngineeringAndInfrastructure",
     role_title: "CloudPlatformEngineeringSpecialist", location: "Remote", status: "published",
+    eligibility_status: "eligible",
   }] }));
   await page.goto("/placements");
   await expect(page.getByRole("heading", { name: "CloudPlatformEngineeringSpecialist" })).toBeVisible();

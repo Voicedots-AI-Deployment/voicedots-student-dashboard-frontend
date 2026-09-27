@@ -24,10 +24,13 @@ export type Identity = {
 };
 export type Attempt = {
   submission_id: string;
-  session_id: string;
+  session_id?: string | null;
   target_role?: string;
   duration_minutes?: number;
   submitted_at?: string;
+  drive_id?: string | null;
+  company_name?: string | null;
+  source?: "practice" | "placement";
 };
 export type Report = {
   evaluation_id: string;
@@ -53,13 +56,24 @@ export type Drive = {
   id: string;
   company_name: string;
   company_description?: string;
+  job_description?: string;
   role_title: string;
+  job_type?: string;
   location?: string;
   drive_date?: string;
   window_start_at?: string;
   window_end_at?: string;
   application_deadline?: string;
   status: string;
+  eligibility_status?: "eligible" | "ineligible";
+  salary_type?: string;
+  salary_min_amount?: number | null;
+  salary_max_amount?: number | null;
+  salary_currency?: string;
+  salary_period?: string;
+  package_min_lpa?: number | null;
+  package_max_lpa?: number | null;
+  package_currency?: string | null;
   interview_duration_minutes?: number;
   difficulty_tier?: string;
   agent_selection?: unknown[];
