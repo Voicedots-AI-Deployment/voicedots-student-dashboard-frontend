@@ -1786,8 +1786,19 @@ dialog.modal::backdrop {
 .latest-drive-empty > div { min-width: 0; }
 .latest-drive-empty p { max-width: 520px; color: var(--muted,#716b7d); }
 .feedback-score { flex: 0 0 90px; }
-.feedback-score strong { max-width: 100%; font-size: clamp(17px, 2vw, 21px); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.overview-columns { align-items: start; }
+.overview-columns .panel { padding: 22px; }
+.overview-columns .section-heading { margin-bottom: 18px; }
+.feedback-spotlight { grid-template-columns: 90px minmax(0, 1fr); }
+.feedback-spotlight { padding: 13px; gap: 14px; margin-bottom: 12px; }
+.feedback-score { box-sizing: border-box; align-content: center; justify-items: center; gap: 3px; text-align: center; }
+.feedback-score strong { display: block; max-width: 100%; font-size: 20px; line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
 .feedback-score span { white-space: nowrap; }
+.profile-date-form { display: grid; gap: 10px; max-width: 620px; padding: 16px 0 20px; border-top: 1px solid var(--border); }
+.profile-date-form > label { font-size: 12px; font-weight: 600; }
+.profile-date-form > div { display: flex; align-items: center; gap: 12px; }
+.profile-date-form input { min-width: 0; width: min(100%, 320px); padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; }
+.profile-date-form .button { flex: 0 0 auto; }
 @media(max-width: 760px) {
   .welcome-banner { min-height: 260px; padding: 28px 22px; }
   .welcome-banner > div:first-child { max-width: 100%; }
@@ -1797,6 +1808,10 @@ dialog.modal::backdrop {
   .latest-drive-card,.latest-drive-empty { align-items: flex-start; flex-direction: column; }
   .latest-drive-card .career-actions { margin: 0; }
   .feedback-score { width: 82px; height: 82px; flex-basis: 82px; }
+  .feedback-spotlight { grid-template-columns: 82px minmax(0, 1fr); gap: 12px; }
+  .profile-date-form > div { align-items: stretch; flex-direction: column; }
+  .profile-date-form input { width: 100%; }
+  .profile-date-form .button { align-self: flex-start; }
 }
 .academic-value { font-size:clamp(24px,3vw,34px); font-weight:650; letter-spacing:-.03em; }
 .academic-stats>div { border:1px solid var(--border,#e7e1f2); padding:20px; border-radius:16px; }

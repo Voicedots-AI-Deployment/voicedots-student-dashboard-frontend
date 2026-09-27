@@ -657,9 +657,12 @@ export function Profile() {
     setError("");
     setMessage("");
     const form = new FormData(event.currentTarget);
+    const changes: { target_role?: string | null; date_of_birth?: string | null } = {};
+    if (form.has("target_role")) changes.target_role = String(form.get("target_role")).trim() || null;
+    if (form.has("date_of_birth")) changes.date_of_birth = String(form.get("date_of_birth") || "") || null;
     try {
       await api("/api/student/profile", {
-        ...json({ target_role: String(form.get("target_role")).trim(), date_of_birth: form.get("date_of_birth") || null }),
+        ...json(changes),
         method: "PATCH",
       });
       setMessage("Your profile details have been saved.");
@@ -698,7 +701,6 @@ export function Profile() {
             ["Department", student.department_code],
             ["Graduation year", student.graduation_year],
             ["CGPA", student.cgpa],
-            ["Date of birth", student.date_of_birth ? new Date(`${student.date_of_birth.slice(0,10)}T00:00:00`).toLocaleDateString("en-IN", { day: "2-digit", month: "2-digit", year: "numeric" }) : null],
           ].map(([key, value]) => (
             <div key={key}>
               <dt>{key}</dt>
@@ -706,6 +708,23 @@ export function Profile() {
             </div>
           ))}
         </dl>
+        {error && <ErrorMessage message={error} />}
+        {message && <p role="status">{message}</p>}
+        <form className="profile-date-form" onSubmit={save}>
+          <label htmlFor="profile-date-of-birth">Date of birth</label>
+          <div>
+            <input
+              id="profile-date-of-birth"
+              name="date_of_birth"
+              type="date"
+              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)}
+              defaultValue={student.date_of_birth?.slice(0, 10) || ""}
+            />
+            <button className="button primary" disabled={busy}>
+              {busy ? "Saving…" : "Save date of birth"}
+            </button>
+          </div>
+        </form>
         <p className="muted">
           Your placement team manages academic details. Contact your placement cell to
           request corrections.
@@ -714,8 +733,6 @@ export function Profile() {
       <section className="panel">
         <h2>Where would you like to go?</h2>
         <p className="muted">Set a target role to help guide your practice.</p>
-        {error && <ErrorMessage message={error} />}
-        {message && <p role="status">{message}</p>}
         <form className="preference-form" onSubmit={save}>
           <label>
             Target role
@@ -725,16 +742,6 @@ export function Profile() {
               maxLength={120}
               placeholder="e.g. Software engineer"
             />
-          </label>
-          <label>
-            Date of birth
-            <input
-              name="date_of_birth"
-              type="date"
-              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)}
-              defaultValue={student.date_of_birth?.slice(0, 10) || ""}
-            />
-            <small>Choose a date from the date picker.</small>
           </label>
           <button className="button primary" disabled={busy}>
             {busy ? "Saving…" : "Save preference"}

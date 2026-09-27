@@ -187,7 +187,13 @@ test("overview follows the requested section order and keeps feedback percentage
   ].map(node => Array.from(document.querySelectorAll(".dashboard-content > *")).indexOf(node.parentElement?.classList.contains("overview-columns") ? node.parentElement : node)));
   expect(order).toEqual([...order].sort((a, b) => a - b));
   const scoreFontSize = await page.getByTestId("overview-feedback").locator(".feedback-score strong").evaluate(node => Number.parseFloat(getComputedStyle(node).fontSize));
-  expect(scoreFontSize).toBeLessThanOrEqual(21);
+  expect(scoreFontSize).toBe(20);
+  const scoreIsCentered = await page.getByTestId("overview-feedback").locator(".feedback-score").evaluate(circle => {
+    const value = circle.querySelector("strong")!.getBoundingClientRect();
+    const bounds = circle.getBoundingClientRect();
+    return Math.abs((value.left + value.right) / 2 - (bounds.left + bounds.right) / 2) < 2;
+  });
+  expect(scoreIsCentered).toBe(true);
   await expect(page.getByTestId("overview-latest-drive").getByRole("link", { name: /Start AI Interview/ })).toHaveAttribute("href", /\/practice\?drive=drive-1/);
 });
 
@@ -743,26 +749,39 @@ test("Calendar explains when a legacy Coach event has no safe session link", asy
   await expect(page).toHaveURL(/\/calendar$/);
 });
 
-test("student can save, reload, and view a valid date of birth", async ({ page }) => {
+test("student can save and reload one editable date-of-birth field", async ({ page }) => {
   await mockStudent(page);
   let dateOfBirth: string | null = null;
+  let targetRole = "Data Analyst";
+  const sentPayloads: Record<string, unknown>[] = [];
   await page.route("**/api/auth/student-me", route => route.fulfill({
-    json: { ...identity, student: { ...identity.student, date_of_birth: dateOfBirth } },
+    json: { ...identity, student: { ...identity.student, target_role: targetRole, date_of_birth: dateOfBirth } },
   }));
   await page.route("**/api/student/profile", async route => {
     if (route.request().method() !== "PATCH") return route.fallback();
     const payload = route.request().postDataJSON();
-    dateOfBirth = payload.date_of_birth;
-    await route.fulfill({ json: { target_role: payload.target_role || null, date_of_birth: dateOfBirth } });
+    sentPayloads.push(payload);
+    if (Object.hasOwn(payload, "date_of_birth")) dateOfBirth = payload.date_of_birth;
+    if (Object.hasOwn(payload, "target_role")) targetRole = payload.target_role;
+    await route.fulfill({ json: { target_role: targetRole, date_of_birth: dateOfBirth } });
   });
 
   await page.goto("/profile");
+  await expect(page.locator(".profile-details dt").filter({ hasText: "Date of birth" })).toHaveCount(0);
+  await expect(page.getByLabel("Date of birth")).toHaveCount(1);
   await page.getByLabel("Date of birth").fill("2005-01-02");
+  await page.getByRole("button", { name: "Save date of birth" }).click();
+  await expect(page.getByRole("status")).toContainText("profile details have been saved");
+  await expect(page.getByLabel("Date of birth")).toHaveValue("2005-01-02");
+  expect(sentPayloads[0]).toEqual({ date_of_birth: "2005-01-02" });
+  await page.getByLabel("Target role").fill("Product Analyst");
   await page.getByRole("button", { name: "Save preference" }).click();
   await expect(page.getByRole("status")).toContainText("profile details have been saved");
-  await expect(page.getByText("02/01/2005", { exact: true })).toBeVisible();
+  expect(sentPayloads[1]).toEqual({ target_role: "Product Analyst" });
   await page.reload();
-  await expect(page.getByText("02/01/2005", { exact: true })).toBeVisible();
+  await expect(page.locator(".profile-details dt").filter({ hasText: "Date of birth" })).toHaveCount(0);
+  await expect(page.getByLabel("Date of birth")).toHaveCount(1);
+  await expect(page.getByLabel("Date of birth")).toHaveValue("2005-01-02");
   expect(dateOfBirth).toBe("2005-01-02");
 });
 
