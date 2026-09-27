@@ -128,7 +128,7 @@ export function Calendar() {
     }
     if (event.kind === "coach") {
       if (event.plan_id && event.session_id) {
-        navigate(`/coach/session?plan=${encodeURIComponent(event.plan_id)}&session=${encodeURIComponent(event.session_id)}`);
+        navigate(`/coach?plan=${encodeURIComponent(event.plan_id)}&session=${encodeURIComponent(event.session_id)}&stage=coach`);
         return;
       }
       setUnlinkedEvent("This older Coach calendar event is not linked to one specific session. Open AI Coach and select the session you want to continue.");
