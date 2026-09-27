@@ -255,8 +255,8 @@ export function Overview() {
                       <div className="feedback-score"><strong>{score(data.reports[0].report?.overall_score)}</strong><span>Latest score</span></div>
                       <div><strong>Focus before your next attempt</strong><div className="focus-chips">{improvementLabels(data.reports[0]).map(item => <span className="pill" key={item}>{item}</span>)}</div>{!improvementLabels(data.reports[0]).length && <p>Your detailed feedback is being prepared.</p>}</div>
                     </div>
-                    {data.reports[0].drive_id && data.reports[0].report?.status !== "awaiting_release" && <Link className="button primary" to={`/coach?drive=${encodeURIComponent(data.reports[0].drive_id)}`}>Train weak areas with AI Coach <ArrowRight size={16}/></Link>}
-                    <ReportList reports={data.reports.slice(0, 3)} />
+                    {data.reports[0].drive_id && data.reports[0].report?.status !== "awaiting_release" && <Link className="button primary" to="/coach">Train weak areas with AI Coach <ArrowRight size={16}/></Link>}
+                    <ReportList reports={data.reports.slice(0, 2)} />
                   </>
                 ) : (
                   <Empty
@@ -274,21 +274,33 @@ export function Overview() {
                 {[
                   {
                     n: "01",
-                    title: "Bring your experience",
-                    text: "Have your latest resume ready.",
+                    title: "Update your profile",
+                    text: "Keep your experience ready to share.",
                     to: "/profile",
                   },
                   {
                     n: "02",
-                    title: "Find your voice",
+                    title: "Practice an interview",
                     text: "Practice with your AI panel.",
                     to: "/practice",
                   },
                   {
                     n: "03",
-                    title: "Keep getting better",
-                    text: "Turn feedback into your next step.",
-                    to: "/growth",
+                    title: "Prepare with AI Coach",
+                    text: "Build a plan for your next opportunity.",
+                    to: "/coach",
+                  },
+                  {
+                    n: "04",
+                    title: "Build your resume",
+                    text: "Create and improve it in Resume Studio.",
+                    to: "/resume-studio",
+                  },
+                  {
+                    n: "05",
+                    title: "Explore Career Coach",
+                    text: "Get guidance for your career next steps.",
+                    to: "/career",
                   },
                 ].map((step) => (
                   <Link key={step.n} to={step.to}>

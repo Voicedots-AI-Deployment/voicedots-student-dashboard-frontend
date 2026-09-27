@@ -166,6 +166,16 @@ test("overview is honest about missing data and is responsive", async ({
 
 test("overview follows the requested section order and keeps feedback percentage fitted", async ({ page }) => {
   await mockStudent(page);
+  let interviewContextRequests = 0;
+  await page.route("**/api/student/coach/overview", route => route.fulfill({ json: {
+    upcoming_drives: [{ drive_id: "drive-1", company_name: "Example Co", role_title: "Data Analyst", job_description: "Analyze data and build dashboards for business teams.", window_start_at: "2026-10-01T10:00:00+05:30", has_coaching_plan: false }],
+    plans: [],
+    completed_drive_recommendation: null,
+  } }));
+  await page.route("**/api/student/drives/drive-1/interview-context", route => {
+    interviewContextRequests += 1;
+    return route.fulfill({ status: 404, json: { detail: "Placement drive assignment not found." } });
+  });
   await page.route("**/api/student/dashboard", route => route.fulfill({ json: {
     reports: [{ evaluation_id: "report-1", session_id: "session-1", submission_id: "submission-1", status: "released", created_at: "2026-09-20T12:00:00Z", completed_at: "2026-09-20T12:30:00Z", target_role: "Data Analyst", drive_id: "drive-1", report: { overall_score: 21, status: "released", priority_improvement_areas: [{ focus: "SQL" }] } }],
     attempts: [],
@@ -195,6 +205,16 @@ test("overview follows the requested section order and keeps feedback percentage
   });
   expect(scoreIsCentered).toBe(true);
   await expect(page.getByTestId("overview-latest-drive").getByRole("link", { name: /Start AI Interview/ })).toHaveAttribute("href", /\/practice\?drive=drive-1/);
+  await expect(page.getByRole("link", { name: "Prepare with your AI Coach" })).toHaveAttribute("href", "/coach");
+  const quickActions = page.getByTestId("overview-next-steps").getByRole("link");
+  await expect(quickActions).toHaveCount(5);
+  await expect(quickActions.nth(3)).toHaveAttribute("href", "/resume-studio");
+  await expect(quickActions.nth(4)).toHaveAttribute("href", "/career");
+  await page.getByTestId("overview-latest-drive").getByRole("link", { name: /^AI Coach/ }).click();
+  await expect(page.getByRole("heading", { name: "AI Coach" })).toBeVisible();
+  await expect(page.getByLabel("Target role")).toHaveValue("Data Analyst");
+  await expect(page.getByText("Placement drive assignment not found.")).toHaveCount(0);
+  expect(interviewContextRequests).toBe(0);
 });
 
 test("an unreleased placement report never offers an export", async ({

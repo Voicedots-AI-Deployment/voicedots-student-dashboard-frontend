@@ -1775,10 +1775,10 @@ dialog.modal::backdrop {
 @media(max-width:760px){.latest-drive-card{align-items:flex-start;flex-direction:column}.latest-drive-card .career-actions{width:100%}.latest-drive-card .button{flex:1}}
 
 .academic-overview { margin-bottom:24px; }
-.welcome-banner { width: 100%; min-height: 300px; align-items: center; padding: 38px clamp(24px, 5vw, 68px); margin-bottom: 24px; }
+.welcome-banner { width: 100%; min-height: 250px; align-items: center; padding: 28px clamp(24px, 4vw, 56px); margin-bottom: 20px; }
 .welcome-banner > div:first-child { max-width: min(62%, 720px); position: relative; z-index: 1; }
-.welcome-banner h2 { font-size: clamp(32px, 3.2vw, 46px); }
-.welcome-banner p { max-width: 480px; font-size: 14px; line-height: 1.65; }
+.welcome-banner h2 { font-size: clamp(30px, 2.8vw, 40px); line-height: 1.12; }
+.welcome-banner p { max-width: 460px; font-size: 13px; line-height: 1.55; margin: 12px 0 16px; }
 .welcome-banner .button { font-size: 13px; padding: 13px 18px; }
 .overview-coach-link { display: inline-flex; margin-left: 16px; color: #fff; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
 .latest-drive-card { min-height: 150px; }
@@ -1786,9 +1786,16 @@ dialog.modal::backdrop {
 .latest-drive-empty > div { min-width: 0; }
 .latest-drive-empty p { max-width: 520px; color: var(--muted,#716b7d); }
 .feedback-score { flex: 0 0 90px; }
-.overview-columns { align-items: start; }
-.overview-columns .panel { padding: 22px; }
-.overview-columns .section-heading { margin-bottom: 18px; }
+.overview-columns { grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); align-items: start; gap: 18px; }
+.overview-columns .panel { padding: 19px; }
+.overview-columns .section-heading { margin-bottom: 14px; }
+.overview-columns .record { padding: 11px 0; }
+.overview-columns .record-info > span,
+.overview-columns .record-result > span { margin-top: 3px; }
+.next-steps > h2 { margin-bottom: 12px; }
+.next-steps > a { gap: 10px; padding: 10px 0; }
+.next-steps p { margin-top: 2px; line-height: 1.35; }
+.next-steps > a > span { width: 22px; flex: 0 0 22px; font-variant-numeric: tabular-nums; }
 .feedback-spotlight { grid-template-columns: 90px minmax(0, 1fr); }
 .feedback-spotlight { padding: 13px; gap: 14px; margin-bottom: 12px; }
 .feedback-score { box-sizing: border-box; align-content: center; justify-items: center; gap: 3px; text-align: center; }
@@ -1800,7 +1807,7 @@ dialog.modal::backdrop {
 .profile-date-form input { min-width: 0; width: min(100%, 320px); padding: 12px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--card); color: var(--text); font: inherit; }
 .profile-date-form .button { flex: 0 0 auto; }
 @media(max-width: 760px) {
-  .welcome-banner { min-height: 260px; padding: 28px 22px; }
+  .welcome-banner { min-height: 230px; padding: 24px 22px; }
   .welcome-banner > div:first-child { max-width: 100%; }
   .welcome-banner h2 { max-width: 440px; font-size: clamp(29px, 8vw, 38px); }
   .welcome-banner p { max-width: 340px; }
