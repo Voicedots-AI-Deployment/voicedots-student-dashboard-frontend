@@ -139,10 +139,7 @@ export function Overview() {
       >
         Your next opportunity starts with what you do today.
       </PageHeading>
-      <div className="career-actions"><Link className="button secondary" to="/profile">{identity!.student.current_resume_submission_id ? "Manage your saved resume" : "Set up your resume"}</Link><Link className="button secondary" to="/coach">Learn with your AI coach</Link></div>
-      <AcademicOverview />
-      {latestDrive && <section className="panel latest-drive-card"><div><span className="eyebrow">LATEST PLACEMENT DRIVE</span><h2>{latestDrive.role_title}</h2><p>{latestDrive.company_name}{latestDrive.location ? ` · ${latestDrive.location}` : ""}</p><span className="pill">{humanize(latestDrive.status)}</span></div><div className="career-actions"><Link className="button secondary" to={`/coach?drive=${encodeURIComponent(latestDrive.id)}`}>AI Coach <ArrowRight size={16}/></Link><Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Start AI Interview <ArrowRight size={16}/></Link></div></section>}
-      <section className="welcome-banner">
+      <section className="welcome-banner" data-testid="overview-hero">
         <div>
           <span className="pill">
             <Sparkles size={14} /> YOUR SPACE TO GROW
@@ -160,6 +157,7 @@ export function Overview() {
           <Link to="/practice" className="button white">
             Start an interview <ArrowRight size={17} />
           </Link>
+          <Link to="/coach" className="overview-coach-link">Prepare with your AI Coach</Link>
         </div>
         <div className="voice-art" aria-hidden="true">
           <div className="voice-orbit orbit-one" />
@@ -180,7 +178,26 @@ export function Overview() {
       <ResourceState resource={resource}>
         {data && (
           <>
-            <section className="stats-grid">
+            {latestDrive ? (
+              <section className="panel latest-drive-card" data-testid="overview-latest-drive">
+                <div>
+                  <span className="eyebrow">LATEST PLACEMENT DRIVE</span>
+                  <h2>{latestDrive.role_title}</h2>
+                  <p>{latestDrive.company_name}{latestDrive.location ? ` · ${latestDrive.location}` : ""}</p>
+                  <span className="pill">{humanize(latestDrive.status)}</span>
+                </div>
+                <div className="career-actions">
+                  <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(latestDrive.id)}`}>AI Coach <ArrowRight size={16}/></Link>
+                  <Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Start AI Interview <ArrowRight size={16}/></Link>
+                </div>
+              </section>
+            ) : (
+              <section className="panel latest-drive-card latest-drive-empty" data-testid="overview-latest-drive">
+                <div><span className="eyebrow">LATEST PLACEMENT DRIVE</span><h2>No placement drive yet</h2><p>Your placement opportunities will appear here when your placement cell assigns them.</p></div>
+                <Link className="button secondary" to="/placements">View placements <ArrowRight size={16}/></Link>
+              </section>
+            )}
+            <section className="stats-grid" data-testid="overview-kpis">
               {[
                 {
                   icon: Mic,
@@ -218,19 +235,11 @@ export function Overview() {
                   <strong>{value}</strong>
                   <p>{detail}</p>
                 </article>
-              ))}
+                ))}
             </section>
-            {data.attempts.length > 0 && (
-              <section className="panel">
-                <div className="section-heading">
-                  <h2>Ready when you are</h2>
-                  <span className="pill">Saved progress</span>
-                </div>
-                <AttemptList attempts={data.attempts} />
-              </section>
-            )}
+            <AcademicOverview />
             <div className="overview-columns">
-              <section className="panel">
+              <section className="panel" data-testid="overview-feedback">
                 <div className="section-heading">
                   <div>
                     <h2>Your latest feedback</h2>
@@ -259,7 +268,7 @@ export function Overview() {
                   </Empty>
                 )}
               </section>
-              <section className="panel next-steps">
+              <section className="panel next-steps" data-testid="overview-next-steps">
                 <span className="eyebrow">MAKE YOUR NEXT MOVE</span>
                 <h2>A simple way forward</h2>
                 {[
@@ -293,6 +302,15 @@ export function Overview() {
                 ))}
               </section>
             </div>
+            {data.attempts.length > 0 && (
+              <section className="panel">
+                <div className="section-heading">
+                  <div><h2>Ready when you are</h2><p>Continue an interview you already started.</p></div>
+                  <span className="pill">Saved progress</span>
+                </div>
+                <AttemptList attempts={data.attempts} />
+              </section>
+            )}
           </>
         )}
       </ResourceState>

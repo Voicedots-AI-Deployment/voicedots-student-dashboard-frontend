@@ -1775,6 +1775,29 @@ dialog.modal::backdrop {
 @media(max-width:760px){.latest-drive-card{align-items:flex-start;flex-direction:column}.latest-drive-card .career-actions{width:100%}.latest-drive-card .button{flex:1}}
 
 .academic-overview { margin-bottom:24px; }
+.welcome-banner { width: 100%; min-height: 300px; align-items: center; padding: 38px clamp(24px, 5vw, 68px); margin-bottom: 24px; }
+.welcome-banner > div:first-child { max-width: min(62%, 720px); position: relative; z-index: 1; }
+.welcome-banner h2 { font-size: clamp(32px, 3.2vw, 46px); }
+.welcome-banner p { max-width: 480px; font-size: 14px; line-height: 1.65; }
+.welcome-banner .button { font-size: 13px; padding: 13px 18px; }
+.overview-coach-link { display: inline-flex; margin-left: 16px; color: #fff; font-size: 13px; font-weight: 600; text-decoration: underline; text-underline-offset: 3px; }
+.latest-drive-card { min-height: 150px; }
+.latest-drive-empty { align-items: center; }
+.latest-drive-empty > div { min-width: 0; }
+.latest-drive-empty p { max-width: 520px; color: var(--muted,#716b7d); }
+.feedback-score { flex: 0 0 90px; }
+.feedback-score strong { max-width: 100%; font-size: clamp(17px, 2vw, 21px); line-height: 1; white-space: nowrap; font-variant-numeric: tabular-nums; }
+.feedback-score span { white-space: nowrap; }
+@media(max-width: 760px) {
+  .welcome-banner { min-height: 260px; padding: 28px 22px; }
+  .welcome-banner > div:first-child { max-width: 100%; }
+  .welcome-banner h2 { max-width: 440px; font-size: clamp(29px, 8vw, 38px); }
+  .welcome-banner p { max-width: 340px; }
+  .overview-coach-link { margin: 14px 0 0 12px; }
+  .latest-drive-card,.latest-drive-empty { align-items: flex-start; flex-direction: column; }
+  .latest-drive-card .career-actions { margin: 0; }
+  .feedback-score { width: 82px; height: 82px; flex-basis: 82px; }
+}
 .academic-value { font-size:clamp(24px,3vw,34px); font-weight:650; letter-spacing:-.03em; }
 .academic-stats>div { border:1px solid var(--border,#e7e1f2); padding:20px; border-radius:16px; }
 .academic-table { overflow-x:auto; margin:18px 0; }

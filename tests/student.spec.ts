@@ -136,7 +136,7 @@ test("overview is honest about missing data and is responsive", async ({
     documentWidth: document.documentElement.scrollWidth,
     content: (() => {
       const main = document.querySelector<HTMLElement>(".dashboard-content")!;
-      const actions = main.querySelector<HTMLElement>(".career-actions")!;
+      const actions = main.querySelector<HTMLElement>(".welcome-banner")!;
       const button = actions.querySelector<HTMLElement>(".button")!;
       return { main: main.getBoundingClientRect().toJSON(), actions: actions.getBoundingClientRect().toJSON(), button: button.getBoundingClientRect().toJSON(), display: getComputedStyle(actions).display, grid: getComputedStyle(actions).gridTemplateColumns, width: getComputedStyle(actions).width, minWidth: getComputedStyle(actions).minWidth };
     })(),
@@ -162,6 +162,33 @@ test("overview is honest about missing data and is responsive", async ({
     path: "test-results/profile-mobile.png",
     fullPage: true,
   });
+});
+
+test("overview follows the requested section order and keeps feedback percentage fitted", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/dashboard", route => route.fulfill({ json: {
+    reports: [{ evaluation_id: "report-1", session_id: "session-1", submission_id: "submission-1", status: "released", created_at: "2026-09-20T12:00:00Z", completed_at: "2026-09-20T12:30:00Z", target_role: "Data Analyst", drive_id: "drive-1", report: { overall_score: 21, status: "released", priority_improvement_areas: [{ focus: "SQL" }] } }],
+    attempts: [],
+    readiness: { ...readiness, overall_score: 72 },
+    drives: [{ id: "drive-1", company_name: "Example Co", role_title: "Data Analyst", status: "active" }],
+  } }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "Hello, Asha." })).toBeVisible();
+  await expect(page.getByTestId("overview-latest-drive")).toContainText("Data Analyst");
+  await expect(page.getByTestId("overview-feedback").locator(".feedback-score strong")).toHaveText("21%");
+  const order = await page.evaluate(() => [
+    document.querySelector(".page-heading")!,
+    document.querySelector("[data-testid='overview-hero']")!,
+    document.querySelector("[data-testid='overview-latest-drive']")!,
+    document.querySelector("[data-testid='overview-kpis']")!,
+    document.querySelector("[data-testid='overview-academics']")!,
+    document.querySelector("[data-testid='overview-feedback']")!,
+    document.querySelector("[data-testid='overview-next-steps']")!,
+  ].map(node => Array.from(document.querySelectorAll(".dashboard-content > *")).indexOf(node.parentElement?.classList.contains("overview-columns") ? node.parentElement : node)));
+  expect(order).toEqual([...order].sort((a, b) => a - b));
+  const scoreFontSize = await page.getByTestId("overview-feedback").locator(".feedback-score strong").evaluate(node => Number.parseFloat(getComputedStyle(node).fontSize));
+  expect(scoreFontSize).toBeLessThanOrEqual(21);
+  await expect(page.getByTestId("overview-latest-drive").getByRole("link", { name: /Start AI Interview/ })).toHaveAttribute("href", /\/practice\?drive=drive-1/);
 });
 
 test("an unreleased placement report never offers an export", async ({
