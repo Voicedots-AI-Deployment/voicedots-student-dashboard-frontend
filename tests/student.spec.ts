@@ -391,10 +391,15 @@ test("eligibility without assignment is explained and does not enable interview 
       ],
     }),
   );
+  await page.route("**/api/student/drives/d1/interview-context", route => route.fulfill({ json: {
+    drive_id: "d1", attempt_number: 1, max_attempts: 5, attempts_used: 0, attempts_remaining: 5,
+    action: "not_assigned", assignment_status: "not_assigned", current_attempt: null, attempt_history: [],
+    can_start: false, can_resume: false, eligibility: { status: "eligible" }, interview_window: "open",
+  } }));
   await page.goto("/placements");
   await page.getByRole("button", { name: "View opportunity" }).click();
   await expect(
-    page.getByText(/has not assigned an interview yet/),
+    page.getByText(/hasn’t assigned an interview attempt yet/),
   ).toBeVisible();
   await expect(
     page.getByRole("button", { name: "Prepare for interview" }),
@@ -490,7 +495,7 @@ test("placement filters align on phone and interview status filters persisted st
   await mockStudent(page);
   await page.route("**/api/student/drives", route => route.fulfill({ json: [
     { id: "open", company_name: "Zoho", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", interview_status: "open" },
-    { id: "progress", company_name: "Razorpay", role_title: "Backend Developer", status: "active", eligibility_status: "eligible", interview_status: "in_progress", interview_assignment_status: "in_progress", interview_attempt_number: 2, interview_max_attempts: 3, interview_attempts_used: 2, interview_attempts_remaining: 1 },
+    { id: "progress", company_name: "Razorpay", role_title: "Backend Developer", status: "active", eligibility_status: "eligible", interview_status: "in_progress", interview_assignment_status: "in_progress", interview_attempt_number: 2, interview_max_attempts: 5, interview_attempts_used: 2, interview_attempts_remaining: 3 },
     { id: "done", company_name: "Acme", role_title: "QA Engineer", status: "active", eligibility_status: "eligible", interview_status: "completed", interview_assignment_status: "completed", interview_attempt_number: 2, interview_max_attempts: 3, interview_attempts_used: 2, interview_attempts_remaining: 1 },
   ] }));
   let contextRequests = 0;
@@ -504,7 +509,7 @@ test("placement filters align on phone and interview status filters persisted st
   await expect(page.getByText("Location", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Eligibility", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
-  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "Backend Developer" }) })).toContainText("Attempt 2 of 3 · In progress");
+  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "Backend Developer" }) })).toContainText("Attempt 2 of 5 · In progress");
   await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "QA Engineer" }) })).toContainText("2 of 3 attempts used · 1 remaining");
   expect(contextRequests).toBe(0);
   await page.getByLabel("Interview status").selectOption("in_progress");
