@@ -66,6 +66,9 @@ export type Drive = {
   application_deadline?: string;
   status: string;
   eligibility_status?: "eligible" | "ineligible";
+  interview_action?: string;
+  interview_assignment_status?: string | null;
+  interview_status?: string;
   salary_type?: string;
   salary_min_amount?: number | null;
   salary_max_amount?: number | null;
@@ -85,7 +88,7 @@ export type DriveContext = {
   company_description: string;
   role_title: string;
   job_description: string;
-  duration_minutes: number;
+  duration_minutes: number | null;
   attempt_number: number;
   max_attempts: number;
   action: string;
@@ -113,7 +116,7 @@ export type DriveContext = {
     completed_at?: string;
     is_current_attempt?: boolean;
   }>;
-  current_attempt?: { attempt_number: number; status: string; started_at?: string; completed_at?: string };
+  current_attempt?: { attempt_number: number; status: string; started_at?: string; completed_at?: string } | null;
   can_start?: boolean;
   can_resume?: boolean;
 };

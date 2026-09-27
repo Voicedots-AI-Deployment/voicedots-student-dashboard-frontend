@@ -1,7 +1,7 @@
 import { AcademicOverview } from "./academics";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
-import { useEffect, useState, type FormEvent } from "react";
+import { useState, type FormEvent } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -333,6 +333,15 @@ export function Overview() {
 }
 
 const decisionLabel = (value?: string) => { const key = (value || "undecided").toLowerCase().replace(/[-\s]+/g, "_"); return key.includes("shortlist") ? "Shortlisted" : key.includes("reject") ? "Rejected" : key.includes("hold") ? "On Hold" : "Undecided"; };
+const interviewTrackLabels: Record<string, string> = { hr: "Talent Acquisition Specialist", domain: "Senior Domain Specialist", industry: "Practical Interviewer", manager: "Hiring Manager" };
+function configuredRoundLabels(drive: Drive) {
+  const rounds = drive.agent_selection?.length ? drive.agent_selection : drive.round_configuration || [];
+  return rounds.map((round) => {
+    if (!round || typeof round !== "object" || !("track" in round)) return "";
+    const track = String((round as { track: unknown }).track);
+    return interviewTrackLabels[track] || humanize(track);
+  }).filter(Boolean);
+}
 
 function compensationLabel(drive: Drive) {
   const minimum = drive.salary_min_amount ?? drive.package_min_lpa;
@@ -362,27 +371,12 @@ export function Placements() {
   const resource = useResource<Drive[]>("/api/student/drives");
   const navigate = useNavigate();
   const [search, setSearch] = useState("");
-  const [windowFilter, setWindowFilter] = useState("all");
-  const [jobTypeFilter, setJobTypeFilter] = useState("all");
+  const [statusFilter, setStatusFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("soonest");
-  const [contexts, setContexts] = useState<Record<string, DriveContext>>({});
   const [context, setContext] = useState<DriveContext | null>(null);
   const [selected, setSelected] = useState<Drive | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
-  useEffect(() => {
-    let cancelled = false;
-    const drives = resource.data || [];
-    if (!drives.length) return;
-    Promise.all(drives.map(async (drive) => {
-      try {
-        return [drive.id, await api<DriveContext>(`/api/student/drives/${encodeURIComponent(drive.id)}/interview-context`)] as const;
-      } catch { return null; }
-    })).then((rows) => {
-      if (!cancelled) setContexts(Object.fromEntries(rows.filter(Boolean) as Array<readonly [string, DriveContext]>));
-    });
-    return () => { cancelled = true; };
-  }, [resource.data]);
   async function select(drive: Drive) {
     setSelected(drive);
     setContext(null);
@@ -397,7 +391,7 @@ export function Placements() {
     } catch (e) {
       setError(
         e instanceof ApiError && e.status === 404
-          ? "You are eligible for this opportunity. Your placement cell has not assigned an interview yet."
+          ? "This opportunity is no longer available. Refresh the placements list to see current opportunities."
           : (e as Error).message,
       );
     } finally {
@@ -405,14 +399,13 @@ export function Placements() {
     }
   }
   const items = (resource.data || [])
-    .filter((drive) => drive.eligibility_status === "eligible")
+    .filter((drive) => drive.eligibility_status !== "ineligible")
     .filter((drive) => {
-      const matchesSearch = `${drive.company_name} ${drive.role_title} ${drive.location || ""}`
+      const matchesSearch = `${drive.company_name} ${drive.role_title}`
         .toLowerCase().includes(search.toLowerCase());
-      const window = contexts[drive.id]?.interview_window || (drive.status === "active" ? "open" : "not_open");
-      const matchesWindow = windowFilter === "all" || (windowFilter === "open" ? window === "open" : window !== "open");
-      const matchesJobType = jobTypeFilter === "all" || drive.job_type === jobTypeFilter;
-      return matchesSearch && matchesWindow && matchesJobType;
+      const status = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
+      const matchesStatus = statusFilter === "all" || status === statusFilter;
+      return matchesSearch && matchesStatus;
     })
     .sort((left, right) => {
       if (sortOrder === "company") return left.company_name.localeCompare(right.company_name);
@@ -420,8 +413,7 @@ export function Placements() {
       const rightDate = new Date(right.window_start_at || right.drive_date || "9999-12-31").getTime();
       return leftDate - rightDate;
     });
-  const jobTypes = Array.from(new Set((resource.data || []).map((drive) => drive.job_type).filter((value): value is string => Boolean(value))));
-  const hasFilters = Boolean(search.trim()) || windowFilter !== "all" || jobTypeFilter !== "all";
+  const hasFilters = Boolean(search.trim()) || statusFilter !== "all";
   return (
     <>
       <PageHeading
@@ -439,20 +431,15 @@ export function Placements() {
       <section className="panel placement-filter-panel" aria-label="Filter placement opportunities">
         <div className="placement-filter-grid">
           <label className="search-field">
-            Search opportunities
-            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Company, role or location…" />
+            <span>Search opportunities</span>
+            <input type="search" value={search} onChange={(e) => setSearch(e.target.value)} placeholder="Company or role" />
           </label>
-          <label>Interview window
-            <select value={windowFilter} onChange={(e) => setWindowFilter(e.target.value)}>
-              <option value="all">All windows</option><option value="open">Open now</option><option value="upcoming">Upcoming</option>
+          <label><span>Interview status</span>
+            <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
+              <option value="all">All statuses</option><option value="awaiting_assignment">Awaiting assignment</option><option value="open">Open now</option><option value="upcoming">Upcoming</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="closed">Closed</option>
             </select>
           </label>
-          <label>Job type
-            <select value={jobTypeFilter} onChange={(e) => setJobTypeFilter(e.target.value)}>
-              <option value="all">All job types</option>{jobTypes.map((type) => <option key={type} value={type}>{humanize(type)}</option>)}
-            </select>
-          </label>
-          <label>Sort by
+          <label><span>Sort by</span>
             <select value={sortOrder} onChange={(e) => setSortOrder(e.target.value)}>
               <option value="soonest">Soonest interview</option><option value="company">Company name</option>
             </select>
@@ -466,19 +453,14 @@ export function Placements() {
             {items.map((drive) => (
               <article className="panel drive-card" key={drive.id}>
                 {(() => {
-                  const live = contexts[drive.id];
-                  const windowLabel = live?.interview_window === "open" ? "Interview open" : live?.interview_window === "not_open" ? "Upcoming" : humanize(live?.interview_window || drive.status);
-                  const attempts = live?.attempts_remaining;
-                  const attemptLabel = live?.action === "resume" ? "Interview ready to resume" :
-                    live?.current_attempt?.status === "in_progress" ? "Interview in progress" :
-                    attempts === 0 ? "Attempts completed" :
-                    live ? live?.attempts_used ? `Attempt ${live.attempts_used} completed · ${attempts} remaining` : `${attempts ?? live?.max_attempts ?? ""} attempt${(attempts ?? 1) === 1 ? "" : "s"} available` : "View details for interview status";
+                  const interviewStatus = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
+                  const statusLabel = interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Interview open" : interviewStatus === "upcoming" ? "Upcoming" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : "Closed";
                   return <>
                 <div className="drive-card-top">
                   <span className="company-avatar">
                     {(drive.company_name || "C").slice(0, 2).toUpperCase()}
                   </span>
-                  <span className={`pill placement-window-${live?.interview_window || drive.status}`}>{windowLabel}</span>
+                  <span className="pill placement-eligible-badge">Eligible</span>
                 </div>
                 <span className="eyebrow">{drive.company_name}</span>
                 <h2>{drive.role_title}</h2>
@@ -490,8 +472,8 @@ export function Placements() {
                   <CalendarDays size={15} />
                   {drive.window_start_at ? `${date(drive.window_start_at)} – ${drive.window_end_at ? date(drive.window_end_at) : "To be announced"}` : date(drive.drive_date)}
                 </p>
-                <p className="drive-attempt-summary">{attemptLabel}</p>
-                <p className="drive-interview-summary">{live?.duration_minutes || drive.interview_duration_minutes || "—"} minutes · {humanize(live?.difficulty_tier || drive.difficulty_tier || "Difficulty not set")} · {live?.round_count || drive.agent_selection?.length || drive.round_configuration?.length || "—"} rounds</p>
+                <p className="drive-attempt-summary">{statusLabel}{drive.interview_assignment_status === "in_progress" ? " · Continue your interview" : drive.interview_assignment_status === "completed" ? " · Attempt complete" : ""}</p>
+                <p className="drive-interview-summary">{drive.interview_duration_minutes || "—"} minutes · {humanize(drive.difficulty_tier || "Difficulty not set")} · {drive.agent_selection?.length || drive.round_configuration?.length || "—"} rounds</p>
                 <div className="drive-card-meta"><span>{humanize(drive.job_type || "Job type not set")}</span><span>{compensationLabel(drive)}</span></div>
                 <button
                   className="button secondary"
@@ -513,7 +495,7 @@ export function Placements() {
             }
           >
             {hasFilters
-              ? <>Adjust your filters or <button className="text-button" onClick={() => { setSearch(""); setWindowFilter("all"); setJobTypeFilter("all"); }}>clear them</button>.</>
+              ? <>Adjust your filters or <button className="text-button" onClick={() => { setSearch(""); setStatusFilter("all"); }}>clear them</button>.</>
               : "Eligible placement drives will appear here when your placement cell publishes them."}
           </Empty>
         )}
@@ -525,19 +507,21 @@ export function Placements() {
           {(selected.company_description || context?.company_description) && <section className="opportunity-company"><div className="company-avatar">{selected.company_name.slice(0,2).toUpperCase()}</div><div><h3>About {selected.company_name}</h3><p>{context?.company_description || selected.company_description}</p></div></section>}
           {busy && <p role="status">Checking your interview assignment…</p>}
           {error && <ErrorMessage message={error} />}
-          <div className="detail-chips"><span className="pill">Eligible for this opportunity</span><span className="pill">{context?.interview_window === "open" ? "Interview window open" : context?.interview_window === "not_open" ? "Interview window upcoming" : humanize(selected.status)}</span></div>
+          <div className="detail-chips"><span className="pill placement-eligible-badge">Eligible</span><span className="pill">{context?.interview_window === "open" ? "Interview window open" : context?.interview_window === "not_open" ? "Interview window upcoming" : context?.interview_window === "closed" ? "Interview window closed" : humanize(selected.status)}</span></div>
           <div className="opportunity-details">
             <div><span>Interview window</span><strong>{selected.window_start_at ? `${dateTime(selected.window_start_at)} → ${selected.window_end_at ? dateTime(selected.window_end_at) : "To be announced"}` : date(selected.drive_date)}</strong></div>
             <div><span>Location</span><strong>{context?.location || selected.location || "To be announced"}</strong></div>
             <div><span>Role type</span><strong>{humanize(selected.job_type || "Not specified")}</strong></div>
             <div><span>Compensation</span><strong>{compensationLabel(selected)}</strong></div>
             <div><span>Interview setup</span><strong>{context?.duration_minutes || selected.interview_duration_minutes || "—"} min · {humanize(context?.difficulty_tier || selected.difficulty_tier || "Not set")} · {context?.round_count || selected.agent_selection?.length || selected.round_configuration?.length || "—"} rounds</strong></div>
+            {configuredRoundLabels(selected).length > 0 && <div className="opportunity-rounds"><span>Interview rounds</span><ol>{configuredRoundLabels(selected).map((round, index) => <li key={`${round}-${index}`}>{round}</li>)}</ol></div>}
             {selected.application_deadline && <div><span>Apply by</span><strong>{dateTime(selected.application_deadline)}</strong></div>}
           </div>
           {(context?.job_description || selected.job_description) && <details className="job-description"><summary>View role description</summary><p>{context?.job_description || selected.job_description}</p></details>}
           {context && (
             <>
-              <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={safeAttemptNumber(attempt.attempt_number)}><div><strong>Attempt {safeAttemptNumber(attempt.attempt_number, 1, context.max_attempts)}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{(context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {safeAttemptNumber(context.attempt_number, 1, context.max_attempts)}</strong><span>Available to start</span></div></div>}</section>
+              {context.action === "not_assigned" && <p className="placement-assignment-pending">You’re eligible. Your placement cell hasn’t assigned an interview attempt yet, so there’s nothing to start or resume.</p>}
+              {context.action !== "not_assigned" && <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={safeAttemptNumber(attempt.attempt_number)}><div><strong>Attempt {safeAttemptNumber(attempt.attempt_number, 1, context.max_attempts)}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{(context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {safeAttemptNumber(context.attempt_number, 1, context.max_attempts)}</strong><span>Available to start</span></div></div>}</section>}
               {context.publication_status === "released" && context.decision && decisionTone(context.decision) !== "shortlisted" && (
                 <p className="placement-decision-note">Placement decision: <strong>{humanize(context.decision)}</strong></p>
               )}

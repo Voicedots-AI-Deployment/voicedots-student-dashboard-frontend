@@ -448,7 +448,7 @@ test("campus placements show eligible drives only and filter by interview window
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Software Engineer" })).toHaveCount(0);
   await expect(page.getByText("2 eligible opportunities")).toBeVisible();
-  await page.getByLabel("Interview window").selectOption("open");
+  await page.getByLabel("Interview status").selectOption("open");
   await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toHaveCount(0);
   const topbar = page.locator(".dashboard-topbar");
@@ -460,16 +460,57 @@ test("campus placements show eligible drives only and filter by interview window
 test("placement opportunity details show compensation, deadlines and interview setup", async ({ page }) => {
   await mockStudent(page);
   await page.route("**/api/student/drives", route => route.fulfill({ json: [
-    { id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", location: "Chennai", job_type: "full_time", window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30", application_deadline: "2026-09-30T17:00:00+05:30", interview_duration_minutes: 30, difficulty_tier: "intermediate", salary_type: "range", salary_min_amount: 500000, salary_max_amount: 700000, salary_currency: "INR", salary_period: "annual" },
+    { id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", location: "Chennai", job_type: "full_time", window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30", application_deadline: "2026-09-30T17:00:00+05:30", interview_duration_minutes: 30, difficulty_tier: "intermediate", agent_selection: [{ track: "hr", agent_id: "private-persona-id" }, { track: "domain", agent_id: "private-persona-id-2" }], salary_type: "range", salary_min_amount: 500000, salary_max_amount: 700000, salary_currency: "INR", salary_period: "annual" },
   ] }));
-  await page.route("**/api/student/drives/zoho/interview-context", route => route.fulfill({ status: 404, json: { detail: "Placement drive assignment not found." } }));
+  await page.route("**/api/student/drives/zoho/interview-context", route => route.fulfill({ json: {
+    drive_id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst",
+    job_description: "Analyze data", duration_minutes: null, attempt_number: 1, max_attempts: 1,
+    action: "not_assigned", assignment_status: "not_assigned", attempts_used: 0, attempts_remaining: 0,
+    attempt_history: [], current_attempt: null, eligibility: { status: "eligible" }, difficulty_tier: "intermediate",
+    round_count: 2, can_start: false, can_resume: false, publication_status: "unavailable", decision: "undecided",
+    interview_window: "open", location: "Chennai",
+  } }));
   await page.goto("/placements");
   await page.getByRole("button", { name: "View opportunity" }).click();
   const opportunityDialog = page.getByRole("dialog");
   await expect(opportunityDialog.getByText(/₹5,00,000/)).toBeVisible();
   await expect(opportunityDialog.getByText("Interview setup")).toBeVisible();
   await expect(opportunityDialog.getByText("Apply by")).toBeVisible();
-  await expect(page.getByText(/has not assigned an interview yet/)).toBeVisible();
+  await expect(opportunityDialog.getByText("Talent Acquisition Specialist")).toBeVisible();
+  await expect(opportunityDialog.getByText("Senior Domain Specialist")).toBeVisible();
+  await expect(opportunityDialog.getByText("private-persona-id", { exact: true })).toHaveCount(0);
+  await expect(page.getByText(/hasn’t assigned an interview attempt yet/)).toBeVisible();
+  await expect(opportunityDialog.getByRole("button", { name: "Resume interview" })).toHaveCount(0);
+});
+
+test("placement filters align on phone and interview status filters persisted states", async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [
+    { id: "open", company_name: "Zoho", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", interview_status: "open" },
+    { id: "progress", company_name: "Razorpay", role_title: "Backend Developer", status: "active", eligibility_status: "eligible", interview_status: "in_progress", interview_assignment_status: "in_progress" },
+    { id: "done", company_name: "Acme", role_title: "QA Engineer", status: "active", eligibility_status: "eligible", interview_status: "completed", interview_assignment_status: "completed" },
+  ] }));
+  let contextRequests = 0;
+  await page.route("**/api/student/drives/*/interview-context", route => { contextRequests += 1; return route.fulfill({ status: 404, json: { detail: "not found" } }); });
+  await page.goto("/placements");
+  await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
+  await expect(page.getByText("Eligible", { exact: true }).first()).toHaveCSS("color", "rgb(22, 116, 71)");
+  await expect(page.getByLabel("Search opportunities")).toBeVisible();
+  await expect(page.getByLabel("Interview status")).toBeVisible();
+  await expect(page.getByLabel("Sort by")).toBeVisible();
+  await expect(page.getByText("Location", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Eligibility", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
+  expect(contextRequests).toBe(0);
+  await page.getByLabel("Interview status").selectOption("in_progress");
+  await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Data Analyst" })).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  const filterBounds = await page.locator(".placement-filter-grid label").evaluateAll(labels => labels.map(label => {
+    const box = label.getBoundingClientRect(); return { left: box.left, right: box.right, width: box.width };
+  }));
+  expect(filterBounds.every(bounds => bounds.width > 0 && bounds.left >= 0 && bounds.right <= 390)).toBe(true);
 });
 
 test("replacing an active login requires selecting the replacement checkbox", async ({
