@@ -1902,7 +1902,7 @@ dialog.modal::backdrop {
 .resume-studio .rs-heading-actions{align-items:center;gap:7px}
 .resume-studio .button{min-height:38px;padding:8px 12px;border-radius:10px;font-size:13px;line-height:1.25}
 .resume-studio .button.small{min-height:32px;padding:6px 10px;font-size:12px}
-.resume-studio .rs-home-actions .button{min-height:40px}
+.resume-studio .rs-home-actions{align-items:center}.resume-studio .rs-home-actions>.button{box-sizing:border-box;flex:0 0 auto;height:48px;min-height:48px;padding:0 16px;line-height:1.2;white-space:nowrap}.resume-studio .rs-home-actions>.rs-upload-button{display:inline-flex;align-items:center}
 .resume-studio .rs-preview-panel{grid-template-rows:auto minmax(600px,calc(100vh - 155px)) auto auto}
 .resume-studio .rs-preview-frame,.resume-studio .rs-preview-panel .rs-preview-frame iframe,.resume-studio .rs-preview-placeholder{min-height:600px}
 .resume-studio .rs-preview-frame{overflow:auto}

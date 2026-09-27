@@ -44,6 +44,15 @@ test("Resume Studio appears below AI Coach and saves project content through the
  await expect(page.locator(".rs-save-state")).toHaveText("Saved");
 });
 
+test("Resume Studio landing actions have consistent button sizing and alignment",async({page})=>{
+ await mockResumeStudio(page);await page.goto("/resume-studio");
+ const actions=page.locator(".rs-home-actions > .button");
+ await expect(actions).toHaveCount(3);
+ const heights=await actions.evaluateAll(items=>items.map(item=>({height:item.getBoundingClientRect().height,display:getComputedStyle(item).display,padding:getComputedStyle(item).padding,lineHeight:getComputedStyle(item).lineHeight,whiteSpace:getComputedStyle(item).whiteSpace,text:item.textContent})));
+ expect(Math.max(...heights.map(item=>item.height))-Math.min(...heights.map(item=>item.height)),JSON.stringify(heights)).toBeLessThanOrEqual(1);
+ await expect(page.getByText("Import existing resume",{exact:true})).toBeVisible();
+});
+
 test("Resume Studio autosaves edits and keeps the save state tied to the backend",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Autosaved");
