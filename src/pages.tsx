@@ -455,6 +455,17 @@ export function Placements() {
                 {(() => {
                   const interviewStatus = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
                   const statusLabel = interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Interview open" : interviewStatus === "upcoming" ? "Upcoming" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : "Closed";
+                  const attemptNumber = drive.interview_attempt_number || 1;
+                  const maximumAttempts = drive.interview_max_attempts || drive.max_attempts || 1;
+                  const attemptProgress = drive.interview_action === "not_assigned"
+                    ? `${maximumAttempts} attempt${maximumAttempts === 1 ? "" : "s"} allowed · Not assigned yet`
+                    : drive.interview_action === "resume" || drive.interview_assignment_status === "in_progress"
+                      ? `Attempt ${attemptNumber} of ${maximumAttempts} · In progress`
+                      : drive.interview_action === "start" || drive.interview_action === "retry_preparation"
+                        ? `Attempt ${attemptNumber} of ${maximumAttempts} · Ready to start`
+                      : drive.interview_assignment_status === "completed"
+                        ? `${drive.interview_attempts_used ?? attemptNumber} of ${maximumAttempts} attempts used · ${drive.interview_attempts_remaining ?? 0} remaining`
+                        : `Attempt ${attemptNumber} of ${maximumAttempts} · ${drive.interview_attempts_remaining ?? maximumAttempts} remaining`;
                   return <>
                 <div className="drive-card-top">
                   <span className="company-avatar">
@@ -472,7 +483,7 @@ export function Placements() {
                   <CalendarDays size={15} />
                   {drive.window_start_at ? `${date(drive.window_start_at)} – ${drive.window_end_at ? date(drive.window_end_at) : "To be announced"}` : date(drive.drive_date)}
                 </p>
-                <p className="drive-attempt-summary">{statusLabel}{drive.interview_assignment_status === "in_progress" ? " · Continue your interview" : drive.interview_assignment_status === "completed" ? " · Attempt complete" : ""}</p>
+                <p className="drive-attempt-summary">{statusLabel} · {attemptProgress}</p>
                 <p className="drive-interview-summary">{drive.interview_duration_minutes || "—"} minutes · {humanize(drive.difficulty_tier || "Difficulty not set")} · {drive.agent_selection?.length || drive.round_configuration?.length || "—"} rounds</p>
                 <div className="drive-card-meta"><span>{humanize(drive.job_type || "Job type not set")}</span><span>{compensationLabel(drive)}</span></div>
                 <button
@@ -508,6 +519,12 @@ export function Placements() {
           {busy && <p role="status">Checking your interview assignment…</p>}
           {error && <ErrorMessage message={error} />}
           <div className="detail-chips"><span className="pill placement-eligible-badge">Eligible</span><span className="pill">{context?.interview_window === "open" ? "Interview window open" : context?.interview_window === "not_open" ? "Interview window upcoming" : context?.interview_window === "closed" ? "Interview window closed" : humanize(selected.status)}</span></div>
+          {context && <div className="attempt-count-summary" aria-label="Interview attempt summary">
+            <div><span>Attempts allowed</span><strong>{context.max_attempts}</strong></div>
+            <div><span>Attempts used</span><strong>{context.attempts_used ?? 0}</strong></div>
+            <div><span>Current attempt</span><strong>{context.action === "not_assigned" ? "Not assigned" : `${context.attempt_number} of ${context.max_attempts}`}</strong></div>
+            <div><span>Attempts remaining</span><strong>{context.action === "not_assigned" ? `${context.max_attempts} once assigned` : context.attempts_remaining ?? 0}</strong></div>
+          </div>}
           <div className="opportunity-details">
             <div><span>Interview window</span><strong>{selected.window_start_at ? `${dateTime(selected.window_start_at)} → ${selected.window_end_at ? dateTime(selected.window_end_at) : "To be announced"}` : date(selected.drive_date)}</strong></div>
             <div><span>Location</span><strong>{context?.location || selected.location || "To be announced"}</strong></div>

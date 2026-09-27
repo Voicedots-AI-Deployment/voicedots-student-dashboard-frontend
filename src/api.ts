@@ -69,6 +69,11 @@ export type Drive = {
   interview_action?: string;
   interview_assignment_status?: string | null;
   interview_status?: string;
+  interview_attempt_number?: number;
+  interview_max_attempts?: number;
+  interview_attempts_used?: number;
+  interview_attempts_remaining?: number;
+  max_attempts?: number;
   salary_type?: string;
   salary_min_amount?: number | null;
   salary_max_amount?: number | null;
@@ -106,6 +111,7 @@ export type DriveContext = {
   eligibility?: { status: string; reason?: string | null };
   attempts_used?: number;
   attempts_remaining?: number;
+  assignment_status?: string;
   attempt_history?: Array<{
     attempt_number: number;
     submission_id?: string;

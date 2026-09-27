@@ -465,7 +465,7 @@ test("placement opportunity details show compensation, deadlines and interview s
   await page.route("**/api/student/drives/zoho/interview-context", route => route.fulfill({ json: {
     drive_id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst",
     job_description: "Analyze data", duration_minutes: null, attempt_number: 1, max_attempts: 1,
-    action: "not_assigned", assignment_status: "not_assigned", attempts_used: 0, attempts_remaining: 0,
+    action: "not_assigned", assignment_status: "not_assigned", attempts_used: 0, attempts_remaining: 1,
     attempt_history: [], current_attempt: null, eligibility: { status: "eligible" }, difficulty_tier: "intermediate",
     round_count: 2, can_start: false, can_resume: false, publication_status: "unavailable", decision: "undecided",
     interview_window: "open", location: "Chennai",
@@ -480,6 +480,8 @@ test("placement opportunity details show compensation, deadlines and interview s
   await expect(opportunityDialog.getByText("Senior Domain Specialist")).toBeVisible();
   await expect(opportunityDialog.getByText("private-persona-id", { exact: true })).toHaveCount(0);
   await expect(page.getByText(/hasn’t assigned an interview attempt yet/)).toBeVisible();
+  await expect(opportunityDialog.getByText("Attempts remaining")).toBeVisible();
+  await expect(opportunityDialog.getByText("1 once assigned")).toBeVisible();
   await expect(opportunityDialog.getByRole("button", { name: "Resume interview" })).toHaveCount(0);
 });
 
@@ -488,8 +490,8 @@ test("placement filters align on phone and interview status filters persisted st
   await mockStudent(page);
   await page.route("**/api/student/drives", route => route.fulfill({ json: [
     { id: "open", company_name: "Zoho", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", interview_status: "open" },
-    { id: "progress", company_name: "Razorpay", role_title: "Backend Developer", status: "active", eligibility_status: "eligible", interview_status: "in_progress", interview_assignment_status: "in_progress" },
-    { id: "done", company_name: "Acme", role_title: "QA Engineer", status: "active", eligibility_status: "eligible", interview_status: "completed", interview_assignment_status: "completed" },
+    { id: "progress", company_name: "Razorpay", role_title: "Backend Developer", status: "active", eligibility_status: "eligible", interview_status: "in_progress", interview_assignment_status: "in_progress", interview_attempt_number: 2, interview_max_attempts: 3, interview_attempts_used: 2, interview_attempts_remaining: 1 },
+    { id: "done", company_name: "Acme", role_title: "QA Engineer", status: "active", eligibility_status: "eligible", interview_status: "completed", interview_assignment_status: "completed", interview_attempt_number: 2, interview_max_attempts: 3, interview_attempts_used: 2, interview_attempts_remaining: 1 },
   ] }));
   let contextRequests = 0;
   await page.route("**/api/student/drives/*/interview-context", route => { contextRequests += 1; return route.fulfill({ status: 404, json: { detail: "not found" } }); });
@@ -502,6 +504,8 @@ test("placement filters align on phone and interview status filters persisted st
   await expect(page.getByText("Location", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Eligibility", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
+  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "Backend Developer" }) })).toContainText("Attempt 2 of 3 · In progress");
+  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "QA Engineer" }) })).toContainText("2 of 3 attempts used · 1 remaining");
   expect(contextRequests).toBe(0);
   await page.getByLabel("Interview status").selectOption("in_progress");
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
