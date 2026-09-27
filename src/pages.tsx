@@ -1,12 +1,13 @@
 import { AcademicOverview } from "./academics";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
   CalendarDays,
   ChevronRight,
+  Download,
   FileText,
   MapPin,
   Mic,
@@ -15,7 +16,7 @@ import {
   Target,
   TrendingUp,
 } from "lucide-react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
   api,
   apiUrl,
@@ -60,28 +61,27 @@ function ReportList({ reports }: { reports: Report[] }) {
             <FileText size={20} />
           </span>
           <div className="record-info">
-            <strong>{report.target_role || "Interview report"}</strong>
+            <strong>{report.company_name ? `${report.company_name} · ` : ""}{report.target_role || "Interview report"}</strong>
             <span>
               {report.drive_id ? "Placement interview" : "Practice interview"} ·{" "}
-              {date(report.completed_at || report.created_at)}
+              {date(report.completed_at || report.created_at)}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}
             </span>
           </div>
-          <div className="record-result">
-            <strong>{score(report.report?.overall_score)}</strong>
+          {report.report?.status !== "awaiting_release" && <div className="record-result">
+            <strong>{report.report?.overall_score == null ? "Not assessed" : score(report.report.overall_score)}</strong>
             <span>{humanize(report.report?.readiness || "Readiness pending")}</span>
-          </div>{report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
+          </div>}{report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
           {report.report?.status === "awaiting_release" ? (
             <span className="pill">Awaiting release</span>
           ) : report.status === "released" ? (
-            <a
-              className="icon-button"
+            <div className="report-actions"><a
               aria-label={`Open report for ${report.target_role || "interview"}`}
               href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.html`)}
               target="_blank"
               rel="noreferrer"
             >
-              <ChevronRight size={20} />
-            </a>
+              <ChevronRight size={17} /> View report
+            </a><a aria-label={`Download PDF report for ${report.target_role || "interview"}`} href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.pdf`)}><Download size={15}/> PDF</a></div>
           ) : (
             <span className="pill">{humanize(report.status)}</span>
           )}
@@ -376,6 +376,8 @@ const decisionTone = (value?: string) => {
 export function Placements() {
   const resource = useResource<Drive[]>("/api/student/drives");
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const openedDriveId = useRef("");
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("soonest");
@@ -404,6 +406,14 @@ export function Placements() {
       setBusy(false);
     }
   }
+  useEffect(() => {
+    const driveId = searchParams.get("drive");
+    const drive = resource.data?.find((item) => item.id === driveId);
+    if (drive && openedDriveId.current !== drive.id) {
+      openedDriveId.current = drive.id;
+      void select(drive);
+    }
+  }, [resource.data, searchParams]);
   const items = (resource.data || [])
     .filter((drive) => drive.eligibility_status !== "ineligible")
     .filter((drive) => {
@@ -729,8 +739,7 @@ export function Profile() {
     setError("");
     setMessage("");
     const form = new FormData(event.currentTarget);
-    const changes: { target_role?: string | null; date_of_birth?: string | null } = {};
-    if (form.has("target_role")) changes.target_role = String(form.get("target_role")).trim() || null;
+    const changes: { date_of_birth?: string | null } = {};
     if (form.has("date_of_birth")) changes.date_of_birth = String(form.get("date_of_birth") || "") || null;
     try {
       await api("/api/student/profile", {
@@ -748,7 +757,7 @@ export function Profile() {
   return (
     <>
       <PageHeading eyebrow="THE PERSON BEHIND THE POTENTIAL" title="My profile">
-        Your student identity and career preferences, in one place.
+        Your student identity and profile details, in one place.
       </PageHeading>
       <section className="panel profile-panel">
         <div className="profile-heading">
@@ -801,24 +810,6 @@ export function Profile() {
           Your placement team manages academic details. Contact your placement cell to
           request corrections.
         </p>
-      </section>
-      <section className="panel">
-        <h2>Where would you like to go?</h2>
-        <p className="muted">Set a target role to help guide your practice.</p>
-        <form className="preference-form" onSubmit={save}>
-          <label>
-            Target role
-            <input
-              name="target_role"
-              defaultValue={student.target_role || ""}
-              maxLength={120}
-              placeholder="e.g. Software engineer"
-            />
-          </label>
-          <button className="button primary" disabled={busy}>
-            {busy ? "Saving…" : "Save preference"}
-          </button>
-        </form>
       </section>
       <CareerProfile />
     </>

@@ -12,6 +12,9 @@ type Event = {
   subtitle: string;
   kind: "placement" | "coach";
   time?: string;
+  startsAt?: number;
+  endsAt?: number;
+  dateOnly?: boolean;
   location?: string;
   plan_id?: string;
   session_id?: string;
@@ -20,6 +23,15 @@ type Event = {
   cycle_id?: string;
   session_type?: string;
 };
+
+const indiaTime = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour: "numeric", minute: "2-digit", hour12: true });
+const indiaDateTime = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", hour12: true });
+const indiaDate = new Intl.DateTimeFormat("en-GB", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric" });
+
+function coachStatus(status?: string) {
+  if (!status) return "Scheduled";
+  return ({ completed: "Completed", cancelled: "Cancelled", canceled: "Cancelled", in_progress: "In progress", validation: "Validation", practice: "Practice", teaching: "Teaching" } as Record<string, string>)[status] || "Scheduled";
+}
 
 function indiaDateParts(value?: Date) {
   const parts = new Intl.DateTimeFormat("en-GB", {
@@ -35,6 +47,10 @@ function indiaDateParts(value?: Date) {
 function eventDay(value: string) {
   if (/^\d{4}-\d{2}-\d{2}$/.test(value)) return value;
   return indiaDateParts(new Date(value));
+}
+
+function dayEnd(day: string) {
+  return Date.parse(`${day}T23:59:59+05:30`);
 }
 
 function monthLabel(value: Date) {
@@ -74,10 +90,14 @@ export function Calendar() {
           subtitle: drive.company_name,
           kind: "placement" as const,
           time: drive.window_start_at ? dateTime(drive.window_start_at) : undefined,
+          startsAt: drive.window_start_at ? Date.parse(drive.window_start_at) : drive.drive_date ? Date.parse(`${drive.drive_date}T00:00:00+05:30`) : undefined,
+          endsAt: drive.window_end_at ? Date.parse(drive.window_end_at) : !drive.window_start_at && drive.drive_date ? dayEnd(drive.drive_date) : undefined,
+          dateOnly: !drive.window_start_at,
+          status: drive.status,
           location: drive.location,
         }]
       : []),
-    ...(coach.data?.events || []),
+    ...(coach.data?.events || []).map((event) => ({ ...event, date: eventDay(event.date), startsAt: event.time ? Date.parse(event.time) : Date.parse(`${event.date}T00:00:00+05:30`), endsAt: event.time ? undefined : dayEnd(eventDay(event.date)) })),
   ], [drives.data, coach.data]);
   const first = new Date(month.getFullYear(), month.getMonth(), 1);
   const start = new Date(first);
@@ -88,9 +108,12 @@ export function Calendar() {
     return day;
   });
   const today = indiaDateParts();
+  const now = Date.now();
   const upcoming = events
-    .filter((event) => event.date >= today)
-    .sort((left, right) => left.date.localeCompare(right.date) || (left.time || "").localeCompare(right.time || ""))
+    .filter((event) => event.kind === "placement"
+      ? event.status !== "closed" && (event.endsAt ?? event.startsAt ?? 0) >= now
+      : !["completed", "cancelled", "canceled"].includes(event.status || "") && (event.endsAt ?? event.startsAt ?? 0) >= now)
+    .sort((left, right) => (left.startsAt ?? Number.MAX_SAFE_INTEGER) - (right.startsAt ?? Number.MAX_SAFE_INTEGER) || left.id.localeCompare(right.id))
     .slice(0, 5);
 
   function openEvent(event: Event) {
@@ -111,7 +134,7 @@ export function Calendar() {
       setUnlinkedEvent("This older Coach calendar event is not linked to one specific session. Open AI Coach and select the session you want to continue.");
       return;
     }
-    navigate("/placements");
+    navigate(`/placements?drive=${encodeURIComponent(event.id)}`);
   }
 
   function activateWithKeyboard(event: KeyboardEvent, item: Event) {
@@ -157,11 +180,11 @@ export function Calendar() {
                         role="button"
                         tabIndex={0}
                         title={`${item.title} · ${item.subtitle}`}
-                        aria-label={`${item.title}, ${item.subtitle}, ${item.time || item.date}${item.kind === "coach" ? ", open Coach session" : ""}`}
+                        aria-label={`${item.title}, ${item.subtitle}, ${item.dateOnly && item.startsAt ? `${indiaDate.format(item.startsAt)} IST, time to be confirmed` : item.startsAt ? indiaDateTime.format(item.startsAt) + " IST" : item.date}${item.kind === "coach" ? `, ${coachStatus(item.status)}, ${item.duration_minutes || 30} minutes, open Coach session` : ""}`}
                         key={item.id}
                       >
                         <b>{item.title}</b>
-                        <small>{item.time || item.subtitle}</small>
+                        <small>{item.dateOnly ? "Time to be confirmed" : item.startsAt && item.time ? indiaTime.format(item.startsAt) : item.subtitle}</small>
                       </div>
                     ))}
                   </div>
@@ -182,12 +205,13 @@ export function Calendar() {
                 onKeyDown={(keyEvent) => activateWithKeyboard(keyEvent, event)}
                 role="button"
                 tabIndex={0}
-                aria-label={`${event.title}, ${event.subtitle}, ${event.time || event.date}${event.kind === "coach" ? ", open Coach session" : ""}`}
+                aria-label={`${event.title}, ${event.subtitle}, ${event.dateOnly && event.startsAt ? `${indiaDate.format(event.startsAt)} IST, time to be confirmed` : event.startsAt ? indiaDateTime.format(event.startsAt) + " IST" : event.date}${event.kind === "coach" ? `, ${coachStatus(event.status)}, ${event.duration_minutes || 30} minutes, open Coach session` : ""}`}
               >
                 <span className={`calendar-kind ${event.kind}`}>{event.kind === "placement" ? "Interview" : "AI Coach"}</span>
                 <strong>{event.title}</strong>
                 <small>{event.subtitle}</small>
-                <span><Clock size={13} />{event.time || new Date(`${event.date}T12:00:00`).toLocaleDateString(undefined, { month: "short", day: "numeric" })}</span>
+                <span><Clock size={13} />{event.dateOnly && event.startsAt ? `${indiaDate.format(event.startsAt)} · Time to be confirmed (IST)` : event.startsAt && event.time ? `${indiaDateTime.format(event.startsAt)} IST` : event.date}{event.kind === "placement" && !event.dateOnly && event.startsAt && event.startsAt <= now && (!event.endsAt || event.endsAt > now) ? " · Ongoing" : ""}</span>
+                {event.kind === "coach" && <span>{coachStatus(event.status)} · {event.duration_minutes || 30} minutes</span>}
                 {event.location && <span><MapPin size={13} />{event.location}</span>}
                 {event.kind === "coach" && <span className="calendar-open-label">Open session <ChevronRight size={13} /></span>}
               </article>

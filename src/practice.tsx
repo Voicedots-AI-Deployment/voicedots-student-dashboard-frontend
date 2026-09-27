@@ -46,7 +46,7 @@ export function Practice() {
   const coachCycleId = params.get("coach_cycle");
   const key = `vd_preparation_${identity!.student.id}_${driveId || coachCycleId || "practice"}`;
   const [file, setFile] = useState<File | null>(null);
-  const [role, setRole] = useState(identity!.student.target_role || "");
+  const [role, setRole] = useState("");
   const [duration, setDuration] = useState("30");
   const [difficulty, setDifficulty] = useState<"beginner" | "intermediate" | "advanced">(() => {
     const graduationYear = identity!.student.graduation_year;

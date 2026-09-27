@@ -35,6 +35,7 @@ import { Overview, Placements, Growth, Profile, Reports } from "./pages";
 import { Academics } from "./academics";
 import { Calendar } from "./calendar";
 import { Coach } from "./coach";
+import { CoachSkills } from "./coach-skills";
 import { Practice } from "./practice";
 import { PhotoVerification } from "./PhotoVerification";
 import { CoachSession } from "./coach-session";
@@ -456,6 +457,7 @@ export function App() {
             <Route path="/growth" element={<Growth />} />
             <Route path="/academics" element={<Academics />} />
             <Route path="/coach" element={<Coach />} />
+            <Route path="/coach/skills" element={<CoachSkills />} />
             <Route path="/resume-studio" element={<ResumeStudio />} />
             <Route path="/career" element={<CareerCoach />} />
             <Route path="/coach/session" element={<CoachSessionRoute />} />

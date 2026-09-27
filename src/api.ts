@@ -41,6 +41,8 @@ export type Report = {
   completed_at?: string;
   target_role?: string;
   drive_id?: string;
+  company_name?: string | null;
+  attempt_number?: number | null;
   placement_decision?: string | null;
   report: {
     overall_score?: number | null;
