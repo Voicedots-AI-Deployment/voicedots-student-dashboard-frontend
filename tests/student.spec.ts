@@ -180,7 +180,7 @@ test("overview follows the requested section order and keeps feedback percentage
     reports: [{ evaluation_id: "report-1", session_id: "session-1", submission_id: "submission-1", status: "released", created_at: "2026-09-20T12:00:00Z", completed_at: "2026-09-20T12:30:00Z", target_role: "Data Analyst", drive_id: "drive-1", report: { overall_score: 21, status: "released", priority_improvement_areas: [{ focus: "SQL" }] } }],
     attempts: [{ submission_id: "sub-drive-1", session_id: "session-drive-1", target_role: "Data Analyst", duration_minutes: 30, submitted_at: "2026-09-26T09:00:00Z", drive_id: "drive-1", company_name: "Example Co", source: "placement" }],
     readiness: { ...readiness, overall_score: 72 },
-    drives: [{ id: "drive-1", company_name: "Example Co", role_title: "Data Analyst", status: "active" }],
+    drives: [{ id: "drive-1", company_name: "Example Co", role_title: "Data Analyst", status: "active", interview_action: "start" }],
   } }));
   await page.goto("/");
   await expect(page.getByRole("heading", { name: "Hello, Asha." })).toBeVisible();
@@ -460,6 +460,41 @@ test("campus placements show eligible drives only and filter by interview window
   const scrollPosition = await page.evaluate(() => { window.scrollTo(0, document.body.scrollHeight); return window.scrollY; });
   expect(scrollPosition).toBeGreaterThan(0);
   expect(await topbar.evaluate(element => Math.round(element.getBoundingClientRect().top))).toBe(0);
+});
+
+test("closed eligible drives remain viewable without offering an interview start", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [
+    { id: "closed-drive", company_name: "VoiceDot", role_title: "Software Engineer", status: "closed", interview_status: "closed", interview_action: "not_assigned", eligibility_status: "eligible" },
+  ] }));
+  await page.route("**/api/student/drives/closed-drive/interview-context", route => route.fulfill({ json: {
+    drive_id: "closed-drive", company_name: "VoiceDot", role_title: "Software Engineer", action: "not_assigned",
+    attempt_number: 1, max_attempts: 2, attempts_used: 0, attempts_remaining: 2, attempt_history: [],
+    eligibility: { status: "eligible" }, interview_window: "closed", can_start: false, can_resume: false,
+  } }));
+  await page.goto("/placements");
+  await expect(page.getByRole("heading", { name: "Software Engineer" })).toBeVisible();
+  await page.getByLabel("Interview status").selectOption("closed");
+  await expect(page.getByText("Interview closed")).toBeVisible();
+  await page.getByRole("button", { name: "View opportunity" }).click();
+  await expect(page.getByText("This placement drive is closed.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Start interview" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Resume interview" })).toHaveCount(0);
+});
+
+test("overview never offers interview actions for a closed drive", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/dashboard", route => route.fulfill({ json: {
+    reports: [], attempts: [], readiness, drives: [
+      { id: "closed-drive", company_name: "VoiceDot", role_title: "Software Engineer", status: "closed", interview_status: "closed", interview_action: "blocked" },
+    ],
+  } }));
+  await page.goto("/");
+  const latest = page.getByTestId("overview-latest-drive");
+  await expect(latest).toContainText("Closed");
+  await expect(latest.getByRole("link", { name: "View placements" })).toHaveAttribute("href", "/placements");
+  await expect(latest.getByRole("link", { name: /Start AI Interview|Resume interview/ })).toHaveCount(0);
+  await expect(latest.getByRole("link", { name: /^AI Coach/ })).toHaveCount(0);
 });
 
 test("placement opportunity details show compensation, deadlines and interview setup", async ({ page }) => {

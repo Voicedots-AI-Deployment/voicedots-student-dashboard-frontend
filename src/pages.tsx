@@ -132,7 +132,10 @@ export function Overview() {
   const { identity } = useAuth();
   const resource = useResource<Dashboard>("/api/student/dashboard");
   const data = resource.data;
-  const latestDrive = data?.drives?.[0];
+  const latestDrive = data?.drives?.find((drive) => ["active", "scheduled"].includes(drive.status)) || data?.drives?.[0];
+  const latestDriveAvailable = Boolean(latestDrive && ["active", "scheduled"].includes(latestDrive.status) && latestDrive.interview_status !== "closed");
+  const canStartLatestDrive = latestDriveAvailable && ["start", "retry_preparation"].includes(latestDrive?.interview_action || "");
+  const canResumeLatestDrive = latestDriveAvailable && latestDrive?.interview_action === "resume";
   return (
     <>
       <PageHeading
@@ -189,8 +192,11 @@ export function Overview() {
                   <span className="pill">{humanize(latestDrive.status)}</span>
                 </div>
                 <div className="career-actions">
-                  <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(latestDrive.id)}`}>AI Coach <ArrowRight size={16}/></Link>
-                  <Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Start AI Interview <ArrowRight size={16}/></Link>
+                  {latestDriveAvailable && <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(latestDrive.id)}`}>AI Coach <ArrowRight size={16}/></Link>}
+                  {canResumeLatestDrive && <Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Resume interview <ArrowRight size={16}/></Link>}
+                  {canStartLatestDrive && <Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Start AI Interview <ArrowRight size={16}/></Link>}
+                  {!latestDriveAvailable && <Link className="button secondary" to="/placements">View placements <ArrowRight size={16}/></Link>}
+                  {latestDriveAvailable && !canResumeLatestDrive && !canStartLatestDrive && <Link className="button secondary" to="/placements">View opportunity <ArrowRight size={16}/></Link>}
                 </div>
               </section>
             ) : (
@@ -457,7 +463,9 @@ export function Placements() {
                   const statusLabel = interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Interview open" : interviewStatus === "upcoming" ? "Upcoming" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : "Closed";
                   const attemptNumber = drive.interview_attempt_number || 1;
                   const maximumAttempts = drive.interview_max_attempts || drive.max_attempts || 1;
-                  const attemptProgress = drive.interview_action === "not_assigned"
+                  const attemptProgress = interviewStatus === "closed"
+                    ? "Interview closed"
+                    : drive.interview_action === "not_assigned"
                     ? `${maximumAttempts} attempt${maximumAttempts === 1 ? "" : "s"} allowed · Not assigned yet`
                     : drive.interview_action === "resume" || drive.interview_assignment_status === "in_progress"
                       ? `Attempt ${attemptNumber} of ${maximumAttempts} · In progress`
@@ -537,12 +545,12 @@ export function Placements() {
           {(context?.job_description || selected.job_description) && <details className="job-description"><summary>View role description</summary><p>{context?.job_description || selected.job_description}</p></details>}
           {context && (
             <>
-              {context.action === "not_assigned" && <p className="placement-assignment-pending">You’re eligible. Your placement cell hasn’t assigned an interview attempt yet, so there’s nothing to start or resume.</p>}
-              {context.action !== "not_assigned" && <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={safeAttemptNumber(attempt.attempt_number)}><div><strong>Attempt {safeAttemptNumber(attempt.attempt_number, 1, context.max_attempts)}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{(context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {safeAttemptNumber(context.attempt_number, 1, context.max_attempts)}</strong><span>Available to start</span></div></div>}</section>}
+              {context.action === "not_assigned" && <p className="placement-assignment-pending">{context.interview_window === "closed" ? "This placement drive is closed. You can review its details, but no interview attempt can be started." : "You’re eligible. Your placement cell hasn’t assigned an interview attempt yet, so there’s nothing to start or resume."}</p>}
+              {context.action !== "not_assigned" && <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={safeAttemptNumber(attempt.attempt_number)}><div><strong>Attempt {safeAttemptNumber(attempt.attempt_number, 1, context.max_attempts)}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{context.interview_window !== "closed" && (context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {safeAttemptNumber(context.attempt_number, 1, context.max_attempts)}</strong><span>Available to start</span></div></div>}</section>}
               {context.publication_status === "released" && context.decision && decisionTone(context.decision) !== "shortlisted" && (
                 <p className="placement-decision-note">Placement decision: <strong>{humanize(context.decision)}</strong></p>
               )}
-              {context.action === "resume" && (
+              {context.interview_window !== "closed" && context.action === "resume" && (
                 <button
                   className="button primary"
                   onClick={() => {
@@ -556,7 +564,7 @@ export function Placements() {
                   {context.session_id ? "Resume interview" : `Resume attempt ${context.attempt_number}`}
                 </button>
               )}
-              {(["start", "retry_preparation"].includes(context.action) || context.can_start_next_attempt || (context.action === "completed" && Number(context.attempt_number) < Number(context.max_attempts))) && (
+              {context.interview_window !== "closed" && (["start", "retry_preparation"].includes(context.action) || context.can_start_next_attempt || (context.action === "completed" && Number(context.attempt_number) < Number(context.max_attempts))) && (
                   <button
                     className="button primary"
                     onClick={() =>
