@@ -48,8 +48,9 @@ test("Resume Studio landing actions have consistent button sizing and alignment"
  await mockResumeStudio(page);await page.goto("/resume-studio");
  const actions=page.locator(".rs-home-actions > .button");
  await expect(actions).toHaveCount(3);
- const heights=await actions.evaluateAll(items=>items.map(item=>({height:item.getBoundingClientRect().height,display:getComputedStyle(item).display,padding:getComputedStyle(item).padding,lineHeight:getComputedStyle(item).lineHeight,whiteSpace:getComputedStyle(item).whiteSpace,text:item.textContent})));
- expect(Math.max(...heights.map(item=>item.height))-Math.min(...heights.map(item=>item.height)),JSON.stringify(heights)).toBeLessThanOrEqual(1);
+ const heights=await actions.evaluateAll(items=>items.map(item=>item.getBoundingClientRect().height));
+ expect(Math.max(...heights)-Math.min(...heights)).toBeLessThanOrEqual(1);
+ await expect(page.locator(".rs-upload-button")).toHaveCSS("flex-direction","row");
  await expect(page.getByText("Import existing resume",{exact:true})).toBeVisible();
 });
 
