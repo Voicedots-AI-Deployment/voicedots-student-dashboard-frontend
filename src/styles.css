@@ -2127,17 +2127,18 @@ dialog.modal::backdrop {
 
 /* Use the available desktop workspace instead of shrinking the resume library to its contents. */
 @media(min-width:1000px){
- .resume-studio.rs-library-home{width:100%;max-width:1560px;margin-inline:auto;grid-template-columns:minmax(0,1fr);justify-items:stretch;gap:14px}
- .resume-studio.rs-library-home>.rs-home-intro,.resume-studio.rs-library-home>.rs-home-actions,.resume-studio.rs-library-home>.rs-library-rebuilt{box-sizing:border-box;width:100%;max-width:1480px;justify-self:center}
- .resume-studio.rs-library-home>.rs-home-intro{display:grid;align-content:center;min-height:146px;margin:10px auto 0;padding:24px 34px;border:1px solid #e8e0f6;border-radius:18px;background:radial-gradient(ellipse at 92% 0%,#eee8ff 0,transparent 36%),linear-gradient(110deg,#fbf9ff,#fff 70%);box-shadow:0 10px 30px #32204d08}
+ .resume-studio.rs-library-home{width:100%;max-width:1320px;margin-inline:auto;grid-template-columns:minmax(0,1fr);justify-items:stretch;gap:12px}
+ .resume-studio.rs-library-home>.rs-home-intro,.resume-studio.rs-library-home>.rs-home-actions,.resume-studio.rs-library-home>.rs-library-rebuilt{box-sizing:border-box;width:100%;max-width:1280px;justify-self:center}
+ .resume-studio.rs-library-home>.rs-home-intro{display:grid;align-content:center;min-height:126px;margin:4px auto 0;padding:20px 28px;border:1px solid #e8e0f6;border-radius:15px;background:radial-gradient(ellipse at 92% 0%,#eee8ff 0,transparent 36%),linear-gradient(110deg,#fbf9ff,#fff 70%);box-shadow:0 10px 30px #32204d08}
  .dark .resume-studio.rs-library-home>.rs-home-intro{border-color:#3b3349;background:radial-gradient(ellipse at 92% 0%,#352851 0,transparent 38%),#201d29}
- .resume-studio .rs-home-intro h1{max-width:850px;margin:9px 0 6px;font-size:clamp(31px,2.5vw,40px);line-height:1.12;letter-spacing:-.04em}
+ .resume-studio .rs-home-intro h1{max-width:850px;margin:9px 0 6px;font-size:clamp(30px,2.15vw,36px);line-height:1.12;letter-spacing:-.04em}
  .resume-studio .rs-home-intro p{max-width:780px;margin:0;color:var(--muted,#706a7c);font-size:14px;line-height:1.55}
  .resume-studio.rs-library-home>.rs-home-actions{display:flex;justify-content:flex-start;gap:10px;margin:0 auto;padding:0}
- .resume-studio.rs-library-home>.rs-library-rebuilt{max-width:1480px;margin:0 auto 24px;padding:22px 24px;border-radius:17px}
- .resume-studio.rs-library-home .rs-library-rebuilt .rs-project-grid{width:100%;grid-template-columns:repeat(auto-fill,minmax(240px,260px));align-items:stretch;gap:16px;margin-top:18px}
- .resume-studio.rs-library-home .rs-project-card-new .rs-card-paper{height:208px;min-height:208px}
- .resume-studio .rs-workspace{grid-template-columns:minmax(0,.92fr) minmax(0,1.08fr);gap:20px}
+ .resume-studio.rs-library-home>.rs-library-rebuilt{max-width:1280px;margin:0 auto 24px;padding:19px 21px;border-radius:15px}
+ .resume-studio.rs-library-home .rs-library-rebuilt .rs-project-grid{width:100%;grid-template-columns:repeat(auto-fill,minmax(240px,260px));align-items:stretch;gap:14px;margin-top:15px}
+ .resume-studio.rs-library-home .rs-project-card-new .rs-card-paper{height:190px;min-height:190px}
+ .resume-studio:not(.rs-library-home){width:100%;max-width:1320px;margin-inline:auto}
+ .resume-studio .rs-workspace{grid-template-columns:minmax(0,.96fr) minmax(0,1.04fr);gap:16px}
 }
 .rs-result-recommendations{padding:12px 14px;border:1px solid var(--rs-line,#e8e3ef);border-radius:12px;background:var(--surface-alt,#f8f6fc)}
 .rs-result-recommendations h4{margin:0 0 6px;font-size:14px}.rs-result-recommendations ul{margin:0;padding-left:18px;color:var(--muted,#706a7c);line-height:1.6}

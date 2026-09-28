@@ -57,11 +57,14 @@ test("Resume Studio landing actions have consistent button sizing and alignment"
 
 test("Resume Studio library fills the desktop workspace with aligned sections and compact resume cards",async({page})=>{
  await mockResumeStudio(page);await page.setViewportSize({width:1700,height:900});await page.goto("/resume-studio");
+ await page.screenshot({path:"test-results/resume-studio-library-desktop.png",fullPage:true});
  const boxes=await page.evaluate(()=>Object.fromEntries([".rs-home-intro",".rs-home-actions",".rs-library-rebuilt",".rs-project-card-new"].map(selector=>{const r=document.querySelector(selector)!.getBoundingClientRect();return[selector,{x:r.x,width:r.width,height:r.height}]})));
  expect(boxes[".rs-home-intro"].width).toBeGreaterThan(1200);
  expect(boxes[".rs-library-rebuilt"].width).toBeGreaterThan(1200);
  expect(Math.abs(boxes[".rs-home-intro"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
  expect(Math.abs(boxes[".rs-home-actions"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
+ expect(boxes[".rs-home-intro"].width).toBeLessThanOrEqual(1320);
+ expect(boxes[".rs-project-card-new"].height).toBeLessThan(340);
  expect(boxes[".rs-project-card-new"].width).toBeGreaterThanOrEqual(240);
  expect(boxes[".rs-project-card-new"].width).toBeLessThanOrEqual(280);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
