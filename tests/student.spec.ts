@@ -23,6 +23,7 @@ const dashboard = { reports: [], attempts: [], readiness, drives: [] };
 
 async function mockStudent(page: Page, options: { signedIn?: boolean } = {}) {
   let signedIn = options.signedIn ?? true;
+  let passwordSetupCompleted = false;
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/auth/student-me")
@@ -37,7 +38,8 @@ async function mockStudent(page: Page, options: { signedIn?: boolean } = {}) {
       signedIn = true;
       return route.fulfill({ json: identity });
     }
-    if (path === "/api/auth/student-password-setup") return route.fulfill({ json: { status: "password_set" } });
+    if (path === "/api/auth/student-password-setup-status") return route.fulfill({ json: { status: passwordSetupCompleted ? "completed" : "valid" } });
+    if (path === "/api/auth/student-password-setup") { passwordSetupCompleted = true; return route.fulfill({ json: { status: "password_set" } }); }
     if (path === "/api/auth/student-password-link") return route.fulfill({ json: { status: "accepted" } });
     if (path === "/api/auth/student-logout") {
       signedIn = false;
@@ -100,7 +102,9 @@ test("single-use emailed link sets a student password without roll-number verifi
   const setup = page.waitForRequest("**/api/auth/student-password-setup");
   await page.getByRole("button", { name: "Save password" }).click();
   expect((await setup).postDataJSON()).toEqual({ token: "single-use-test-token", password: "MyStrongPassword1!" });
-  await page.getByRole("button", { name: "Continue to sign in" }).click();
+  await page.goto("/?setup_token=single-use-test-token");
+  await expect(page.getByText("Password already created. Sign in with your password.")).toBeVisible();
+  await page.getByRole("button", { name: "Return to sign in" }).click();
   await page.getByLabel("Email").fill("asha@college.edu");
   await page.getByRole("button", { name: "Email me a password setup or reset link" }).click();
   await expect(page.getByRole("status")).toContainText("email will arrive shortly");

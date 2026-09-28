@@ -57,6 +57,7 @@ function Login() {
   const navigate = useNavigate();
   const setupToken = new URLSearchParams(location.search).get("setup_token") || "";
   const [setupComplete, setSetupComplete] = useState(false);
+  const [setupLinkStatus, setSetupLinkStatus] = useState<"checking" | "valid" | "completed" | "expired" | "invalid">(setupToken ? "checking" : "valid");
   const [linkSent, setLinkSent] = useState(false);
   const [faceSignIn, setFaceSignIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
@@ -66,6 +67,14 @@ function Login() {
   const [conflict, setConflict] = useState(false);
   // Credentials remain only in component memory while the camera step is open.
   const [pendingPhoto, setPendingPhoto] = useState<PendingPhotoLogin | null>(null);
+  useEffect(() => {
+    if (!setupToken) return;
+    let active = true;
+    void api("/api/auth/student-password-setup-status", json({ token: setupToken }))
+      .then((result) => { if (active) setSetupLinkStatus((result as { status?: "valid" | "completed" | "expired" | "invalid" }).status || "invalid"); })
+      .catch(() => { if (active) setSetupLinkStatus("invalid"); });
+    return () => { active = false; };
+  }, [setupToken]);
   async function authenticate(credentials: PendingPhotoLogin, webcamPhoto?: string) {
     setBusy(true);
     setError("");
@@ -166,7 +175,7 @@ function Login() {
           <span className="eyebrow">YOUR STUDENT SPACE</span>
           <h2>{setupComplete ? "Password updated." : setupToken ? "Choose your password." : pendingPhoto ? "Verify your photo." : faceSignIn ? "Sign in with your face." : "Welcome back."}</h2>
           <p>
-            {setupComplete ? "Your account is ready. Sign in with your new password." : setupToken ? "Choose a strong password to activate your student account or finish resetting it. This secure link can only be used once." : pendingPhoto ? "One more step to finish signing in."
+            {setupComplete ? "Your account is ready. Sign in with your new password." : setupToken ? setupLinkStatus === "checking" ? "Checking your secure password link…" : setupLinkStatus === "completed" ? "Password already created. Sign in with your password." : setupLinkStatus === "expired" ? "This password link has expired. Request a new one below." : setupLinkStatus === "invalid" ? "This password link is invalid. Request a new one below." : "Choose a strong password to activate your student account or finish resetting it. This secure link can only be used once." : pendingPhoto ? "One more step to finish signing in."
               : faceSignIn ? "Enter your email, then capture a camera photo to sign in." : "Sign in to pick up where you left off."}
           </p>
           {auth.expired && (
@@ -188,7 +197,7 @@ function Login() {
                 onChange={(e) => setReplaceSession(e.target.checked)} />
               End my previous session and sign in here
             </label>}
-          </> : !setupComplete && <form onSubmit={submit}>
+          </> : !setupComplete && (!setupToken || setupLinkStatus === "valid") && <form onSubmit={submit}>
             {!setupToken && <label>
               Email
               <input name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
@@ -244,6 +253,7 @@ function Login() {
           >
             Email me a password setup or reset link
           </button>}
+          {setupToken && !setupComplete && (setupLinkStatus === "completed" || setupLinkStatus === "expired" || setupLinkStatus === "invalid") && <button className="button primary" onClick={() => navigate(location.pathname, { replace: true })}>Return to sign in <ArrowRight size={17}/></button>}
           {linkSent && <p role="status" className="success-message">If the account can receive a password link, an email will arrive shortly.</p>}
           {setupComplete && <button className="button primary" onClick={() => { setSetupComplete(false); setError(""); }}>Continue to sign in <ArrowRight size={17}/></button>}
           <div className="auth-help">
