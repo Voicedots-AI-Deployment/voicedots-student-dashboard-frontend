@@ -37,7 +37,7 @@ test("Resume Studio appears below AI Coach and saves project content through the
  const studio=await nav.getByRole("link",{name:"Resume Studio"}).evaluate(el=>Array.from(el.parentElement!.children).indexOf(el));
  expect(studio).toBe(coach+1);
  await page.getByRole("link",{name:"Resume Studio"}).click();
- await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await page.getByRole("button",{name:/Open Resume 1/}).click();
  await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Kumar");
  await page.getByRole("button",{name:"Save now"}).click();
@@ -71,7 +71,7 @@ test("Resume Studio library fills the desktop workspace with aligned sections an
 });
 
 test("Resume Studio autosaves edits and keeps the save state tied to the backend",async({page})=>{
- await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Autosaved");
  await expect(page.locator(".rs-save-state")).toHaveText("Unsaved changes");
  await expect(page.locator(".rs-save-state")).toHaveText("Saved",{timeout:5000});
@@ -81,7 +81,7 @@ test("Resume Studio autosaves edits and keeps the save state tied to the backend
 
 test("Resume Studio reports stale revision conflicts and offers a safe reload",async({page})=>{
  await mockResumeStudio(page,true);await page.goto("/resume-studio");
- await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await page.getByRole("button",{name:/Open Resume 1/}).click();
  await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Unsaved draft");
  await page.getByRole("button",{name:"Save now"}).click();
@@ -92,7 +92,7 @@ test("Resume Studio reports stale revision conflicts and offers a safe reload",a
 
 test("Resume Studio reviews and applies proposals as a revision",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");
- await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await page.getByRole("button",{name:/Open Resume 1/}).click();
  await page.getByRole("tab",{name:"AI tools"}).click();
  await expect(page.getByText(/AI assistance is connected|gpt-5\.4-mini/)).toHaveCount(0);
  await page.getByRole("button",{name:"Review resume"}).click();
@@ -111,7 +111,7 @@ test("Resume Studio imports a file and downloads an export",async({page})=>{
 });
 
 test("Resume Studio opens with the guided overview and keeps workspace navigation usable on mobile",async({page})=>{
- await mockResumeStudio(page);await page.setViewportSize({width:390,height:844});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await mockResumeStudio(page);await page.setViewportSize({width:390,height:844});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();
  await expect(page.getByRole("heading",{name:"Build a resume that gets interviews"})).toBeVisible();
  await expect(page.locator(".rs-preview-panel")).toHaveCount(0);
  await expect(page.getByRole("tab",{name:"Overview"})).toHaveAttribute("aria-selected","true");
@@ -120,7 +120,7 @@ test("Resume Studio opens with the guided overview and keeps workspace navigatio
 });
 
 test("Resume Studio overview uses the full desktop workspace and spacing has working controls",async({page})=>{
- await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();
  await page.screenshot({path:"test-results/resume-studio-project-overview-desktop.png",fullPage:true});
  const overviewTextStarts=await page.evaluate(()=>[
   document.querySelector(".rs-overview-hero>div:first-child")!,
@@ -146,7 +146,7 @@ test("Resume Studio overview uses the full desktop workspace and spacing has wor
 });
 
 test("Resume Studio preview renders the unsaved editor draft",async({page})=>{
- await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Draft Preview");
  await expect(page.frameLocator('iframe[title="Resume preview"]').locator("body")).toContainText("Asha Draft Preview");
 });
@@ -156,14 +156,14 @@ test("Resume Studio preview exposes a retry state after a rendering request fail
  await page.route("**/api/student/resume-studio/resumes/rs-1/preview",async route=>{
   if(route.request().method()==="POST"&&!failed){failed=true;return route.abort("failed")}return route.fallback();
  });
- await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await expect(page.getByText("Preview unavailable")).toBeVisible();
  await page.getByRole("button",{name:"Try again"}).click();
  await expect(page.getByText("Add a name or resume content and the live preview will appear here.")).toBeVisible();
 });
 
 test("Resume Studio editor stays within phone, tablet and laptop viewports",async({page})=>{
- await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();
  for(const width of [390,768,1024]){
   await page.setViewportSize({width,height:900});
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -171,7 +171,7 @@ test("Resume Studio editor stays within phone, tablet and laptop viewports",asyn
 });
 
 test("Resume Studio keeps controls compact, fields aligned and preview tall on desktop",async({page})=>{
- await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  const save=await page.getByRole("button",{name:"Save now"}).boundingBox();const name=await page.getByLabel("Full name").boundingBox();const preview=await page.locator(".rs-preview-frame").boundingBox();const previewPanel=await page.locator(".rs-preview-panel").boundingBox();
  expect(save?.height).toBeLessThanOrEqual(40);expect(name?.height).toBeGreaterThanOrEqual(40);expect(name?.height).toBeLessThanOrEqual(44);expect(preview?.height).toBeGreaterThanOrEqual(600);expect(previewPanel?.width).toBeGreaterThanOrEqual(420);
 });
@@ -184,16 +184,16 @@ test("Build with AI chat opens the guided conversation after creating the projec
 });
 
 test("choosing a design template applies its presentation settings and saves them",async({page})=>{
- await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();
  await page.getByRole("button",{name:"Editorial Clear modern layout ATS friendly · Modern"}).click();
- await expect(page.getByLabel("Layout")).toHaveValue("sidebar");await expect(page.getByRole("combobox").nth(3)).toHaveValue("Inter");
- await expect(page.getByLabel("Accent color")).toHaveValue("#238b72");await expect(page.getByText("Editorial selected.")).toBeVisible();await expect(page.locator(".rs-save-state")).toHaveText("Saved",{timeout:5000});await page.reload();await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Details"}).click();await expect(page.getByLabel("Layout")).toHaveValue("sidebar");await page.getByRole("tab",{name:"Typeface"}).click();await expect(page.locator(".rs-fields label").filter({hasText:/^Font/}).locator("select")).toHaveValue("Inter");await expect(page.getByLabel("Accent color")).toHaveValue("#238b72");
+ await expect(page.getByLabel("Layout")).toHaveValue("sidebar");await page.getByRole("tab",{name:"Typeface"}).click();await expect(page.locator(".rs-fields label").filter({hasText:/^Font/}).locator("select")).toHaveValue("Inter");
+ await expect(page.getByLabel("Accent color")).toHaveValue("#238b72");await expect(page.getByText("Editorial selected.")).toBeVisible();await expect(page.locator(".rs-save-state")).toHaveText("Saved",{timeout:5000});await page.reload();await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Details"}).click();await expect(page.getByLabel("Layout")).toHaveValue("sidebar");await page.getByRole("tab",{name:"Typeface"}).click();await expect(page.locator(".rs-fields label").filter({hasText:/^Font/}).locator("select")).toHaveValue("Inter");await expect(page.getByLabel("Accent color")).toHaveValue("#238b72");
 });
 
 test("restarting the resume chat confirms whether to preserve or clear student details",async({page})=>{
  await mockResumeStudio(page);const restarts:any[]=[];
  await page.route("**/api/student/resume-studio/resumes/rs-1/interviews",async route=>{if(route.request().method()==="POST")restarts.push(route.request().postDataJSON());return route.fallback()});
- await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"AI tools"}).click();
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"AI tools"}).click();
  await page.getByRole("button",{name:"Start / resume"}).click();await expect(page.getByText("What experience should we include?")).toBeVisible();
  await page.getByRole("button",{name:"Restart"}).click();const dialog=page.getByRole("dialog",{name:"Restart the AI chat?"});await expect(dialog).toBeVisible();
  await dialog.getByRole("button",{name:"Keep my details"}).click();await expect.poll(()=>restarts.length).toBe(2);expect(restarts[1]).toEqual({restart:true});

@@ -37,6 +37,8 @@ async function mockStudent(page: Page, options: { signedIn?: boolean } = {}) {
       signedIn = true;
       return route.fulfill({ json: identity });
     }
+    if (path === "/api/auth/student-password-setup") return route.fulfill({ json: { status: "password_set" } });
+    if (path === "/api/auth/student-password-link") return route.fulfill({ json: { status: "accepted" } });
     if (path === "/api/auth/student-logout") {
       signedIn = false;
       return route.fulfill({ json: { status: "ok" } });
@@ -90,19 +92,18 @@ test("sign in uses student auth and restores the requested page", async ({
   ).toBeNull();
 });
 
-test("enrollment activates a roster account", async ({ page }) => {
+test("single-use emailed link sets a student password without roll-number verification", async ({ page }) => {
   await mockStudent(page, { signedIn: false });
-  await page.goto("/");
-  await page.getByRole("button", { name: "First time here?" }).click();
-  await page.getByLabel("Roll number").fill("CS2026001");
+  await page.goto("/?setup_token=single-use-test-token");
+  await page.locator('input[name="password"]').fill("MyStrongPassword1!");
+  await page.getByLabel("Confirm new password").fill("MyStrongPassword1!");
+  const setup = page.waitForRequest("**/api/auth/student-password-setup");
+  await page.getByRole("button", { name: "Save password" }).click();
+  expect((await setup).postDataJSON()).toEqual({ token: "single-use-test-token", password: "MyStrongPassword1!" });
+  await page.getByRole("button", { name: "Continue to sign in" }).click();
   await page.getByLabel("Email").fill("asha@college.edu");
-  await page.getByLabel("Password", { exact: true }).fill("MyStrongPassword1!");
-  const enrollment = page.waitForRequest("**/api/auth/student-enroll");
-  await page.getByRole("button", { name: "Activate account" }).click();
-  expect((await enrollment).postDataJSON().roll_number).toBe("CS2026001");
-  await expect(
-    page.getByRole("heading", { name: "Hello, Asha." }),
-  ).toBeVisible();
+  await page.getByRole("button", { name: "Email me a password setup or reset link" }).click();
+  await expect(page.getByRole("status")).toContainText("email will arrive shortly");
 });
 
 test("overview is honest about missing data and is responsive", async ({
@@ -853,7 +854,7 @@ test('Resume Studio saves project evidence and reloads it from the student API',
  await expect(page.locator('.rs-save-state')).toHaveText('Saved');
  expect(savedProject.revision).toBe(2);
  await page.reload();
- await page.getByRole('button',{name:/Resume 1 Revision 2/}).click();
+ await page.getByRole('button',{name:/Open Resume 1/}).click();
  await page.getByRole('tab',{name:'Resume editor'}).click();
  await expect(page.getByLabel('Project title',{exact:true})).toHaveValue('Library API');
  await expect(page.getByLabel('Description / achievements',{exact:true})).toContainText('Built a Python API with book search.');
@@ -1308,7 +1309,7 @@ test('AI Coach validation lets a student skip a task without claiming ability',a
  expect(submitted).toMatchObject({answers:[{task_id:'task-1',response:''},{task_id:'task-2',response:''}]});
 });
 
-test('Resume Studio library handoff distinguishes saved copy from Main Resume',async({page})=>{
+test('Resume Studio asks before connecting its single resume as Main Resume',async({page})=>{
  await mockStudent(page);
  const project={id:'handoff-1',title:'Verified resume',revision:2,document:{title:'Verified resume',personal_details:{full_name:'Test Student'},sections:[{id:'summary',kind:'summary',name:'Professional Summary',hidden:false,entries:[{id:'summary-entry',title:'',body_html:'Experienced analyst with SQL project work.',tags:[],hidden:false}]}]},presentation:{},updated_at:'2026-09-27T10:00:00Z'};
  const uploads:Array<{primary:string;label:string;name:string}>=[];
@@ -1328,20 +1329,18 @@ test('Resume Studio library handoff distinguishes saved copy from Main Resume',a
   return route.fulfill({json:{analysis_status:'ready'}});
  });
  await page.goto('/resume-studio');
- await page.getByRole('button',{name:/Verified resume Revision 2/}).click();
+ await page.getByRole('button',{name:/Open Verified resume/}).click();
  await page.getByRole('tab',{name:'Resume editor'}).click();
- await page.getByRole('button',{name:'Save to Resume Library'}).click();
- await expect(page.getByText('Saved to Resume Library. Your Main Resume is unchanged.')).toBeVisible();
  await page.getByRole('button',{name:'Set as Main Resume'}).click();
- const confirm=page.getByRole('dialog',{name:'Make this your Main Resume?'});
+ const confirm=page.getByRole('dialog',{name:'Use this as your Main Resume?'});
  await expect(confirm).toBeVisible();
- expect(uploads).toHaveLength(1);
+ expect(uploads).toHaveLength(0);
  await confirm.getByRole('button',{name:'Cancel'}).click();
- expect(uploads).toHaveLength(1);
+ expect(uploads).toHaveLength(0);
  await page.getByRole('button',{name:'Set as Main Resume'}).click();
- await page.getByRole('dialog').getByRole('button',{name:'Confirm and set Main Resume'}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Allow and set Main Resume'}).click();
  await expect(page.getByText('Main Resume updated and saved to Resume Library.')).toBeVisible();
- expect(uploads).toEqual([{primary:'false',label:'Verified resume',name:'Verified-resume.pdf'},{primary:'true',label:'Verified resume',name:'Verified-resume.pdf'}]);
+ expect(uploads).toEqual([{primary:'true',label:'Verified resume',name:'Verified-resume.pdf'}]);
 });
 
 test('general practice does not inherit the removed profile target role',async({page})=>{

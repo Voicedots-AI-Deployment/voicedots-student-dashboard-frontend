@@ -27,6 +27,7 @@ import {
   Route,
   Routes,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import { api, ApiError, json } from "./api";
 import { useAuth } from "./auth";
@@ -52,7 +53,11 @@ type PendingPhotoLogin = {
 
 function Login() {
   const auth = useAuth();
-  const [enroll, setEnroll] = useState(false);
+  const location = useLocation();
+  const navigate = useNavigate();
+  const setupToken = new URLSearchParams(location.search).get("setup_token") || "";
+  const [setupComplete, setSetupComplete] = useState(false);
+  const [linkSent, setLinkSent] = useState(false);
   const [faceSignIn, setFaceSignIn] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -66,7 +71,7 @@ function Login() {
     setError("");
     try {
       await api(
-        credentials.roll_number !== undefined ? "/api/auth/student-enroll" : "/api/auth/student-login",
+        "/api/auth/student-login",
         json({ ...credentials, ...(webcamPhoto ? { webcam_photo: webcamPhoto } : {}) }),
       );
       setPendingPhoto(null);
@@ -88,7 +93,19 @@ function Login() {
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
     const form = new FormData(event.currentTarget);
-    if (faceSignIn && !enroll) {
+    if (setupToken) {
+      const password = String(form.get("password"));
+      if (password !== String(form.get("confirm_password"))) { setError("Passwords do not match."); return; }
+      setBusy(true); setError("");
+      try {
+        await api("/api/auth/student-password-setup", json({ token: setupToken, password }));
+        setSetupComplete(true);
+        navigate(location.pathname, { replace: true });
+      } catch (e) { setError((e as Error).message); }
+      finally { setBusy(false); }
+      return;
+    }
+    if (faceSignIn) {
       setError("");
       setPendingPhoto({ email: String(form.get("email")).trim(), password: "", auth_method: "face" });
       return;
@@ -96,8 +113,7 @@ function Login() {
     await authenticate({
       email: String(form.get("email")).trim(),
       password: String(form.get("password")),
-      ...(enroll ? { roll_number: String(form.get("roll_number")).trim() }
-        : { replace_active_session: replaceSession }),
+      replace_active_session: replaceSession,
     });
   }
   return (
@@ -148,10 +164,9 @@ function Login() {
         <div className="auth-form">
           <div className="auth-form-icon"><LockKeyhole size={23} /></div>
           <span className="eyebrow">YOUR STUDENT SPACE</span>
-          <h2>{pendingPhoto ? "Verify your photo." : enroll ? "Make it official." : faceSignIn ? "Sign in with your face." : "Welcome back."}</h2>
+          <h2>{setupComplete ? "Password updated." : setupToken ? "Choose your password." : pendingPhoto ? "Verify your photo." : faceSignIn ? "Sign in with your face." : "Welcome back."}</h2>
           <p>
-            {pendingPhoto ? "One more step to finish signing in." : enroll
-              ? "Activate the student account created by your placement cell."
+            {setupComplete ? "Your account is ready. Sign in with your new password." : setupToken ? "Choose a strong password to activate your student account or finish resetting it. This secure link can only be used once." : pendingPhoto ? "One more step to finish signing in."
               : faceSignIn ? "Enter your email, then capture a camera photo to sign in." : "Sign in to pick up where you left off."}
           </p>
           {auth.expired && (
@@ -168,44 +183,28 @@ function Login() {
             <PhotoVerification busy={busy}
               onCapture={(photo) => authenticate({ ...pendingPhoto, replace_active_session: replaceSession }, photo)}
               onCancel={() => { setPendingPhoto(null); setError(""); setConflict(false); setReplaceSession(false); }} />
-            {conflict && !enroll && <label className="checkbox">
+            {conflict && <label className="checkbox">
               <input type="checkbox" checked={replaceSession} disabled={busy}
                 onChange={(e) => setReplaceSession(e.target.checked)} />
               End my previous session and sign in here
             </label>}
-          </> : <form onSubmit={submit}>
-            {enroll && (
-              <label>
-                Roll number
-                <input
-                  name="roll_number"
-                  autoComplete="username"
-                  required
-                  maxLength={100}
-                />
-              </label>
-            )}
-            <label>
+          </> : !setupComplete && <form onSubmit={submit}>
+            {!setupToken && <label>
               Email
-              <input
-                name="email"
-                type="email"
-                autoComplete="email"
-                placeholder="you@example.com"
-                required
-              />
-            </label>
+              <input name="email" type="email" autoComplete="email" placeholder="you@example.com" required />
+            </label>}
+            {setupToken && <input type="hidden" name="email" value="" />}
             {!faceSignIn && <label>
-              Password
+              {setupToken ? "New password" : "Password"}
               <span className="auth-password">
               <input
                 name="password"
                 type={showPassword ? "text" : "password"}
-                autoComplete={enroll ? "new-password" : "current-password"}
-                minLength={enroll ? 12 : undefined}
+                autoComplete={setupToken ? "new-password" : "current-password"}
+                minLength={setupToken ? 12 : undefined}
                 required
                 placeholder={
-                  enroll
+                  setupToken
                     ? "12+ characters with upper/lowercase, number, symbol"
                     : "Enter your password"
                 }
@@ -213,7 +212,8 @@ function Login() {
               <button type="button" className="auth-password-toggle" aria-label={showPassword ? "Hide password" : "Show password"} aria-pressed={showPassword} onClick={() => setShowPassword(!showPassword)}>{showPassword ? <EyeOff size={18} /> : <Eye size={18} />}</button>
               </span>
             </label>}
-            {conflict && !enroll && (
+            {setupToken && <label>Confirm new password<input name="confirm_password" type="password" autoComplete="new-password" minLength={12} maxLength={128} required /></label>}
+            {conflict && !setupToken && (
               <label className="checkbox">
                 <input
                   type="checkbox"
@@ -224,30 +224,28 @@ function Login() {
               </label>
             )}
             <button className="button primary" disabled={busy}>
-              {busy ? "Please wait…" : enroll ? "Activate account" : faceSignIn ? "Open camera" : "Sign in"}
+              {busy ? "Please wait…" : setupToken ? "Save password" : faceSignIn ? "Open camera" : "Sign in"}
               <ArrowRight size={17} />
             </button>
           </form>}
-          {!pendingPhoto && !enroll && <button className="text-button" disabled={busy}
+          {!pendingPhoto && !setupToken && !setupComplete && <button className="text-button" disabled={busy}
             onClick={() => { setFaceSignIn(!faceSignIn); setError(""); setConflict(false); setReplaceSession(false); }}>
             {faceSignIn ? "Use password instead" : "Sign in with face"}
           </button>}
-          {!pendingPhoto && <button
+          {!pendingPhoto && !setupToken && !setupComplete && <button
             className="text-button"
             disabled={busy}
             onClick={() => {
-              setEnroll(!enroll);
-              setFaceSignIn(false);
-              setShowPassword(false);
-              setError("");
-              setConflict(false);
-              setReplaceSession(false);
+              const email = (document.querySelector<HTMLInputElement>('input[name="email"]')?.value || "").trim();
+              if (!email) { setError("Enter your student email first."); return; }
+              setBusy(true); setError(""); setLinkSent(false);
+              void api("/api/auth/student-password-link", json({ email })).then(() => setLinkSent(true)).catch(e => setError((e as Error).message)).finally(() => setBusy(false));
             }}
           >
-            {enroll
-              ? "Already have an account? Sign in"
-              : "First time here? Set up your password"}
+            Email me a password setup or reset link
           </button>}
+          {linkSent && <p role="status" className="success-message">If the account can receive a password link, an email will arrive shortly.</p>}
+          {setupComplete && <button className="button primary" onClick={() => { setSetupComplete(false); setError(""); }}>Continue to sign in <ArrowRight size={17}/></button>}
           <div className="auth-help">
             <BookOpen size={20} />
             <p>

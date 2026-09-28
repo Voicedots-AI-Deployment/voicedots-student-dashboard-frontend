@@ -41,34 +41,27 @@ async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolea
   return captures;
 }
 
-async function signIn(page: Page, enroll = false) {
+async function signIn(page: Page) {
   await page.goto("/");
-  if (enroll) {
-    await page.getByRole("button", { name: "First time here?" }).click();
-    await page.getByLabel("Roll number").fill("CS01");
-  }
   await page.getByLabel("Email").fill("student@example.edu");
   await page.getByLabel("Password", { exact: true }).fill("CorrectPassword1!");
-  await page.getByRole("button", { name: enroll ? "Activate account" : "Sign in", exact: true }).click();
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page.getByRole("heading", { name: "Verify your photo." })).toBeVisible();
 }
 
-for (const enroll of [false, true]) {
-  test(`${enroll ? "enrollment" : "login"} waits for a camera match and stops the camera`, async ({ page }) => {
+test("login waits for a camera match and stops the camera", async ({ page }) => {
     await camera(page);
     const captures = await auth(page);
-    await signIn(page, enroll);
+    await signIn(page);
     expect(await page.evaluate(() => sessionStorage.getItem("vd_student_data"))).toBeNull();
     await page.getByRole("button", { name: "Capture and verify" }).click();
     await expect(page.getByRole("heading", { name: "Verify your photo." })).not.toBeVisible();
     expect(captures).toHaveLength(1);
     expect(captures[0].webcam_photo).toMatch(/^data:image\/jpeg;base64,/);
     expect(captures[0].password).toBe("CorrectPassword1!");
-    if (enroll) expect(captures[0].roll_number).toBe("CS01");
     expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
     expect(await page.evaluate(() => JSON.stringify({ ...sessionStorage, ...localStorage }))).not.toContain("CorrectPassword1!");
-  });
-}
+});
 
 test("mismatch keeps the student at the camera and allows a retry", async ({ page }) => {
   await camera(page);
