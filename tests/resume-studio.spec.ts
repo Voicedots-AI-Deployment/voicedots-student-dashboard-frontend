@@ -128,6 +128,14 @@ test("Resume Studio overview uses the full desktop workspace and spacing has wor
   document.querySelector(".rs-overview-summary>div>.eyebrow")!,
  ].map(node=>Math.round(node.getBoundingClientRect().left)));
  expect(Math.max(...overviewTextStarts)-Math.min(...overviewTextStarts)).toBeLessThanOrEqual(1);
+ await page.evaluate(()=>window.scrollTo(0,220));
+ const toolbarClearance=await page.evaluate(()=>({
+  toolbar:document.querySelector(".rs-project-toolbar")!.getBoundingClientRect().top,
+  header:document.querySelector(".dashboard-topbar")!.getBoundingClientRect().bottom,
+ }));
+ expect(toolbarClearance.toolbar).toBeGreaterThanOrEqual(toolbarClearance.header);
+ await page.screenshot({path:"test-results/resume-studio-toolbar-scrolled-desktop.png"});
+ await page.evaluate(()=>window.scrollTo(0,0));
  const workspace=await page.locator(".rs-workspace").boundingBox();const editor=await page.locator(".rs-editor").boundingBox();
  expect(workspace?.width).toBeGreaterThan(1000);expect(editor?.width).toBeGreaterThan(1000);await expect(page.locator(".rs-preview-panel")).toHaveCount(0);
  await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Spacing"}).click();

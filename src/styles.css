@@ -2142,8 +2142,10 @@ dialog.modal::backdrop {
 .resume-studio .rs-snapshot-stats{align-items:center;gap:10px}
 .resume-studio .rs-snapshot-stats span{min-width:72px;padding:10px 11px;line-height:1.35}
 .resume-studio .rs-overview-summary>.button{min-width:142px;justify-self:end}
+.resume-studio.rs-project-editor .rs-project-toolbar{position:sticky;top:82px;z-index:25;backdrop-filter:blur(12px)}
 @media(max-width:1080px){.resume-studio .rs-overview-summary{grid-template-columns:minmax(0,1fr) auto}.resume-studio .rs-overview-summary>.button{grid-column:1/-1;justify-self:start}}
 @media(max-width:780px){.resume-studio .rs-overview-hero{padding:20px}.resume-studio .rs-overview-summary{grid-template-columns:minmax(0,1fr);gap:13px}.resume-studio .rs-overview-summary>.button{grid-column:auto;justify-self:start}}
+@media(max-width:820px){.resume-studio.rs-project-editor .rs-project-toolbar{position:static}}
 /* Resume Studio library follows the reference's quiet headline, tab rail and document cards. */
 .resume-studio .rs-library-tabs{margin:0 0 18px}
 .resume-studio .rs-home-intro{max-width:920px;margin:22px auto 28px;padding-inline:12px}
