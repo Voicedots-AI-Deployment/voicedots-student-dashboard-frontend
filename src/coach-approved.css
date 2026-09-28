@@ -53,3 +53,45 @@
 .coach-lesson-stage .coach-combined-lesson .coach-call-controls .coach-call-control.end{display:none}
 .coach-lesson-stage .coach-combined-lesson .coach-call-controls .coach-call-control small{margin:0;font-size:11px}
 @media(max-width:760px){.coach-lesson-stage .coach-combined-lesson .coach-call-grid{grid-template-columns:minmax(0,1fr);gap:10px;padding:0 12px 12px}.coach-lesson-stage .coach-combined-lesson .coach-lesson-portrait{min-height:245px;padding:16px}.coach-lesson-stage .coach-combined-lesson .coach-lesson-portrait .coach-call-avatar{width:150px}.coach-lesson-stage .coach-combined-lesson .coach-call-transcript{grid-template-rows:auto minmax(130px,auto) auto auto}.coach-lesson-stage .coach-combined-lesson .coach-live-transcript{max-height:38vh;margin:0 11px 9px}.coach-lesson-stage .coach-combined-lesson .coach-chat-prompts{padding:0 11px 9px}.coach-lesson-stage .coach-combined-lesson .coach-chat-compose{padding:0 11px 12px}.coach-lesson-stage .coach-combined-lesson .coach-call-header{padding:14px 12px}.coach-lesson-stage .coach-combined-lesson .coach-lesson-identity h1{font-size:16px!important}.coach-lesson-stage .coach-combined-lesson .coach-inline-voice-action{min-height:36px;padding:0 10px;font-size:11px}.coach-lesson-stage .coach-combined-lesson .coach-call-controls{padding:0 12px 12px}}
+
+/* Desktop coaching workspace: use the main content width and keep the conversation readable. */
+@media(min-width:761px){
+ .coach-approved-page{max-width:1680px;padding:24px clamp(24px,3vw,46px) 48px}
+ .coach-lesson-stage{width:100%;max-width:1600px;margin:0 auto}
+ .coach-lesson-stage .coach-combined-lesson{overflow:hidden;border:1px solid #e7e7ef;border-radius:16px;background:#fff;box-shadow:0 12px 34px rgba(43,36,74,.06)}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-header{min-height:92px;padding:18px 26px;background:linear-gradient(105deg,#fff 60%,#faf8ff);border-bottom:1px solid #ececf2}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-grid{grid-template-columns:minmax(220px,270px) minmax(0,1fr);gap:18px;min-height:450px;padding:18px 22px 14px}
+ .coach-lesson-stage .coach-combined-lesson .coach-lesson-portrait{gap:10px;padding:18px 14px;border-radius:12px;background:radial-gradient(circle at 50% 38%,#f1ebff 0,#faf9fd 58%,#fff 100%)}
+ .coach-lesson-stage .coach-combined-lesson .coach-lesson-portrait .coach-call-avatar{width:min(100%,166px);border-radius:16px}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-transcript{grid-template-rows:auto minmax(190px,1fr) auto auto;min-height:450px;border-radius:12px;background:#fff}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-transcript>div:first-child{padding:17px 20px 13px}
+ .coach-lesson-stage .coach-combined-lesson .coach-live-transcript{display:flex;flex-direction:column;align-items:stretch;gap:10px;min-height:190px;max-height:360px;margin:0 18px 12px;padding:15px;border:1px solid #ececf3;border-radius:10px;background:#f8f9fc}
+ .coach-lesson-stage .coach-combined-lesson .coach-voice-turn{align-self:flex-start;width:fit-content;max-width:min(82%,760px);margin:0;padding:10px 13px;border:1px solid #e7e6ef;border-radius:12px;background:#fff;box-shadow:0 2px 7px rgba(48,43,68,.035)}
+ .coach-lesson-stage .coach-combined-lesson .coach-voice-turn.student{align-self:flex-end;border-color:#e3dcff;background:#f2efff}
+ .coach-lesson-stage .coach-combined-lesson .coach-voice-turn strong{display:block;color:#6652d8;font-size:11px;font-weight:700}
+ .coach-lesson-stage .coach-combined-lesson .coach-voice-turn p{margin:4px 0 0;color:#41475b;font-size:13px;line-height:1.55;overflow-wrap:anywhere}
+ .coach-lesson-stage .coach-combined-lesson .coach-lesson-status{z-index:1;margin:0;font-size:12px}
+ .coach-lesson-stage .coach-combined-lesson .coach-lesson-status.ready{color:#6c7181}
+ .coach-lesson-stage .coach-combined-lesson .coach-lesson-status.connected{color:#30836c}
+ .coach-lesson-stage .coach-combined-lesson .coach-lesson-status.working{color:#936b18}
+ .coach-lesson-stage .coach-combined-lesson .coach-lesson-status.error{color:#a63a4a}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-state.ready{color:#73798a}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-state.ready i{background:#aab0bf}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-state.working i{background:#e5aa45}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-state.error{color:#a63a4a}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-state.error i{background:#d66a78}
+ .coach-lesson-stage .coach-combined-lesson .coach-call-controls{padding:0 24px 18px}
+ .coach-lesson-stage .coach-lesson-progress{margin-top:16px;padding:18px 24px;border:1px solid #e8e5f0;border-radius:14px;background:#fff}
+}
+
+@media(min-width:761px){
+ .coach-lesson-stage .coach-combined-lesson .coach-call-transcript{grid-template-columns:minmax(0,1fr)}
+ .coach-lesson-stage .coach-combined-lesson .coach-live-transcript{width:auto;max-width:none;box-sizing:border-box;justify-self:stretch}
+ .coach-lesson-stage .coach-combined-lesson .coach-chat-prompts{width:100%;box-sizing:border-box}
+ .coach-lesson-stage .coach-combined-lesson .coach-chat-compose{display:grid;width:100%;box-sizing:border-box;grid-template-columns:minmax(0,1fr) auto}
+ .coach-lesson-stage .coach-lesson-progress{grid-template-columns:minmax(0,1fr) auto;align-items:center;gap:8px 24px}
+ .coach-lesson-stage .coach-lesson-progress-heading{grid-column:1/-1;padding-bottom:10px;border-bottom:1px solid #edeaf3}
+ .coach-lesson-stage .coach-lesson-progress>p{grid-column:1/-1;max-width:920px;margin:0;font-size:13px;line-height:1.55}
+ .coach-lesson-stage .coach-lesson-progress>.button.primary{justify-self:start;min-height:38px;padding:0 15px}
+ .coach-lesson-stage .coach-lesson-progress>small{justify-self:end;max-width:460px;margin:0;text-align:right;font-size:11px;line-height:1.45}
+}

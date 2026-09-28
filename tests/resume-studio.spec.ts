@@ -54,6 +54,19 @@ test("Resume Studio landing actions have consistent button sizing and alignment"
  await expect(page.getByText("Import a resume",{exact:true})).toBeVisible();
 });
 
+
+test("Resume Studio library fills the desktop workspace with aligned sections and compact resume cards",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1700,height:900});await page.goto("/resume-studio");
+ const boxes=await page.evaluate(()=>Object.fromEntries([".rs-home-intro",".rs-home-actions",".rs-library-rebuilt",".rs-project-card-new"].map(selector=>{const r=document.querySelector(selector)!.getBoundingClientRect();return[selector,{x:r.x,width:r.width,height:r.height}]})));
+ expect(boxes[".rs-home-intro"].width).toBeGreaterThan(1200);
+ expect(boxes[".rs-library-rebuilt"].width).toBeGreaterThan(1200);
+ expect(Math.abs(boxes[".rs-home-intro"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
+ expect(Math.abs(boxes[".rs-home-actions"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
+ expect(boxes[".rs-project-card-new"].width).toBeGreaterThanOrEqual(240);
+ expect(boxes[".rs-project-card-new"].width).toBeLessThanOrEqual(280);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
 test("Resume Studio autosaves edits and keeps the save state tied to the backend",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Autosaved");
