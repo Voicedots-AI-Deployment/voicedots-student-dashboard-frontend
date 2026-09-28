@@ -1988,3 +1988,141 @@ dialog.modal::backdrop {
 .report-actions{display:flex;align-items:center;gap:6px;flex-wrap:wrap}.report-actions a{display:inline-flex;align-items:center;justify-content:center;gap:5px;min-height:34px;padding:6px 9px;border:1px solid var(--border);border-radius:9px;color:var(--primary);font-size:11px;font-weight:600;text-decoration:none;white-space:nowrap}.report-actions a:hover{border-color:var(--primary);background:var(--soft)}@media(max-width:600px){.record .report-actions{width:100%;margin-left:48px}.record .report-actions a{flex:1}}
 .coach-deadline-note{margin:0;padding:10px 14px;border-radius:10px;background:var(--soft);color:var(--muted,#706a7c);font-size:13px;line-height:1.5}
 .coach-skill-source{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0;color:var(--muted,#706a7c);font-size:12px}.coach-skill-source strong{color:var(--primary)}.coach-skill-objectives{margin-top:8px;border-top:1px solid var(--border);padding-top:10px}.coach-skill-objectives summary{cursor:pointer;font-size:13px;font-weight:650}.coach-skill-objectives>div{padding:10px 0;border-bottom:1px solid var(--border)}.coach-skill-objectives>div>strong{display:block;font-size:13px}.coach-skill-objectives>div>span{color:var(--primary);font-size:11px}.coach-skill-objectives p{margin:5px 0;font-size:12px;white-space:pre-wrap}.coach-skill-objectives small{display:block;color:var(--muted,#706a7c)}.coach-skill-next{margin:6px 0 0;font-size:12px;font-weight:600}
+
+/* Resume Studio design controls and readable analysis results. */
+.resume-studio .rs-design-tabs{display:flex;gap:4px;width:max-content;max-width:100%;padding:5px;border:1px solid var(--rs-line,#e8e3ef);border-radius:12px;background:var(--surface-alt,#f7f5fa)}
+.resume-studio .rs-design-tabs button{min-height:36px;padding:0 15px;border:0;border-radius:9px;background:transparent;color:var(--muted,#706a7c);font:inherit;font-size:13px;font-weight:650;cursor:pointer}
+.resume-studio .rs-design-tabs button.selected,.resume-studio .rs-design-tabs button[aria-selected=true]{background:var(--surface,#fff);color:#7041e5;box-shadow:0 2px 8px #32204d12}
+.resume-studio .rs-design-tabs button:focus-visible{outline:3px solid #9776ee;outline-offset:2px}
+.rs-result-score{display:grid;place-items:center;min-width:60px;height:60px;border:5px solid #eee6ff;border-right-color:#7849e5;border-radius:50%;color:#6e40df;font-size:20px}.rs-result-score small{font-size:9px;color:var(--muted,#706a7c)}
+.rs-result-summary{line-height:1.65}.rs-result-columns{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}.rs-result-columns section{padding:14px;border:1px solid var(--rs-line,#e8e3ef);border-radius:12px;background:var(--surface-alt,#f8f6fc)}.rs-result-columns h4,.rs-result-corrections h4{margin:0 0 8px;font-size:14px}.rs-result-columns ul{margin:0;padding-left:19px;color:var(--muted,#706a7c);line-height:1.65}.rs-result-corrections p{display:flex;align-items:center;gap:8px;margin:7px 0;padding:9px 11px;border-radius:9px;background:var(--surface-alt,#f8f6fc)}
+@media(max-width:520px){.resume-studio .rs-design-tabs{width:100%;overflow-x:auto}.resume-studio .rs-design-tabs button{flex:1 0 auto;padding-inline:12px}.rs-result-columns{grid-template-columns:1fr}}
+
+/* Screenshot-matched Resume Studio project toolbar and conversation focus. */
+.resume-studio .rs-project-toolbar{position:relative;top:auto;z-index:4;display:flex;align-items:center;justify-content:flex-end;gap:9px;min-height:58px;padding:9px 12px;border:1px solid var(--rs-line,#e8e3ef);border-radius:16px;background:color-mix(in srgb,var(--surface,#fff) 94%,transparent);box-shadow:0 8px 24px #32204d0a;backdrop-filter:blur(12px)}
+.resume-studio .rs-project-picker{display:flex;align-items:center;gap:8px;padding:0 10px;border-radius:10px;background:var(--surface-alt,#f5f3f8);color:var(--muted,#706a7c);font-size:12px;font-weight:650}
+.resume-studio .rs-project-picker select{max-width:170px;min-width:110px;height:38px;border:0;background:transparent;color:var(--text,#272238);font:inherit;font-size:13px}
+.resume-studio .rs-project-toolbar .rs-save-state{margin-right:auto}
+.resume-studio .rs-chat-builder{min-height:460px;grid-template-rows:auto auto minmax(210px,1fr) auto auto;align-content:stretch;border:1px solid #e8e3ef;background:linear-gradient(145deg,#fbfaff,#fff 72%)}
+.resume-studio .rs-chat-stages{display:flex;gap:6px;overflow-x:auto;padding:1px 0 7px;scrollbar-width:thin}
+.resume-studio .rs-chat-stages span{flex:0 0 auto;padding:5px 9px;border-radius:999px;background:#f1eff5;color:#898396;font-size:11px;font-weight:650;white-space:nowrap}
+.resume-studio .rs-chat-stages span.active{background:#7138e8;color:#fff}
+.resume-studio .rs-chat-log{max-height:none;min-height:210px;align-content:start;padding:10px;border:1px solid #eeebf2;border-radius:12px;background:#fff}
+.resume-studio .rs-chat-message{max-width:88%;padding:11px 13px;border:1px solid #efedf3;border-radius:12px}
+.resume-studio .rs-chat-message.assistant{justify-self:start}.resume-studio .rs-chat-message.user{justify-self:end;margin-left:0;background:#7138e8;color:#fff}.resume-studio .rs-chat-message.user>span{color:#fff}
+.resume-studio .rs-chat-form{padding:3px}.resume-studio .rs-chat-form textarea{min-height:48px;max-height:130px}.resume-studio .rs-ai-working{display:flex;align-items:center;gap:8px;color:#7041e5;font-size:13px}
+@media(max-width:780px){.resume-studio .rs-project-toolbar{position:static;flex-wrap:wrap;justify-content:stretch}.resume-studio .rs-project-toolbar>*{flex:1 1 140px;justify-content:center}.resume-studio .rs-project-toolbar .rs-save-state{flex:1 0 100%;justify-content:flex-start}.resume-studio .rs-project-picker{min-height:40px}.resume-studio .rs-chat-builder{min-height:400px}}
+@media(max-width:520px){.resume-studio .rs-project-picker select{max-width:none;flex:1}.resume-studio .rs-project-toolbar>*{flex-basis:calc(50% - 8px)}.resume-studio .rs-project-toolbar .rs-save-state{flex-basis:100%}.resume-studio .rs-chat-stages span{font-size:10px;padding-inline:8px}}
+.resume-studio .rs-modal-backdrop{position:fixed;inset:0;z-index:50;display:grid;place-items:center;padding:18px;background:#21183266;backdrop-filter:blur(2px)}
+.resume-studio .rs-restart-modal{position:relative;width:min(100%,500px);padding:26px 26px 18px;border:1px solid #e8e3ef;border-radius:20px;background:var(--surface,#fff);box-shadow:0 24px 80px #1e153544;color:var(--text,#272238)}
+.resume-studio .rs-restart-modal h2{margin:0 36px 14px 0;font-size:21px;letter-spacing:-.02em}
+.resume-studio .rs-restart-modal p{color:var(--muted,#625c6e);line-height:1.6}
+.resume-studio .rs-restart-close{position:absolute;top:15px;right:15px;width:34px;height:34px;border:0;border-radius:9px;background:transparent;color:var(--muted,#706a7c);font-size:24px;cursor:pointer}
+.resume-studio .rs-restart-close:hover{background:var(--surface-alt,#f5f2f8)}
+.resume-studio .rs-restart-actions{display:flex;justify-content:flex-end;flex-wrap:wrap;gap:8px;margin:18px -26px -18px;padding:14px 20px;border-top:1px solid var(--rs-line,#e8e3ef)}
+@media(max-width:520px){.resume-studio .rs-restart-modal{padding:22px 18px 14px}.resume-studio .rs-restart-actions{margin:16px -18px -14px;padding:12px;display:grid;grid-template-columns:1fr}.resume-studio .rs-restart-actions button{justify-content:center}}
+/* Match the supplied Resume Studio proportions: compact controls, broad paper canvas. */
+.resume-studio .rs-workspace{grid-template-columns:minmax(340px,.78fr) minmax(500px,1.22fr);gap:18px}
+.resume-studio .rs-editor-heading{grid-template-columns:auto minmax(0,1fr) auto;padding:14px 18px;border-radius:16px;box-shadow:none}
+.resume-studio .rs-editor-heading h1{font-size:23px}
+.resume-studio .rs-editor-heading p{margin-top:2px}
+.resume-studio .rs-tabs{width:100%;max-width:none;border:0;border-bottom:1px solid var(--rs-line,#e8e3ef);border-radius:0;box-shadow:none;background:transparent}
+.resume-studio .rs-tabs button{border-radius:0}
+.resume-studio .rs-tabs button.active,.resume-studio .rs-tabs button[aria-selected=true]{background:transparent;box-shadow:inset 0 -2px #7542e8}
+.resume-studio .rs-preview-panel{box-shadow:none;border-radius:18px}
+.resume-studio .rs-preview-frame{background:#fff}
+.resume-studio .rs-preview-panel .rs-preview-frame iframe{background:#fff}
+@media(max-width:1120px){.resume-studio .rs-workspace{grid-template-columns:minmax(0,1fr)}.resume-studio .rs-preview-panel{position:static}}
+
+/* Career Coach discovery: compact single-question flow and readable evidence. */
+.career-discovery{max-width:1240px;margin:0 auto;padding-bottom:48px}
+.career-discovery-layout{grid-template-columns:minmax(0,1.65fr) minmax(240px,.75fr);gap:18px;align-items:start;margin-top:20px}
+.career-discovery-input{padding:24px}
+.career-discovery-input .section-heading{align-items:center;margin-bottom:18px}
+.career-discovery-input .section-heading h2{margin:5px 0 0}
+.career-discovery-input fieldset{display:grid;gap:12px;min-width:0;margin:0;padding:0;border:0}
+.career-discovery-input label{display:grid;gap:7px;min-width:0;color:var(--text);font-size:13px;font-weight:600}
+.career-discovery-input label small{color:var(--muted);font-size:12px;font-weight:400;line-height:1.5}
+.career-discovery-input select,.career-discovery-input textarea{width:100%;min-width:0;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font:inherit}
+.career-discovery-input select{height:42px;padding:0 12px}
+.career-discovery-input textarea{min-height:120px;padding:12px;line-height:1.65;resize:vertical}
+.career-question-progress{display:grid;gap:8px;margin:5px 0 2px}
+.career-question-progress>div{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:11px;letter-spacing:.06em}
+.career-question-progress strong{color:var(--primary);font-size:12px;letter-spacing:0}
+.career-question-progress-track{height:5px;overflow:hidden;border-radius:6px;background:var(--soft)}
+.career-question-progress-track i{display:block;height:100%;border-radius:inherit;background:var(--primary);transition:width .2s ease}
+.career-question-field>span{font-size:17px}
+.career-answer-save-state{color:var(--muted);font-size:11px}
+.career-question-actions{display:flex;justify-content:space-between;gap:10px;margin-top:4px}
+.career-question-actions .button{min-height:40px;display:inline-flex;align-items:center;justify-content:center;gap:8px;padding:0 15px}
+.career-discovery-note{top:82px;padding:22px;line-height:1.65}
+.career-discovery-results{margin-top:22px;max-width:100%}
+.career-discovery-intro,.career-fit-grid>.panel,.career-discovery-results>.panel{min-width:0;padding:23px}
+.career-discovery-intro>p,.career-fit-grid p,.career-next-step>p{max-width:76ch;line-height:1.65;overflow-wrap:anywhere}
+.career-discovery-intro>small{display:block;margin-top:10px;color:var(--muted)}
+.career-analysis-label{color:#39836c!important}
+.career-fallback-notice{display:grid;gap:4px;margin-top:15px;padding:12px 14px;border:1px solid #f0d9a3;border-radius:9px;background:#fff9e9;color:#765b22;font-size:12px;line-height:1.55}
+.career-fit-grid{gap:14px}
+.career-fit-grid .panel{padding:20px}
+.career-fit-grid h3{margin:7px 0 4px;font-size:19px;line-height:1.35;overflow-wrap:anywhere}
+.career-role-grid{grid-template-columns:repeat(auto-fit,minmax(min(100%,260px),1fr));gap:13px;align-items:start}
+.career-role-card{min-width:0;padding:17px;border-radius:12px;gap:8px}
+.career-role-card h3{font-size:17px;line-height:1.35;overflow-wrap:anywhere}
+.career-role-card>p{max-width:68ch;color:var(--muted);font-size:13px;line-height:1.6;overflow-wrap:anywhere}
+.career-role-evidence{justify-self:start;padding:4px 8px;border-radius:999px;background:var(--soft);color:var(--primary);font-size:10px;font-weight:600}
+.career-role-card details{margin-top:4px;border-top:1px solid var(--border);padding-top:9px}
+.career-role-card summary{color:var(--primary);font-size:12px;font-weight:600;cursor:pointer}
+.career-role-detail{display:grid;gap:7px;padding-top:10px;color:var(--text);font-size:12px}
+.career-role-detail strong{margin-top:3px;font-size:11px}
+.career-role-detail ul{display:grid;gap:4px;margin:0;padding-left:18px;color:var(--muted);line-height:1.5;overflow-wrap:anywhere}
+.career-role-detail .muted{color:var(--muted);line-height:1.55}
+.career-empty-results{padding:22px;border:1px dashed var(--border);border-radius:10px}
+.career-empty-results h3{margin:0 0 6px;font-size:16px}
+.career-empty-results p{max-width:75ch;color:var(--muted);font-size:13px;line-height:1.6}
+.career-next-step{display:grid;gap:8px}
+.career-next-step h2{margin:0}
+.career-next-step small{color:var(--muted);line-height:1.5}
+.career-report-history{margin-top:20px;padding:22px}
+.career-report-history .record{gap:12px;flex-wrap:wrap}
+@media(max-width:850px){.career-discovery{padding:0 0 30px}.career-discovery-layout{grid-template-columns:minmax(0,1fr)}.career-discovery-note{position:static}.career-discovery-input{padding:19px}.career-discovery-results{gap:14px}.career-fit-grid{grid-template-columns:minmax(0,1fr)}.career-discovery-results>.panel{padding:18px}}
+@media(max-width:480px){.career-question-field>span{font-size:16px}.career-discovery-input textarea{min-height:140px}.career-question-actions{display:grid;grid-template-columns:1fr 1fr}.career-question-actions .button{width:100%}.career-role-grid{grid-template-columns:minmax(0,1fr)}}
+.resume-studio .rs-panel-content>*{min-width:0;max-width:100%}
+.resume-studio .rs-chat-builder>.rs-section-heading{flex-wrap:wrap}
+.resume-studio .rs-chat-builder>.rs-section-heading>div:first-child{flex:1 1 150px}
+.resume-studio .rs-chat-stages{width:100%;min-width:0}
+.resume-studio .rs-chat-form{min-width:0}
+.resume-studio .rs-ai-actions button{min-width:0;max-width:100%;white-space:normal;line-height:1.35}
+.resume-studio .rs-jd textarea{min-width:0;max-width:100%;overflow-wrap:anywhere}
+.resume-studio .rs-proposal-card,.resume-studio .rs-proposal-list,.resume-studio .rs-form-section{min-width:0;overflow-wrap:anywhere}
+.resume-studio .rs-editor{container-type:inline-size;container-name:rs-editor}
+.resume-studio .rs-chat-end{justify-self:end;margin-top:-8px;font-size:12px}
+@container rs-editor (max-width: 440px){
+ .resume-studio .rs-chat-form{grid-template-columns:minmax(0,1fr)}
+ .resume-studio .rs-chat-form textarea{min-height:54px;width:100%}
+ .resume-studio .rs-chat-form button{justify-self:end;min-width:120px}
+ .resume-studio .rs-chat-message{max-width:100%}
+ .resume-studio .rs-chat-builder>.rs-section-heading{align-items:center}
+ .resume-studio .rs-chat-stages span{font-size:10px;padding:5px 7px}
+}
+/* Resume Studio library follows the reference's quiet headline, tab rail and document cards. */
+.resume-studio .rs-library-tabs{margin:0 0 18px}
+.resume-studio .rs-home-intro{max-width:920px;margin:22px auto 28px;padding-inline:12px}
+.resume-studio .rs-home-intro h1{margin:10px 0 7px;color:var(--text,#211d2d);font-size:clamp(32px,4vw,46px);line-height:1.12;letter-spacing:-.04em}
+.resume-studio .rs-home-intro p{margin:0;color:var(--muted,#706a7c);font-size:15px;line-height:1.6}
+.resume-studio .rs-home-actions{max-width:920px;margin:0 auto 22px;padding-inline:12px}
+.resume-studio .rs-library-rebuilt{max-width:1240px;margin-inline:auto;padding:24px 26px;border-radius:20px;box-shadow:none}
+.resume-studio .rs-library-rebuilt .rs-section-head{align-items:flex-end}
+.resume-studio .rs-library-rebuilt .rs-section-head p{margin-top:5px}
+.resume-studio .rs-library-rebuilt .rs-project-grid{grid-template-columns:repeat(auto-fill,minmax(205px,224px));align-items:stretch;gap:16px}
+.resume-studio .rs-project-card-new{position:relative;display:flex;flex-direction:column;align-items:stretch;gap:0;padding:0;border-radius:16px}
+.resume-studio .rs-project-card-new .rs-project-open{display:flex;flex-direction:column;align-items:stretch;width:100%;gap:0}
+.resume-studio .rs-project-card-new .rs-card-paper{flex:0 0 auto;min-height:240px;padding:18px 15px;border:0;border-bottom:1px solid #ece8f2;border-radius:15px 15px 0 0;box-shadow:none}
+.resume-studio .rs-project-card-new .rs-project-open>strong,.resume-studio .rs-project-card-new .rs-project-open>span:nth-of-type(2){padding-inline:14px}
+.resume-studio .rs-project-card-new .rs-project-open>strong{padding-top:12px}
+.resume-studio .rs-project-card-new .rs-project-open>span:nth-of-type(2){padding-bottom:13px}
+.resume-studio .rs-project-card-new .rs-project-actions{justify-content:flex-end;padding:0 9px 10px}
+@media(max-width:780px){.resume-studio .rs-home-intro{margin:18px 0 22px;padding-inline:0}.resume-studio .rs-home-actions{padding-inline:0}.resume-studio .rs-library-rebuilt{padding:18px}.resume-studio .rs-library-rebuilt .rs-project-grid{grid-template-columns:repeat(auto-fill,minmax(180px,1fr))}}
+@media(max-width:520px){.resume-studio .rs-home-intro h1{font-size:32px}.resume-studio .rs-library-rebuilt .rs-project-grid{grid-template-columns:1fr}.resume-studio .rs-project-card-new .rs-card-paper{min-height:220px}}
+.resume-studio .rs-home-intro,.resume-studio .rs-home-actions{max-width:1240px;padding-inline:0}
+.rs-result-recommendations{padding:12px 14px;border:1px solid var(--rs-line,#e8e3ef);border-radius:12px;background:var(--surface-alt,#f8f6fc)}
+.rs-result-recommendations h4{margin:0 0 6px;font-size:14px}.rs-result-recommendations ul{margin:0;padding-left:18px;color:var(--muted,#706a7c);line-height:1.6}

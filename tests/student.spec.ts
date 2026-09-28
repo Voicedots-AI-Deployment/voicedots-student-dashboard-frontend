@@ -839,7 +839,7 @@ test('AI Coach moves through placement, skills, diagnostic, schedule, and the co
  await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Backend engineer',resume_label:'My Main Resume',groups:{resume_match:['Python'],related_evidence:['APIs'],no_resume_evidence:['Testing']},language_options:[],language_is_alternative:false}}));
  await page.route('**/api/student/coach/drives/drive-1/diagnostic**',route=>route.fulfill({json:{id:'diagnostic-1',status:'completed',tasks_json:[],answers_json:{},result_json:{skills:[]}}}));
  await page.route('**/api/student/coach/plans**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/messages')){plan.messages.push({id:'m2',role:'student',content:'Explain APIs'},{id:'m3',role:'coach',content:'An API receives a request and returns a response.'});return route.fulfill({json:{reply:plan.messages[2].content}})}if(path.endsWith('/schedule')&&route.request().method()==='PUT'){booked=route.request().postDataJSON().sessions[0];Object.assign(day,{planned_at:(booked as any).scheduled_for,duration_minutes:45,schedule_status:'scheduled'});return route.fulfill({json:{sessions:[day]}})}if(path.endsWith('/plans')&&route.request().method()==='POST'){created=true;return route.fulfill({json:plan})}if(path.includes('/sessions/'))return route.fulfill({json:{id:day.session_id,stage:'teaching',skill:'Python APIs',learning_objective:'Explain a request'}});return route.fulfill({json:plan})});
- await page.goto('/coach');await page.getByLabel('Placement opportunity').selectOption('drive-1');await page.getByRole('button',{name:'Build preparation plan'}).click();await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toBeVisible();await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Diagnostic saved. These results guide your plan')).toBeVisible();await page.getByRole('button',{name:'Continue to plan'}).click();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await page.getByRole('button',{name:'Confirm & add all sessions'}).click();await expect(page.getByText('Scheduled ·')).toBeVisible();expect(booked).toMatchObject({session_id:day.session_id,duration_minutes:45});await page.getByRole('button',{name:'Open lesson'}).click();await expect(page.getByText('Connect with Neha',{exact:true})).toBeVisible();await page.getByLabel('Ask Neha or share your answer').fill('Explain APIs');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();
+ await page.goto('/coach');await page.getByLabel('Placement opportunity').selectOption('drive-1');await page.getByRole('button',{name:'Build preparation plan'}).click();await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toBeVisible();await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Diagnostic saved. These results guide your plan')).toBeVisible();await page.getByRole('button',{name:'Continue to plan'}).click();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await page.getByRole('button',{name:'Confirm & add all sessions'}).click();await expect(page.getByText('Scheduled ·')).toBeVisible();expect(booked).toMatchObject({session_id:day.session_id,duration_minutes:45});await page.getByRole('button',{name:'Open lesson'}).click();await expect(page.getByText('Connect with Neha',{exact:true})).toBeVisible();await expect(page.getByAltText('Neha, AI preparation coach')).toBeVisible();await expect(page.getByText('What would you like to work through first about Request handling?')).toBeVisible();await page.getByLabel('Ask Neha or share your answer').fill('Explain APIs');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();
 });
 
 test('AI Coach placement layout follows the approved desktop ratio and stacks on mobile', async ({page}) => {
@@ -1104,27 +1104,81 @@ test("Career Coach uses owned resume and interests without a personal target rol
   await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [
     { submission_id: "resume-main", label: "Main Resume", original_filename: "resume.pdf", is_primary: true },
   ] } }));
-  await page.route("**/api/student/career/reports", route => route.fulfill({ json: { reports: [] } }));
+  const reportHistory: any[] = [];
+  await page.route("**/api/student/career/reports", route => route.fulfill({ json: { reports: reportHistory } }));
   let posted: Record<string, unknown> = {};
   await page.route("**/api/student/career/finder", route => {
     posted = route.request().postDataJSON();
-    return route.fulfill({ json: {
+    const report = {
+      saved_report_id: "career-report-1",
       career_profile: "Your Python project supports backend work.",
       strongest_current_fit: "Backend Developer", strongest_growth_path: "Data Engineer",
       career_gap_analysis: "Build data pipeline evidence.",
-      recommended_roles: [{ role: "Backend Developer", why: "Your API project is relevant.", matched_skills: ["Python"], missing_skills: ["SQL"] }],
+      analysis_status: "ai",
+      recommended_roles: [{ role: "Backend Developer", why: "Your API project is relevant.", evidence_level: "project_evidence", project_evidence: ["Python"], matched_skills: ["Python"], missing_skills: ["SQL"] }],
       what_to_learn_next: ["SQL joins"], best_project_next: "Build a data API.",
       market_data_note: "Live market data is not connected.",
-    } });
+    };
+    reportHistory.unshift({ id: "career-report-1", resume_id: "resume-main", created_at: "2026-09-28T10:00:00Z", model_version: "career-finder-v3", answers: posted, report });
+    return route.fulfill({ json: report });
   });
   await page.goto("/career");
   await page.getByLabel("What topics interest you?").fill("APIs and data");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await expect(page.getByLabel("What work do you enjoy doing?")).toBeVisible();
+  await page.getByRole("button", { name: "Previous" }).click();
+  await expect(page.getByLabel("What topics interest you?")).toHaveValue("APIs and data");
+  await page.reload();
+  await expect(page.getByLabel("What topics interest you?")).toHaveValue("APIs and data");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await page.getByLabel("What work do you enjoy doing?").fill("Build APIs and analyse project results");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await page.getByLabel("What matters most in your career?").fill("Growth and meaningful work");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await page.getByLabel("How open are you to learning new skills?").fill("Very open to adjacent tools");
   await page.getByRole("button", { name: "Explore career paths" }).click();
   await expect(page.getByText("Backend Developer", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Data Engineer", { exact: true })).toBeVisible();
   await expect(page.getByText("Build a data API.")).toBeVisible();
-  expect(posted).toMatchObject({ submission_id: "resume-main", interests: "APIs and data" });
+  expect(posted).toMatchObject({ submission_id: "resume-main", interests: "APIs and data", preferred_work: "Build APIs and analyse project results", priorities: "Growth and meaningful work", learning_openness: "Very open to adjacent tools" });
   expect(posted).not.toHaveProperty("target_role");
+  expect(posted).not.toHaveProperty("career_direction");
+  await expect(page.getByText("AI analysis grounded against extracted resume evidence")).toBeVisible();
+  await page.getByRole("button", { name: "View report" }).first().click();
+  await expect(page.getByLabel("What topics interest you?")).toHaveValue("APIs and data");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await expect(page.getByLabel("What work do you enjoy doing?")).toHaveValue("Build APIs and analyse project results");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await expect(page.getByLabel("What matters most in your career?")).toHaveValue("Growth and meaningful work");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await expect(page.getByLabel("How open are you to learning new skills?")).toHaveValue("Very open to adjacent tools");
+});
+
+test("Career Coach labels an evidence fallback and remains readable on mobile with limited evidence", async ({ page }) => {
+  await mockStudent(page);
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [
+    { submission_id: "resume-limited", label: "Limited resume", original_filename: "resume.pdf", is_primary: true },
+  ] } }));
+  await page.route("**/api/student/career/reports", route => route.fulfill({ json: { reports: [] } }));
+  await page.route("**/api/student/career/finder", route => route.fulfill({ json: {
+    analysis_status: "evidence_fallback",
+    analysis_note: "The AI career analysis service is unavailable. These results are an evidence-only fallback, not a complete AI analysis.",
+    career_profile: "There is not enough specific evidence in this resume to identify a current-fit role yet.",
+    strongest_current_fit: "Not enough resume evidence yet",
+    strongest_growth_path: "Explore adjacent paths as you build more evidence.",
+    recommended_roles: [],
+  } }));
+  await page.goto("/career");
+  await expect(page.getByLabel("Resume to use")).toBeVisible();
+  await page.getByRole("button", { name: "Next question" }).click();
+  await page.getByRole("button", { name: "Next question" }).click();
+  await page.getByRole("button", { name: "Next question" }).click();
+  await page.getByRole("button", { name: "Explore career paths" }).click();
+  await expect(page.getByText("Evidence-only analysis")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Not enough role-specific evidence yet" })).toBeVisible();
+  const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth }));
+  expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
 });
 
 test('coach voice acknowledges played audio and releases the microphone on navigation',async({page})=>{
