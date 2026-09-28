@@ -2128,6 +2128,22 @@ dialog.modal::backdrop {
  .resume-studio .rs-chat-builder>.rs-section-heading{align-items:center}
  .resume-studio .rs-chat-stages span{font-size:10px;padding:5px 7px}
 }
+/* Keep Resume Studio overview copy on one grid with a readable text rhythm. */
+.resume-studio .rs-overview-hero{min-height:184px;padding:24px 30px 24px 20px}
+.resume-studio .rs-overview-hero>div:first-child{min-width:0;flex:1}
+.resume-studio .rs-overview-hero h2{margin:7px 0 8px;line-height:1.18}
+.resume-studio .rs-overview-hero p{max-width:76ch;font-size:14px;line-height:1.6}
+.resume-studio .rs-overview-card{gap:11px}
+.resume-studio .rs-overview-card h3{line-height:1.35}
+.resume-studio .rs-overview-card p{max-width:42ch;font-size:13px;line-height:1.6}
+.resume-studio .rs-overview-summary{grid-template-columns:minmax(0,1fr) auto auto;gap:16px;padding:20px}
+.resume-studio .rs-overview-summary h3{margin:6px 0 4px;line-height:1.3}
+.resume-studio .rs-overview-summary p{max-width:52ch;line-height:1.55}
+.resume-studio .rs-snapshot-stats{align-items:center;gap:10px}
+.resume-studio .rs-snapshot-stats span{min-width:72px;padding:10px 11px;line-height:1.35}
+.resume-studio .rs-overview-summary>.button{min-width:142px;justify-self:end}
+@media(max-width:1080px){.resume-studio .rs-overview-summary{grid-template-columns:minmax(0,1fr) auto}.resume-studio .rs-overview-summary>.button{grid-column:1/-1;justify-self:start}}
+@media(max-width:780px){.resume-studio .rs-overview-hero{padding:20px}.resume-studio .rs-overview-summary{grid-template-columns:minmax(0,1fr);gap:13px}.resume-studio .rs-overview-summary>.button{grid-column:auto;justify-self:start}}
 /* Resume Studio library follows the reference's quiet headline, tab rail and document cards. */
 .resume-studio .rs-library-tabs{margin:0 0 18px}
 .resume-studio .rs-home-intro{max-width:920px;margin:22px auto 28px;padding-inline:12px}

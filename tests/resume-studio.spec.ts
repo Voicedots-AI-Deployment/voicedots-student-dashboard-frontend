@@ -122,6 +122,12 @@ test("Resume Studio opens with the guided overview and keeps workspace navigatio
 test("Resume Studio overview uses the full desktop workspace and spacing has working controls",async({page})=>{
  await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
  await page.screenshot({path:"test-results/resume-studio-project-overview-desktop.png",fullPage:true});
+ const overviewTextStarts=await page.evaluate(()=>[
+  document.querySelector(".rs-overview-hero>div:first-child")!,
+  document.querySelector(".rs-overview-card>.eyebrow")!,
+  document.querySelector(".rs-overview-summary>div>.eyebrow")!,
+ ].map(node=>Math.round(node.getBoundingClientRect().left)));
+ expect(Math.max(...overviewTextStarts)-Math.min(...overviewTextStarts)).toBeLessThanOrEqual(1);
  const workspace=await page.locator(".rs-workspace").boundingBox();const editor=await page.locator(".rs-editor").boundingBox();
  expect(workspace?.width).toBeGreaterThan(1000);expect(editor?.width).toBeGreaterThan(1000);await expect(page.locator(".rs-preview-panel")).toHaveCount(0);
  await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Spacing"}).click();
