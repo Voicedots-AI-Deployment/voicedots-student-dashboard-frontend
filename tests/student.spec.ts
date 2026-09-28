@@ -540,6 +540,26 @@ test("placement opportunity details show compensation, deadlines and interview s
   await expect(opportunityDialog.getByRole("button", { name: "Resume interview" })).toHaveCount(0);
 });
 
+test("placement search and filters share aligned labels and controls on desktop and tablet", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [] }));
+  await page.goto("/placements");
+  for (const width of [1440, 1024, 820]) {
+    await page.setViewportSize({ width, height: 900 });
+    if (width === 1440) await page.screenshot({ path: "test-results/placement-filters-desktop.png", fullPage: true });
+    const bounds = await page.locator(".placement-filter-grid label").evaluateAll(labels => labels.map(label => {
+      const labelBox = label.getBoundingClientRect();
+      const controlBox = label.querySelector("input, select")!.getBoundingClientRect();
+      return { labelTop: labelBox.top, controlTop: controlBox.top, controlHeight: controlBox.height };
+    }));
+    expect(bounds).toHaveLength(3);
+    expect(Math.max(...bounds.map(item => item.labelTop)) - Math.min(...bounds.map(item => item.labelTop))).toBeLessThanOrEqual(1);
+    expect(Math.max(...bounds.map(item => item.controlTop)) - Math.min(...bounds.map(item => item.controlTop))).toBeLessThanOrEqual(1);
+    expect(bounds.every(item => item.controlHeight === 42)).toBe(true);
+    expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  }
+});
+
 test("placement filters align on phone and interview status filters persisted states", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await mockStudent(page);
