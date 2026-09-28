@@ -106,16 +106,29 @@ test("Resume Studio imports a file and downloads an export",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");
  await page.locator('input[type="file"]').setInputFiles({name:"resume.txt",mimeType:"text/plain",buffer:Buffer.from("Asha Kumar\nPython and SQL")});
  await page.getByRole("button",{name:"Import resume",exact:true}).click();
- await expect(page.getByRole("heading",{name:"Imported resume"})).toBeVisible();
+ await expect(page.getByRole("heading",{name:"Imported resume"})).toBeVisible();await page.getByRole("tab",{name:"Resume editor"}).click();
  const download=page.waitForEvent("download");await page.getByRole("button",{name:"PDF"}).click();expect((await download).suggestedFilename()).toContain("Imported-resume.pdf");
 });
 
 test("Resume Studio opens with the guided overview and keeps workspace navigation usable on mobile",async({page})=>{
  await mockResumeStudio(page);await page.setViewportSize({width:390,height:844});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
  await expect(page.getByRole("heading",{name:"Build a resume that gets interviews"})).toBeVisible();
+ await expect(page.locator(".rs-preview-panel")).toHaveCount(0);
  await expect(page.getByRole("tab",{name:"Overview"})).toHaveAttribute("aria-selected","true");
  await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.getByRole("heading",{name:"Choose a resume style"})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test("Resume Studio overview uses the full desktop workspace and spacing has working controls",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await page.screenshot({path:"test-results/resume-studio-project-overview-desktop.png",fullPage:true});
+ const workspace=await page.locator(".rs-workspace").boundingBox();const editor=await page.locator(".rs-editor").boundingBox();
+ expect(workspace?.width).toBeGreaterThan(1000);expect(editor?.width).toBeGreaterThan(1000);await expect(page.locator(".rs-preview-panel")).toHaveCount(0);
+ await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Spacing"}).click();
+ await page.screenshot({path:"test-results/resume-studio-spacing-desktop.png",fullPage:true});
+ await expect(page.getByText("Add a name or resume content and the live preview will appear here.")).toBeVisible();await expect(page.getByRole("button",{name:"Set as Main Resume"})).toBeDisabled();
+ const spacing=page.getByRole("slider",{name:"Section spacing"});const margin=page.getByRole("slider",{name:"Horizontal margin"});
+ await expect(spacing).toBeVisible();await expect(margin).toBeVisible();await spacing.focus();await spacing.press("ArrowRight");await expect(spacing).toHaveValue("13");
 });
 
 test("Resume Studio preview renders the unsaved editor draft",async({page})=>{
@@ -129,10 +142,10 @@ test("Resume Studio preview exposes a retry state after a rendering request fail
  await page.route("**/api/student/resume-studio/resumes/rs-1/preview",async route=>{
   if(route.request().method()==="POST"&&!failed){failed=true;return route.abort("failed")}return route.fallback();
  });
- await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Resume 1 Revision/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await expect(page.getByText("Preview unavailable")).toBeVisible();
  await page.getByRole("button",{name:"Try again"}).click();
- await expect(page.frameLocator('iframe[title="Resume preview"]').locator("body")).toContainText("Resume 1");
+ await expect(page.getByText("Add a name or resume content and the live preview will appear here.")).toBeVisible();
 });
 
 test("Resume Studio editor stays within phone, tablet and laptop viewports",async({page})=>{

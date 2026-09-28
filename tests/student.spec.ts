@@ -857,6 +857,18 @@ test('AI Coach moves through placement, skills, diagnostic, schedule, and the co
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
+test('AI Coach does not block a Data Analyst diagnostic on a generic software-development phrase',async({page})=>{
+ await mockStudent(page);
+ const jd='Use Python, SQL, and dashboards to analyze business data. This software development role also maintains internal tools.';
+ await page.route('**/api/student/coach/overview',route=>route.fulfill({json:{upcoming_drives:[{drive_id:'analyst-drive',company_name:'Zoho',role_title:'Data Analyst',job_description:jd,window_start_at:'2026-10-05T10:00:00+05:30'}],plans:[],main_resume:{submission_id:'resume-1',label:'Main Resume'},completed_placements:[]}}));
+ await page.route('**/api/student/coach/drives/analyst-drive/context',route=>route.fulfill({json:{company_name:'Zoho',role_title:'Data Analyst',job_description:jd,window_start_at:'2026-10-05T10:00:00+05:30',preparation_mode:'upcoming_placement'}}));
+ await page.route('**/api/student/coach/drives/analyst-drive/skill-match',route=>route.fulfill({json:{company_name:'Zoho',role_title:'Data Analyst',resume_label:'Main Resume',groups:{resume_match:['SQL'],related_evidence:['Python'],no_resume_evidence:['Dashboards']},language_options:[],language_is_alternative:false}}));
+ await page.route('**/api/student/coach/drives/analyst-drive/diagnostic**',route=>route.fulfill({json:{id:'analyst-diagnostic',status:'completed',tasks_json:[],answers_json:{},result_json:{skills:[]}}}));
+ await page.goto('/coach');await page.getByLabel('Placement opportunity').selectOption('analyst-drive');await page.getByRole('button',{name:'Build preparation plan'}).click();
+ await expect(page.getByRole('heading',{name:'Your skills for Zoho'})).toBeVisible();await expect(page.getByText(/role title says Data Analyst/i)).toHaveCount(0);
+ await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Diagnostic saved. These results guide your plan')).toBeVisible();
+});
+
 test('AI Coach placement layout follows the approved desktop ratio and stacks on mobile', async ({page}) => {
   await mockStudent(page);
   await page.route('**/api/student/coach/overview', route => route.fulfill({json:{
@@ -1271,7 +1283,7 @@ test('AI Coach validation lets a student skip a task without claiming ability',a
 
 test('Resume Studio library handoff distinguishes saved copy from Main Resume',async({page})=>{
  await mockStudent(page);
- const project={id:'handoff-1',title:'Verified resume',revision:2,document:{title:'Verified resume',personal_details:{full_name:'Test Student'},sections:[]},presentation:{},updated_at:'2026-09-27T10:00:00Z'};
+ const project={id:'handoff-1',title:'Verified resume',revision:2,document:{title:'Verified resume',personal_details:{full_name:'Test Student'},sections:[{id:'summary',kind:'summary',name:'Professional Summary',hidden:false,entries:[{id:'summary-entry',title:'',body_html:'Experienced analyst with SQL project work.',tags:[],hidden:false}]}]},presentation:{},updated_at:'2026-09-27T10:00:00Z'};
  const uploads:Array<{primary:string;label:string;name:string}>=[];
  await page.route('**/api/student/resume-studio/**',route=>{
   const path=new URL(route.request().url()).pathname;
@@ -1290,9 +1302,17 @@ test('Resume Studio library handoff distinguishes saved copy from Main Resume',a
  });
  await page.goto('/resume-studio');
  await page.getByRole('button',{name:/Verified resume Revision 2/}).click();
+ await page.getByRole('tab',{name:'Resume editor'}).click();
  await page.getByRole('button',{name:'Save to Resume Library'}).click();
  await expect(page.getByText('Saved to Resume Library. Your Main Resume is unchanged.')).toBeVisible();
- await page.getByRole('button',{name:'Use as Main Resume'}).click();
+ await page.getByRole('button',{name:'Set as Main Resume'}).click();
+ const confirm=page.getByRole('dialog',{name:'Make this your Main Resume?'});
+ await expect(confirm).toBeVisible();
+ expect(uploads).toHaveLength(1);
+ await confirm.getByRole('button',{name:'Cancel'}).click();
+ expect(uploads).toHaveLength(1);
+ await page.getByRole('button',{name:'Set as Main Resume'}).click();
+ await page.getByRole('dialog').getByRole('button',{name:'Confirm and set Main Resume'}).click();
  await expect(page.getByText('Main Resume updated and saved to Resume Library.')).toBeVisible();
  expect(uploads).toEqual([{primary:'false',label:'Verified resume',name:'Verified-resume.pdf'},{primary:'true',label:'Verified resume',name:'Verified-resume.pdf'}]);
 });
