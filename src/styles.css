@@ -1831,6 +1831,30 @@ dialog.modal::backdrop {
   .profile-date-form input { width: 100%; }
   .profile-date-form .button { align-self: flex-start; }
 }
+
+/* Keep the Overview page's copy on one shared left edge across the heading,
+   hero, drive summary, KPI cards, and lower dashboard panels. */
+.dashboard-content:has(> .welcome-banner) > .page-heading > div:first-child,
+.dashboard-content:has(> .welcome-banner) .welcome-banner,
+.dashboard-content:has(> .welcome-banner) .latest-drive-card,
+.dashboard-content:has(> .welcome-banner) .stat-card,
+.dashboard-content:has(> .welcome-banner) .academic-overview,
+.dashboard-content:has(> .welcome-banner) .overview-columns > .panel,
+.dashboard-content:has(> .welcome-banner) > .panel {
+  padding-inline: 24px;
+}
+
+@media(max-width: 760px) {
+  .dashboard-content:has(> .welcome-banner) > .page-heading > div:first-child,
+  .dashboard-content:has(> .welcome-banner) .welcome-banner,
+  .dashboard-content:has(> .welcome-banner) .latest-drive-card,
+  .dashboard-content:has(> .welcome-banner) .stat-card,
+  .dashboard-content:has(> .welcome-banner) .academic-overview,
+  .dashboard-content:has(> .welcome-banner) .overview-columns > .panel,
+  .dashboard-content:has(> .welcome-banner) > .panel {
+    padding-inline: 20px;
+  }
+}
 .academic-value { font-size:clamp(24px,3vw,34px); font-weight:650; letter-spacing:-.03em; }
 .academic-stats>div { border:1px solid var(--border,#e7e1f2); padding:20px; border-radius:16px; }
 .academic-table { overflow-x:auto; margin:18px 0; }

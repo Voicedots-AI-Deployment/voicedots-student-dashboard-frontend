@@ -186,6 +186,13 @@ test("overview follows the requested section order and keeps feedback percentage
   await expect(page.getByRole("heading", { name: "Hello, Asha." })).toBeVisible();
   await expect(page.getByTestId("overview-latest-drive")).toContainText("Data Analyst");
   await expect(page.getByTestId("overview-feedback").locator(".feedback-score strong")).toHaveText("21%");
+  const overviewContentStarts = await page.evaluate(() => [
+    document.querySelector(".page-heading > div:first-child > .eyebrow")!,
+    document.querySelector(".welcome-banner > div:first-child")!,
+    document.querySelector(".latest-drive-card > div:first-child")!,
+    document.querySelector(".stats-grid .stat-card .stat-label")!,
+  ].map(node => Math.round(node.getBoundingClientRect().left)));
+  expect(Math.max(...overviewContentStarts) - Math.min(...overviewContentStarts)).toBeLessThanOrEqual(1);
   const order = await page.evaluate(() => [
     document.querySelector(".page-heading")!,
     document.querySelector("[data-testid='overview-hero']")!,
