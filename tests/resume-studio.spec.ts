@@ -4,21 +4,23 @@ const student={student:{id:"s-1",full_name:"Asha Kumar",email:"asha@example.edu"
 const details={full_name:"",headline:"",email:"",phone:"",location:"",website:"",linkedin:"",github:"",links:[],photo:""};
 const baseProject={id:"rs-1",title:"Resume 1",revision:1,source:"created",updated_at:"2026-09-23T10:00:00Z",presentation:{template_id:"classic",paper_size:"a4",layout:"single",font_family:"DM Sans",accent_color:"#6d3be8",body_font_size_pt:9,section_spacing_px:12,margin_horizontal_mm:14},document:{title:"Resume 1",personal_details:details,sections:[]}};
 
-async function mockResumeStudio(page:Page, conflict=false){
- let project={...baseProject,document:{...baseProject.document,personal_details:{...details}}};
+async function mockResumeStudio(page:Page, conflict=false, profileResume=false, existingProject=true){
+ let project:any={...baseProject,document:{...baseProject.document,personal_details:{...details}}};
  await page.route("**/api/**",async route=>{
   const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
   if(path==="/api/auth/student-me")return route.fulfill({json:student});
+  if(path==="/api/student/resume-library"&&method==="GET")return route.fulfill({json:{resumes:profileResume?[{resume_id:"profile-1",original_filename:"Asha_Profile.pdf",label:"Asha profile resume",is_primary:true,submission_id:"submission-1",uploaded_at:"2026-09-29T00:00:00Z"}]:[]}});
+  if(path==="/api/student/resume-library/profile-1/file"&&method==="GET")return route.fulfill({status:200,contentType:"application/pdf",body:"%PDF-1.4 profile"});
   if(path==="/api/student/resume-studio/templates")return route.fulfill({json:[{id:"classic",name:"Classic",description:"ATS-friendly",ats_safe:true,tags:["ATS"]},{id:"editorial",name:"Editorial",description:"Clear modern layout",ats_safe:true,tags:["Modern"],tokens:{layout:"sidebar",font_family:"Inter",accent_color:"#238b72"}}]});
   if(path==="/api/student/resume-studio/resumes/rs-1/interviews"&&method==="POST")return route.fulfill({json:{id:"chat-1",messages:[{role:"assistant",text:"What experience should we include?"}],state:{},document:project.document,resume_revision:project.revision}});
-  if(path==="/api/student/resume-studio/resumes"&&method==="GET")return route.fulfill({json:[project]});
+  if(path==="/api/student/resume-studio/resumes"&&method==="GET")return route.fulfill({json:existingProject?[project]:[]});
   if(path==="/api/student/resume-studio/resumes"&&method==="POST"){project={...project,...route.request().postDataJSON(),revision:1};return route.fulfill({status:201,json:project})}
   if(path==="/api/student/resume-studio/resumes/rs-1"&&method==="GET")return route.fulfill({json:project});
   if(path==="/api/student/resume-studio/resumes/rs-1"&&method==="PUT"){
    if(conflict)return route.fulfill({status:409,json:{detail:"Resume changed in another tab. Reload before saving."}});
    const body=route.request().postDataJSON();project={...project,...body,revision:project.revision+1};return route.fulfill({json:project});
   }
-  if(path==="/api/student/resume-studio/resumes/import"&&method==="POST"){project={...project,title:"Imported resume",document:{...project.document,title:"Imported resume"}};return route.fulfill({status:201,json:{...project,import_report:{warnings:[],confidence:.94}}})}
+  if(path==="/api/student/resume-studio/resumes/import"&&method==="POST"){project={...project,title:profileResume?"Asha profile resume":"Imported resume",source:profileResume?"profile":"import",linked_resume_id:profileResume?"profile-1":null,document:{...project.document,title:profileResume?"Asha profile resume":"Imported resume",personal_details:{...details,full_name:profileResume?"Asha Kumar":""}}};return route.fulfill({status:201,json:{...project,import_report:{warnings:[],confidence:.94}}})}
   if(path==="/api/student/resume-studio/proposals"&&method==="GET")return route.fulfill({json:[]});
   if(path==="/api/student/resume-studio/resumes/rs-1/ai/review"&&method==="POST")return route.fulfill({json:{id:"p-1",proposal_id:"p-1",project_id:"rs-1",source_revision:project.revision,operation:"review",status:"pending",changes:[{id:"c-1",target:"headline",field:"headline",before:"",after:"Data Analyst",reason:"Supported by the resume"}],grounding:{grounded:true,unsupported_claims:[]}}});
   if(path==="/api/student/resume-studio/proposals/p-1/accept"&&method==="POST")return route.fulfill({json:{id:"p-1",operation:"review",status:"accepted",source_revision:project.revision,proposal:{changes:[{id:"c-1",target:"headline",field:"headline",before:"",after:"Data Analyst"}],grounding:{grounded:true,unsupported_claims:[]}}}});
@@ -42,6 +44,26 @@ test("Resume Studio appears below AI Coach and saves project content through the
  await page.getByLabel("Full name").fill("Asha Kumar");
  await page.getByRole("button",{name:"Save now"}).click();
  await expect(page.locator(".rs-save-state")).toHaveText("Saved");
+});
+
+test("Resume Studio automatically loads the active profile resume when its workspace is empty",async({page})=>{
+ await mockResumeStudio(page,false,true,false);await page.goto("/resume-studio");
+ await expect(page.locator(".rs-profile-resume").getByText("Asha profile resume",{exact:true})).toBeVisible();
+ await expect(page.getByText("Synced with your Resume Studio draft.")).toBeVisible();
+ await page.getByRole("button",{name:"Edit in Resume Studio"}).click();
+ await expect(page.getByRole("heading",{name:"Asha profile resume"})).toBeVisible();
+ await page.getByRole("tab",{name:"Resume editor"}).click();
+ await expect(page.getByLabel("Full name")).toHaveValue("Asha Kumar");
+});
+
+test("Resume Studio confirms profile-resume imports and preserves the previous draft as a revision",async({page})=>{
+ await mockResumeStudio(page,false,true,true);await page.goto("/resume-studio");
+ await expect(page.getByText("This is the resume used across your student features.")).toBeVisible();
+ await page.getByRole("button",{name:"Load profile resume into Studio"}).click();
+ await expect(page.getByRole("dialog",{name:"Load your active profile resume?"})).toBeVisible();
+ await page.getByRole("button",{name:"Load resume into Studio"}).click();
+ await expect(page.getByRole("heading",{name:"Asha profile resume"})).toBeVisible();
+ await expect(page.getByText(/previous Studio version is preserved in Version History/)).toBeVisible();
 });
 
 test("Resume Studio landing actions have consistent button sizing and alignment",async({page})=>{
