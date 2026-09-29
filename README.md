@@ -20,12 +20,12 @@ The website at `http://localhost:5173/interviews` links to this portal automatic
 | --- | --- |
 | `/` | Authenticated overview, eligible drives, readiness, recent reports, resumable interviews |
 | `/login` | Student sign-in / roster account activation |
-| `/practice` | Upload or reuse a resume, prepare an interview, answer clarification prompts, recover preparation after refresh |
+| `/practice` | Prepare an interview with the active Profile resume, answer clarification prompts, and recover preparation after refresh |
 | `/practice?drive=…` | Server-authoritative placement preparation, with frozen role, JD, duration, and assignment/window gates |
 | `/placements` | Eligible opportunities and the student's assignment details |
 | `/reports` | Released reports and explicit pending-release states |
 | `/growth` | Official placement-readiness evidence, including unassessed areas |
-| `/profile` | College-managed identity and editable target-role preference |
+| `/profile` | College-managed identity, editable target-role preference, and the one active resume shared across student features |
 | `/interview.html?id=…&session_id=…` | Retained live voice engine, device checks, proctoring, reconnect, completion |
 | `/admin-panel/` | Retained college administration UI for rostering, drives, and result release |
 

@@ -6,9 +6,8 @@ import {
   LoaderCircle,
   Mic,
   ShieldCheck,
-  UploadCloud,
 } from "lucide-react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import {
   api,
   ApiError,
@@ -23,7 +22,6 @@ import {
 import { useAuth } from "./auth";
 import { AttemptList } from "./pages";
 import {
-  date,
   Empty,
   ErrorMessage,
   humanize,
@@ -70,7 +68,6 @@ export function Practice() {
   });
   const [pollVersion, setPollVersion] = useState(0);
   const [pollError, setPollError] = useState("");
-  const savedFile = useRef<File | null>(null);
   const autoSelected = useRef(false);
   const [resumeBusy, setResumeBusy] = useState(false);
   const alive = useRef(true);
@@ -80,7 +77,8 @@ export function Practice() {
   useEffect(() => {
     if (autoSelected.current || file || preparation || !library.data) return;
     autoSelected.current = true;
-    const primary = library.data.resumes.find(r => r.is_primary);
+    const primary = library.data.resumes.find(r => r.submission_id === identity!.student.current_resume_submission_id)
+      || library.data.resumes.find(r => r.is_primary);
     if (primary) void useResume(primary);
   }, [library.data]);
   const attempts = useResource<{ attempts: Attempt[] }>(
@@ -256,11 +254,6 @@ export function Practice() {
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 30000);
     try {
-      if (savedFile.current !== file) {
-        const savedBody = new FormData(); savedBody.set("resume", file);
-        await api("/api/student/resume-library", { method: "POST", body: savedBody });
-        savedFile.current = file; library.reload();
-      }
       const startRequest = () => api<Preparation>("/api/student/interview/start", {
         method: "POST",
         body,
@@ -348,52 +341,12 @@ export function Practice() {
       );
       const saved = new File([await response.blob()], resume.original_filename);
       if (!alive.current) return;
-      savedFile.current = saved;
       chooseFile(saved);
     } catch (e) {
       setError((e as Error).message);
     } finally {
       setResumeBusy(false);
     }
-  }
-  async function saveResume() {
-    if (!file) return;
-    setError("");
-    setResumeBusy(true);
-    setNotice("");
-    const body = new FormData();
-    body.set("resume", file);
-    try {
-      await api("/api/student/resume-library", { method: "POST", body });
-      savedFile.current = file;
-      library.reload();
-      setNotice("Resume saved to your library.");
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setResumeBusy(false);
-    }
-  }
-  async function makePrimary(id: string) {
-    setError("");
-    setResumeBusy(true);
-    try {
-      await api(
-        `/api/student/resume-library/${encodeURIComponent(id)}/primary`,
-        json({}),
-      );
-      library.reload();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setResumeBusy(false);
-    }
-  }
-  async function deleteResume(id: string) {
-    if (!window.confirm("Delete this saved resume? Completed interview records will remain available.")) return;
-    setError(""); setResumeBusy(true);
-    try { await api(`/api/student/resume-library/${encodeURIComponent(id)}`, { method: "DELETE" }); library.reload(); setNotice("Resume deleted."); }
-    catch (e) { setError((e as Error).message); } finally { setResumeBusy(false); }
   }
   const pending = preparation?.status === "in_progress";
   const needsClarification = preparation?.status === "needs_clarification";
@@ -496,17 +449,9 @@ export function Practice() {
           )}
           {preparation.status === "resume_reupload_required" && (
             <>
-              <h2>Let’s try a clearer resume</h2>
-              <p>{preparation.message}</p>
-              <button
-                className="button primary"
-                onClick={() => {
-                  reset();
-                  setFile(null);
-                }}
-              >
-                Choose another resume
-              </button>
+              <h2>Update your active resume</h2>
+              <p>{preparation.message} Replace the profile resume so every feature continues to use the same version.</p>
+              <Link className="button primary" to="/profile#resume-library">Update resume in My Profile <ArrowRight size={17}/></Link>
             </>
           )}
           {needsClarification && (
@@ -548,9 +493,7 @@ export function Practice() {
                   Continue without optional details
                 </button>
               )}
-              <button className="text-button" disabled={busy} onClick={reset}>
-                Use a different resume
-              </button>
+              <Link className="text-button" to="/profile#resume-library">Update the active resume in My Profile</Link>
             </>
           )}
           {!pending &&
@@ -582,26 +525,10 @@ export function Practice() {
               </span>
             </div>
             <fieldset disabled={busy || contextLoading || driveBlocked}>
-              <label
-                className="upload-zone"
-                onDragOver={(e) => e.preventDefault()}
-                onDrop={(e) => {
-                  e.preventDefault();
-                  chooseFile(e.dataTransfer.files[0]);
-                }}
-              >
-                <UploadCloud size={30} />
-                <strong>{file ? file.name : "Drop your resume here"}</strong>
-                <span>
-                  or choose a file · PDF or DOCX · up to 5 MB, 3 pages
-                </span>
-                <input
-                  aria-label="Upload resume"
-                  type="file"
-                  accept=".pdf,.docx"
-                  onChange={(e) => chooseFile(e.target.files?.[0])}
-                />
-              </label>
+              <div className="panel practice-active-resume">
+                <FileText size={20}/><div><strong>{file?.name || (library.loading || resumeBusy ? "Loading active resume…" : "No active resume")}</strong><span>Shared from My Profile across AI Coach, placement interviews, self-practice, and Career Coach.</span></div>
+                <Link to="/profile#resume-library">{file ? "Change" : "Add resume"}</Link>
+              </div>
               <label>
                 Target role
                 <input
@@ -656,11 +583,11 @@ export function Practice() {
                   placeholder="Paste a job description for more focused practice…"
                 />
               </label>
-              <button className="button primary" type="submit">
+              <button className="button primary" type="submit" disabled={!file || busy || contextLoading || driveBlocked}>
                 {busy ? (
                   <>
                     <LoaderCircle className="spin" size={17} />
-                    Uploading your resume…
+                    Preparing your interview…
                   </>
                 ) : (
                   <>
@@ -722,60 +649,16 @@ export function Practice() {
       <section className="panel">
         <div className="section-heading">
           <div>
-            <h2>Your resume library</h2>
-            <p>Keep your experience ready for your next opportunity.</p>
+            <h2>Your active resume</h2>
+            <p>Manage one shared resume in My Profile. Resume Studio is where you create and organize multiple resume drafts.</p>
           </div>
-          {file && (
-            <button
-              className="button secondary small"
-              disabled={resumeBusy}
-              onClick={() => void saveResume()}
-            >
-              {resumeBusy ? "Please wait…" : "Save selected resume"}
-            </button>
-          )}
         </div>
         <ResourceState resource={library}>
           {library.data?.resumes.length ? (
-            <div className="record-list">
-              {library.data.resumes.map((resume) => (
-                <div className="record" key={resume.resume_id}>
-                  <span className="record-icon">
-                    <FileText size={20} />
-                  </span>
-                  <div className="record-info">
-                    <strong>{resume.label || resume.original_filename}</strong>
-                    <span>
-                      {date(resume.uploaded_at)}{" "}
-                      {resume.is_primary && "· Main Resume"}
-                    </span>
-                  </div>
-                  {!resume.is_primary && (
-                    <button
-                      className="text-button"
-                      disabled={resumeBusy}
-                      onClick={() => void makePrimary(resume.resume_id)}
-                    >
-                      Make main
-                    </button>
-                  )}
-                  <button
-                    className="button secondary small"
-                    disabled={resumeBusy || !!preparation || busy}
-                    onClick={() => void useResume(resume)}
-                  >
-                    Use resume
-                  </button>
-                  <button className="text-button" disabled={resumeBusy || !!preparation || busy} onClick={() => void deleteResume(resume.resume_id)}>
-                    Delete
-                  </button>
-                </div>
-              ))}
-            </div>
+            <div className="record-list"><div className="record"><span className="record-icon"><FileText size={20}/></span><div className="record-info"><strong>{library.data.resumes.find(resume=>resume.submission_id===identity!.student.current_resume_submission_id)?.label || library.data.resumes.find(resume=>resume.is_primary)?.label || "Active profile resume"}</strong><span>Used for this interview and every other student feature</span></div><Link className="button secondary small" to="/profile#resume-library">Manage active resume</Link></div></div>
           ) : (
             <Empty title="Your experience belongs here">
-              Your resume is saved automatically when you prepare an interview. You can also save it here to reuse
-              it later.
+              Add your shared active resume in My Profile before starting an interview. <Link to="/profile#resume-library">Open My Profile</Link>
             </Empty>
           )}
         </ResourceState>

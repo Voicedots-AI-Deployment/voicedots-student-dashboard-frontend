@@ -2184,3 +2184,6 @@ dialog.modal::backdrop {
 }
 .rs-result-recommendations{padding:12px 14px;border:1px solid var(--rs-line,#e8e3ef);border-radius:12px;background:var(--surface-alt,#f8f6fc)}
 .rs-result-recommendations h4{margin:0 0 6px;font-size:14px}.rs-result-recommendations ul{margin:0;padding-left:18px;color:var(--muted,#706a7c);line-height:1.6}
+
+.practice-active-resume{display:flex;align-items:center;gap:12px;padding:14px 16px;background:var(--surface-alt,#f8f6fb)}.practice-active-resume>div{display:grid;gap:3px;min-width:0;flex:1}.practice-active-resume strong{overflow-wrap:anywhere}.practice-active-resume span{color:var(--muted,#716b7d);font-size:13px}.practice-active-resume>a{font-weight:600;white-space:nowrap}.resume-replace-control{position:relative;overflow:hidden}.resume-replace-control input{position:absolute;width:1px;height:1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;clip-path:inset(50%)}
+@media(max-width:640px){.practice-active-resume{align-items:flex-start;flex-wrap:wrap}.practice-active-resume>a{margin-left:32px}}

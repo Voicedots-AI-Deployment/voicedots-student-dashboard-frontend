@@ -2,6 +2,7 @@ import { useEffect, useState, type FormEvent } from "react";
 import { ArrowRight, Compass, FileText, Sparkles, Target } from "lucide-react";
 import { Link } from "react-router-dom";
 import { api, json, type Resume } from "./api";
+import { useAuth } from "./auth";
 import { ErrorMessage, PageHeading, useResource } from "./ui";
 
 type CareerRole = { role?: string; why?: string; matched_skills?: string[]; missing_skills?: string[]; learn_next?: string[]; progression?: string; evidence_level?: string; project_evidence?: string[] };
@@ -30,6 +31,7 @@ function readSavedAnswers(submissionId: string): Record<string, string> {
 }
 
 export function CareerCoach() {
+  const { identity } = useAuth();
   const resumes = useResource<{ resumes: Resume[] }>("/api/student/resume-library");
   const saved = useResource<{ reports: { id: string; resume_id: string; created_at: string; model_version?: string; answers?: Record<string, string>; report: CareerResult }[] }>("/api/student/career/reports");
   const [resume, setResume] = useState("");
@@ -40,29 +42,27 @@ export function CareerCoach() {
   const [error, setError] = useState("");
 
   useEffect(() => {
-    if (resume) return;
-    const item = resumes.data?.resumes.find((row) => row.is_primary && row.submission_id) || resumes.data?.resumes.find((row) => row.submission_id);
-    if (item?.submission_id) { setResume(item.submission_id); setAnswers(readSavedAnswers(item.submission_id)); }
-  }, [resumes.data, resume]);
+    const currentId = identity?.student.current_resume_submission_id;
+    const item = resumes.data?.resumes.find((row) => row.submission_id === currentId)
+      || resumes.data?.resumes.find((row) => row.is_primary && row.submission_id);
+    const nextId = item?.submission_id || "";
+    if (nextId !== resume) {
+      setResume(nextId);
+      setAnswers(nextId ? readSavedAnswers(nextId) : {});
+      setResult(null);
+    }
+  }, [resumes.data, identity?.student.current_resume_submission_id, resume]);
 
   useEffect(() => {
     if (resume) sessionStorage.setItem(answerKey(resume), JSON.stringify(answers));
   }, [resume, answers]);
-
-  function chooseResume(submissionId: string) {
-    setResume(submissionId);
-    setAnswers(readSavedAnswers(submissionId));
-    setQuestionIndex(0);
-    setResult(null);
-    setError("");
-  }
 
   async function submit(event: FormEvent) {
     event.preventDefault();
     setError("");
     setBusy(true);
     try {
-      const response = await api<CareerResult>("/api/student/career/finder", { ...json({ submission_id: resume, ...answers }), timeoutMs: 180000 });
+      const response = await api<CareerResult>("/api/student/career/finder", { ...json({ ...answers }), timeoutMs: 180000 });
       setResult(response);
       saved.reload();
     } catch (cause) {
@@ -75,14 +75,13 @@ export function CareerCoach() {
   const selectedResume = resumes.data?.resumes.find((row) => row.submission_id === resume);
   const [key, title, help, placeholder] = questions[questionIndex];
   return <div className="career-tools career-discovery">
-    <PageHeading eyebrow="CAREER COACH" title="Explore where your experience can take you">Choose a saved resume and tell us what you enjoy. Recommendations use your evidence and interests.</PageHeading>
+    <PageHeading eyebrow="CAREER COACH" title="Explore where your experience can take you">Recommendations use your active profile resume, academic background, and the interests you share.</PageHeading>
     {error && <ErrorMessage message={error} />}
     {resumes.error && <ErrorMessage message={resumes.error} retry={resumes.reload} />}
     <div className="career-discovery-layout">
       <section className="panel career-discovery-input"><div className="section-heading"><div><span className="eyebrow">01 · YOUR STARTING POINT</span><h2>Your evidence and interests</h2></div><FileText size={20} /></div>
         <form onSubmit={submit}><fieldset disabled={busy || resumes.loading}>
-          <label className="career-resume-select">Resume to use<select required value={resume} onChange={(event) => chooseResume(event.target.value)}><option value="">Choose a saved resume</option>{(resumes.data?.resumes || []).filter((row) => row.submission_id).map((row) => <option key={row.submission_id} value={row.submission_id}>{row.label || row.original_filename}{row.is_primary ? " · Main resume" : ""}</option>)}</select></label>
-          {!resumes.loading && !resumes.data?.resumes.some((row) => row.submission_id) && <p className="muted">Add a resume to your library before requesting recommendations. <Link to="/profile">Open My Profile</Link></p>}
+          {selectedResume ? <p className="career-active-resume"><FileText size={16}/> Using active profile resume: <strong>{selectedResume.label || selectedResume.original_filename}</strong> · <Link to="/profile#resume-library">Change in My Profile</Link></p> : <p className="muted">{resumes.loading ? "Loading your active profile resume…" : <>Add an active resume in <Link to="/profile#resume-library">My Profile</Link> before requesting recommendations.</>}</p>}
           <div className="career-question-progress" aria-label={`Question ${questionIndex + 1} of ${questions.length}`}><div><span>QUESTION {questionIndex + 1} OF {questions.length}</span><strong>{Math.round(((questionIndex + 1) / questions.length) * 100)}%</strong></div><span className="career-question-progress-track"><i style={{ width: `${((questionIndex + 1) / questions.length) * 100}%` }} /></span></div>
           <label className="career-question-field" htmlFor={`career-answer-${key}`}><span>{title}</span><small>{help}</small><textarea id={`career-answer-${key}`} value={answers[key] || ""} onChange={(event) => setAnswers((current) => ({ ...current, [key]: event.target.value }))} placeholder={placeholder} rows={4} /></label>
           <p className="career-answer-save-state" role="status">Answers are saved on this device and can be edited later.</p>
@@ -98,6 +97,6 @@ export function CareerCoach() {
       <div className="panel career-next-step"><span className="eyebrow">04 · NEXT STEPS</span><h2>One useful next step</h2><p>{result.best_project_next || result.what_to_learn_next?.[0] || "Add a project with a clear contribution and outcome."}</p><small>{result.market_data_note || "This guidance does not use live salary or hiring-market data."}</small></div>
     </section>}
     {saved.error && <ErrorMessage message={saved.error} retry={saved.reload} />}
-    {!!saved.data?.reports?.length && <section className="panel career-report-history"><div className="section-heading"><div><span className="eyebrow">SAVED WORK</span><h2>Career reports</h2></div></div><div className="record-list">{saved.data.reports.map((report) => <div className="record" key={report.id}><div className="record-info"><strong>{report.report.strongest_current_fit || "Career analysis"}</strong><span>{new Date(report.created_at).toLocaleDateString()} · {resumes.data?.resumes.find((row) => row.submission_id === report.resume_id)?.label || "Saved resume"}</span></div><button className="button secondary small" onClick={() => { setResume(report.resume_id); setAnswers(report.answers || {}); setQuestionIndex(0); setResult({ ...report.report, analysis_status: report.report.analysis_status || (report.model_version === "career-finder-v3" ? "evidence_fallback" : "legacy"), reused: true, saved_report_id: report.id }); setError(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}>View report <ArrowRight size={15} /></button></div>)}</div></section>}
+    {!!saved.data?.reports?.length && <section className="panel career-report-history"><div className="section-heading"><div><span className="eyebrow">SAVED WORK</span><h2>Career reports</h2></div></div><div className="record-list">{saved.data.reports.map((report) => <div className="record" key={report.id}><div className="record-info"><strong>{report.report.strongest_current_fit || "Career analysis"}</strong><span>{new Date(report.created_at).toLocaleDateString()} · {resumes.data?.resumes.find((row) => row.submission_id === report.resume_id)?.label || "Resume used for this report"}</span></div><button className="button secondary small" onClick={() => { setAnswers(report.answers || {}); setQuestionIndex(0); setResult({ ...report.report, analysis_status: report.report.analysis_status || (report.model_version === "career-finder-v3" ? "evidence_fallback" : "legacy"), reused: true, saved_report_id: report.id }); setError(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}>View report <ArrowRight size={15} /></button></div>)}</div></section>}
   </div>;
 }
