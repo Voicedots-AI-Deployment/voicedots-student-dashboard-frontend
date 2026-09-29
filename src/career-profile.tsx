@@ -20,7 +20,7 @@ export function CareerProfile(){
    const body=new FormData();body.set('resume',file);body.set('label',file.name.replace(/\.[^.]+$/,''));body.set('analyze_for_coaching','true');
    const saved=await api<{analysis_status:string}>('/api/student/resume-library',{method:'POST',body});
    library.reload();await refresh();
-   setMessage(saved.analysis_status==='unavailable'?'Your active resume was saved, but AI analysis is temporarily unavailable. Retry the analysis from your profile.':'Your active resume is ready to use across AI Coach, placement interviews, self-practice, and Career Coach.');
+   setMessage(saved.analysis_status==='processing'?'Your active resume was saved. AI analysis is running in the background; it will be ready across your student features shortly.':saved.analysis_status==='unavailable'?'Your active resume was saved, but AI analysis is temporarily unavailable. Retry the analysis from your profile.':'Your active resume is ready to use across AI Coach, placement interviews, self-practice, and Career Coach.');
   }catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
  return <div className="career-tools">
