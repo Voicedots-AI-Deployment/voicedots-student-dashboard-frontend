@@ -109,7 +109,7 @@ test("session replacement still requires another verified camera request", async
   expect(captures[1].replace_active_session).toBe(true);
 });
 
-test("My Profile offers photo upload and camera when no verified photo exists", async ({ page }) => {
+test("My Profile offers one top-avatar edit control when no photo exists", async ({ page }) => {
   await camera(page);
   await auth(page);
   await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
@@ -118,13 +118,13 @@ test("My Profile offers photo upload and camera when no verified photo exists", 
   await page.getByRole("button", { name: "Capture and verify" }).click();
   await page.getByRole("link", { name: "My profile", exact: true }).click();
   await expect(page.getByRole("heading", { name: "My profile" })).toBeVisible();
-  await expect(page.getByText("Add your profile photo and resume.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Take photo using camera" })).toBeVisible();
-  await expect(page.getByText("Upload photo")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Add profile photo" })).toBeVisible();
+  await expect(page.getByLabel("Choose profile photo")).toBeAttached();
+  await expect(page.getByRole("heading", { name: "Verification photo" })).toHaveCount(0);
+  await expect(page.getByText("Upload photo")).toHaveCount(0);
 });
 
-
-test("My Profile displays a photo added by placement staff and keeps it locked", async ({ page }) => {
+test("My Profile displays a roster photo once and does not offer an edit control", async ({ page }) => {
   await camera(page);
   await auth(page, { rosterPhoto: true });
   await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
@@ -133,11 +133,11 @@ test("My Profile displays a photo added by placement staff and keeps it locked",
   await page.getByRole("button", { name: "Capture and verify" }).click();
   await page.getByRole("link", { name: "My profile", exact: true }).click();
   await expect(page.getByRole("img", { name: "Your verified profile", exact: true })).toBeVisible();
-  await expect(page.getByText("Verified profile photo · Locked.")).toBeVisible();
-  await expect(page.getByText("Upload photo")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add profile photo" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Verification photo" })).toHaveCount(0);
 });
 
-test("a student can add a photo once, then sees it locked in My Profile", async ({ page }) => {
+test("student photo upload works from the top-avatar edit control and locks after save", async ({ page }) => {
   await camera(page);
   await auth(page);
   await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
@@ -145,12 +145,13 @@ test("a student can add a photo once, then sees it locked in My Profile", async 
   await signIn(page);
   await page.getByRole("button", { name: "Capture and verify" }).click();
   await page.getByRole("link", { name: "My profile", exact: true }).click();
-  await page.locator(".profile-photo-actions input[type=file]").setInputFiles({
+  await page.getByLabel("Choose profile photo").setInputFiles({
     name: "profile.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=", "base64"),
   });
   await expect(page.getByRole("img", { name: "Your verified profile", exact: true })).toBeVisible();
-  await expect(page.getByText("Verified profile photo · Locked.")).toBeVisible();
-  await expect(page.getByText("Upload photo")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Add profile photo" })).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Verification photo" })).toHaveCount(0);
+  await expect(page.getByRole("status")).toContainText("Profile photo saved and locked.");
 });

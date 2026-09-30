@@ -419,7 +419,6 @@ export function App() {
         </div>
       </aside>
       <div className="dashboard-body">
-        {!student.photo_url && <div className="profile-photo-notice" role="note"><span><strong>{student.has_readable_resume ? "Add your profile photo in My Profile." : "Add your profile photo and resume in My Profile."}</strong> A verified photo enables face login and interview identity checks.</span><NavLink to="/profile">Open My Profile <ArrowRight size={15}/></NavLink></div>}
         {location.pathname !== "/resume-studio" && <header className="dashboard-topbar">
           <div>
             <button
