@@ -5,6 +5,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
+  Camera,
   CalendarDays,
   ChevronRight,
   Download,
@@ -15,6 +16,7 @@ import {
   Sparkles,
   Target,
   TrendingUp,
+  Upload,
 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -23,6 +25,7 @@ import {
   ApiError,
   json,
   openInterview,
+  request,
   type Attempt,
   type Dashboard,
   type Drive,
@@ -734,85 +737,86 @@ export function Profile() {
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);
-  async function save(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setBusy(true);
+  const [photoUrl, setPhotoUrl] = useState("");
+  const [photoLoadError, setPhotoLoadError] = useState(false);
+  const [photoLoadAttempt, setPhotoLoadAttempt] = useState(0);
+  const [camera, setCamera] = useState(false);
+  const video = useRef<HTMLVideoElement>(null);
+  const stream = useRef<MediaStream | null>(null);
+  useEffect(() => {
+    let live = true;
+    let objectUrl = "";
+    setPhotoUrl("");
+    setPhotoLoadError(false);
+    if (student.photo_url) {
+      void request("/api/student/profile/photo").then(response => response.blob()).then(blob => {
+        if (!blob.type.startsWith("image/")) throw new Error("Saved profile photo is not an image.");
+        if (live) { objectUrl = URL.createObjectURL(blob); setPhotoUrl(objectUrl); }
+      }).catch(() => { if (live) setPhotoLoadError(true); });
+    }
+    return () => { live = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [student.photo_url, photoLoadAttempt]);
+  useEffect(() => {
+    if (camera && video.current && stream.current) video.current.srcObject = stream.current;
+    return () => { if (video.current) video.current.srcObject = null; };
+  }, [camera]);
+  useEffect(() => () => stream.current?.getTracks().forEach(track => track.stop()), []);
+  async function uploadPhoto(file: File) {
+    if (file.size > 10 * 1024 * 1024) { setError("Choose an image smaller than 10 MB."); return; }
+    setBusy(true); setError(""); setMessage("");
+    try {
+      const form = new FormData(); form.append("photo", file, file.name || "profile-photo.jpg");
+      await request("/api/student/profile/photo", { method: "POST", body: form });
+      await refresh();
+      setMessage("Your clear profile photo is verified and locked. Contact your placement team if it needs to be changed.");
+    } catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
+  }
+  async function startCamera() {
     setError("");
-    setMessage("");
+    try {
+      stream.current = await navigator.mediaDevices.getUserMedia({ video: { facingMode: { ideal: "user" }, width: { ideal: 1280 }, height: { ideal: 960 } }, audio: false });
+      setCamera(true);
+    } catch { setError("Allow camera access, or upload a clear JPEG or PNG photo."); }
+  }
+  function stopCamera() {
+    stream.current?.getTracks().forEach(track => track.stop()); stream.current = null; setCamera(false);
+  }
+  async function capturePhoto() {
+    const node = video.current;
+    if (!node?.videoWidth || !node.videoHeight) { setError("Wait for the camera preview, then take the photo."); return; }
+    const scale = Math.min(1, 1280 / Math.max(node.videoWidth, node.videoHeight));
+    const canvas = document.createElement("canvas"); canvas.width = Math.round(node.videoWidth * scale); canvas.height = Math.round(node.videoHeight * scale);
+    const context = canvas.getContext("2d"); if (!context) { setError("The camera photo could not be captured. Please retry."); return; }
+    context.drawImage(node, 0, 0, canvas.width, canvas.height);
+    const blob = await new Promise<Blob | null>(resolve => canvas.toBlob(resolve, "image/jpeg", .88));
+    stopCamera(); if (!blob) { setError("The camera photo could not be read. Please retry."); return; }
+    await uploadPhoto(new File([blob], "profile-photo.jpg", { type: "image/jpeg" }));
+  }
+  async function save(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault(); setBusy(true); setError(""); setMessage("");
     const form = new FormData(event.currentTarget);
     const changes: { date_of_birth?: string | null } = {};
     if (form.has("date_of_birth")) changes.date_of_birth = String(form.get("date_of_birth") || "") || null;
-    try {
-      await api("/api/student/profile", {
-        ...json(changes),
-        method: "PATCH",
-      });
-      setMessage("Your profile details have been saved.");
-      await refresh();
-    } catch (e) {
-      setError((e as Error).message);
-    } finally {
-      setBusy(false);
-    }
+    try { await api("/api/student/profile", { ...json(changes), method: "PATCH" }); setMessage("Your profile details have been saved."); await refresh(); }
+    catch (e) { setError((e as Error).message); }
+    finally { setBusy(false); }
   }
-  return (
-    <>
-      <PageHeading eyebrow="THE PERSON BEHIND THE POTENTIAL" title="My profile">
-        Your student identity and profile details, in one place.
-      </PageHeading>
-      <section className="panel profile-panel">
-        <div className="profile-heading">
-          <span className="avatar large">
-            {student.full_name
-              .split(/\s+/)
-              .slice(0, 2)
-              .map((n) => n[0])
-              .join("")}
-          </span>
-          <div>
-            <h2>{displayName(student.full_name)}</h2>
-            <p>{displayName(student.college_name) || "Student"}</p>
-          </div>
-          <span className="pill">Student account</span>
-        </div>
-        <dl className="profile-details">
-          {[
-            ["Email", student.email],
-            ["Roll number", student.roll_number],
-            ["Program", student.program],
-            ["Department", student.department_code],
-            ["Graduation year", student.graduation_year],
-            ["CGPA", student.cgpa],
-          ].map(([key, value]) => (
-            <div key={key}>
-              <dt>{key}</dt>
-              <dd>{value ?? "Not provided"}</dd>
-            </div>
-          ))}
-        </dl>
-        {error && <ErrorMessage message={error} />}
-        {message && <p role="status">{message}</p>}
-        <form className="profile-date-form" onSubmit={save}>
-          <label htmlFor="profile-date-of-birth">Date of birth</label>
-          <div>
-            <input
-              id="profile-date-of-birth"
-              name="date_of_birth"
-              type="date"
-              max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)}
-              defaultValue={student.date_of_birth?.slice(0, 10) || ""}
-            />
-            <button className="button primary" disabled={busy}>
-              {busy ? "Saving…" : "Save date of birth"}
-            </button>
-          </div>
-        </form>
-        <p className="muted">
-          Your placement team manages academic details. Contact your placement cell to
-          request corrections.
-        </p>
-      </section>
-      <CareerProfile />
-    </>
-  );
+  return <>
+    <PageHeading eyebrow="THE PERSON BEHIND THE POTENTIAL" title="My profile">Your student identity and profile details, in one place.</PageHeading>
+    {!student.photo_url && <section className="panel" role="note"><strong>{student.has_readable_resume ? "Add your profile photo." : "Add your profile photo and resume."}</strong><p className="muted">A clear photo is required for face login and interview identity checks. Upload it here once; your placement team can update it if needed.{!student.has_readable_resume && " Add your resume to complete your profile."}</p></section>}
+    <section className="panel profile-panel">
+      <div className="profile-heading">
+        <span className="avatar large">{photoUrl ? <img src={photoUrl} alt="Your verified profile"/> : student.full_name.split(/\s+/).slice(0, 2).map(n => n[0]).join("")}</span>
+        <div><h2>{displayName(student.full_name)}</h2><p>{displayName(student.college_name) || "Student"}</p></div>
+        <span className="pill">Student account</span>
+      </div>
+      <dl className="profile-details">{[["Email", student.email], ["Roll number", student.roll_number], ["Program", student.program], ["Department", student.department_code], ["Graduation year", student.graduation_year], ["CGPA", student.cgpa]].map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value ?? "Not provided"}</dd></div>)}</dl>
+      {!student.photo_url ? <section className="profile-date-form"><h3>Verification photo</h3><p className="muted">Use a clear, front-facing photo. The system checks clarity and that one face is visible before saving it as your locked identity photo.</p>{camera && <video ref={video} autoPlay muted playsInline className="profile-camera-preview"/>}<div className="profile-photo-actions">{camera ? <><button type="button" className="button primary" disabled={busy} onClick={() => void capturePhoto()}><Camera size={16}/>Take photo</button><button type="button" className="button secondary" onClick={stopCamera}>Cancel</button></> : <><button type="button" className="button secondary" disabled={busy} onClick={() => void startCamera()}><Camera size={16}/>Take photo using camera</button><label className="button secondary"><Upload size={16}/>Upload photo<input hidden type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} onChange={e => { const file = e.target.files?.[0]; if (file) void uploadPhoto(file); e.currentTarget.value = ""; }}/></label></>}</div></section> : <section className="profile-date-form"><h3>Verification photo</h3>{photoUrl && <img className="profile-photo-current" src={photoUrl} alt="Your verified profile photo"/>}<p className="muted">Verified profile photo · Locked. Contact your placement team if it needs to be updated.</p>{photoLoadError && <p role="alert">Your saved photo could not be loaded. It remains locked; try loading it again or contact your placement team.</p>}{photoLoadError && <button type="button" className="button secondary" onClick={() => setPhotoLoadAttempt(value => value + 1)}>Retry photo</button>}</section>}
+      {error && <ErrorMessage message={error}/>} {message && <p role="status">{message}</p>}
+      <form className="profile-date-form" onSubmit={save}><label htmlFor="profile-date-of-birth">Date of birth</label><div><input id="profile-date-of-birth" name="date_of_birth" type="date" max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)} defaultValue={student.date_of_birth?.slice(0, 10) || ""}/><button className="button primary" disabled={busy}>{busy ? "Saving…" : "Save date of birth"}</button></div></form>
+      <p className="muted">Your placement team manages academic details. Contact your placement cell to request corrections.</p>
+    </section>
+    <CareerProfile />
+  </>;
 }
