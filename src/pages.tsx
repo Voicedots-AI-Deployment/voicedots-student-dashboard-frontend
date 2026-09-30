@@ -779,13 +779,15 @@ export function Profile() {
       <div className="profile-heading">
         <div className="profile-avatar-wrap">
           <span className="avatar large">{photoUrl ? <img src={photoUrl} alt="Your verified profile"/> : student.full_name.split(/\s+/).slice(0, 2).map(n => n[0]).join("")}</span>
+        </div>
+        <div><h2>{displayName(student.full_name)}</h2><p>{displayName(student.college_name) || "Student"}</p></div>
+        <div className="profile-heading-actions">
+          <span className="pill">Student account</span>
           {!student.photo_url && <>
-            <button type="button" className="profile-photo-edit" aria-label="Add profile photo" title="Add profile photo" disabled={busy} onClick={() => photoInput.current?.click()}><Pencil size={15}/></button>
+            <button type="button" className="button secondary profile-upload-button" aria-label="Upload photo" disabled={busy} onClick={() => photoInput.current?.click()}><Pencil size={15}/>Upload photo</button>
             <input ref={photoInput} className="profile-photo-input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} aria-label="Choose profile photo" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) void uploadPhoto(file); e.currentTarget.value = ""; }}/>
           </>}
         </div>
-        <div><h2>{displayName(student.full_name)}</h2><p>{displayName(student.college_name) || "Student"}</p></div>
-        <span className="pill">Student account</span>
       </div>
       {photoLoadError && <p className="profile-photo-load-error" role="alert">Could not load your saved profile photo. It is still locked. <button type="button" onClick={() => setPhotoLoadAttempt(value => value + 1)}>Retry</button></p>}
       {error && <ErrorMessage message={error}/>} {message && <p role="status">{message}</p>}

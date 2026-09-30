@@ -118,10 +118,10 @@ test("My Profile offers one top-avatar edit control when no photo exists", async
   await page.getByRole("button", { name: "Capture and verify" }).click();
   await page.getByRole("link", { name: "My profile", exact: true }).click();
   await expect(page.getByRole("heading", { name: "My profile" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add profile photo" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload photo" })).toBeVisible();
   await expect(page.getByLabel("Choose profile photo")).toBeAttached();
   await expect(page.getByRole("heading", { name: "Verification photo" })).toHaveCount(0);
-  await expect(page.getByText("Upload photo")).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Upload photo" })).toBeVisible();
 });
 
 test("My Profile displays a roster photo once and does not offer an edit control", async ({ page }) => {
@@ -133,7 +133,7 @@ test("My Profile displays a roster photo once and does not offer an edit control
   await page.getByRole("button", { name: "Capture and verify" }).click();
   await page.getByRole("link", { name: "My profile", exact: true }).click();
   await expect(page.getByRole("img", { name: "Your verified profile", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add profile photo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Upload photo" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Verification photo" })).toHaveCount(0);
 });
 
@@ -145,13 +145,16 @@ test("student photo upload works from the top-avatar edit control and locks afte
   await signIn(page);
   await page.getByRole("button", { name: "Capture and verify" }).click();
   await page.getByRole("link", { name: "My profile", exact: true }).click();
-  await page.getByLabel("Choose profile photo").setInputFiles({
+  const chooserPromise = page.waitForEvent("filechooser");
+  await page.getByRole("button", { name: "Upload photo" }).click();
+  const chooser = await chooserPromise;
+  await chooser.setFiles({
     name: "profile.png",
     mimeType: "image/png",
     buffer: Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR4nGNgYAAAAAMAASsJTYQAAAAASUVORK5CYII=", "base64"),
   });
   await expect(page.getByRole("img", { name: "Your verified profile", exact: true })).toBeVisible();
-  await expect(page.getByRole("button", { name: "Add profile photo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Upload photo" })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Verification photo" })).toHaveCount(0);
   await expect(page.getByRole("status")).toContainText("Profile photo saved and locked.");
 });
