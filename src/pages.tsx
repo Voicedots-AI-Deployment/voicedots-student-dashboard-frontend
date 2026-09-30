@@ -6,16 +6,17 @@ import {
   ArrowRight,
   BriefcaseBusiness,
   CalendarDays,
+  Camera,
   ChevronRight,
   Download,
   FileText,
   MapPin,
-  Pencil,
   Mic,
   RefreshCw,
   Sparkles,
   Target,
   TrendingUp,
+  Upload,
 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -739,7 +740,12 @@ export function Profile() {
   const [photoUrl, setPhotoUrl] = useState("");
   const [photoLoadError, setPhotoLoadError] = useState(false);
   const [photoLoadAttempt, setPhotoLoadAttempt] = useState(0);
+  const [cameraOpen, setCameraOpen] = useState(false);
+  const [capturedPhoto, setCapturedPhoto] = useState<File | null>(null);
+  const [capturedUrl, setCapturedUrl] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const cameraStream = useRef<MediaStream | null>(null);
   useEffect(() => {
     let live = true;
     let objectUrl = "";
@@ -747,21 +753,68 @@ export function Profile() {
     setPhotoLoadError(false);
     if (student.photo_url) {
       void request("/api/student/profile/photo").then(response => response.blob()).then(blob => {
-        if (!blob.type.startsWith("image/")) throw new Error("Saved profile photo is not an image.");
+        if (!blob.type.startsWith("image/")) throw new Error("Photo could not be loaded.");
         if (live) { objectUrl = URL.createObjectURL(blob); setPhotoUrl(objectUrl); }
       }).catch(() => { if (live) setPhotoLoadError(true); });
     }
     return () => { live = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [student.photo_url, photoLoadAttempt]);
+  useEffect(() => () => {
+    cameraStream.current?.getTracks().forEach(track => track.stop());
+    if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+  }, [capturedUrl]);
+  useEffect(() => {
+    if (cameraOpen && videoRef.current && cameraStream.current) videoRef.current.srcObject = cameraStream.current;
+  }, [cameraOpen]);
+  function stopCamera() {
+    cameraStream.current?.getTracks().forEach(track => track.stop());
+    cameraStream.current = null;
+    setCameraOpen(false);
+  }
+  async function startCamera() {
+    setError(""); setMessage("");
+    if (!navigator.mediaDevices?.getUserMedia) { setError("Camera is unavailable in this browser. Upload a photo instead."); return; }
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "user" }, audio: false });
+      cameraStream.current = stream;
+      setCameraOpen(true);
+    } catch (cause) {
+      const name = cause instanceof DOMException ? cause.name : "";
+      setError(name === "NotAllowedError" || name === "PermissionDeniedError"
+        ? "Camera permission denied. Allow camera access or upload a photo."
+        : "Camera is unavailable. Check that it is connected and not being used by another app.");
+    }
+  }
+  function clearCapture() {
+    if (capturedUrl) URL.revokeObjectURL(capturedUrl);
+    setCapturedUrl(""); setCapturedPhoto(null);
+  }
+  function capturePhoto() {
+    const video = videoRef.current;
+    if (!video || !video.videoWidth || !video.videoHeight) { setError("Camera preview is not ready yet. Try again in a moment."); return; }
+    const canvas = document.createElement("canvas");
+    const scale = Math.min(1, 1280 / video.videoWidth);
+    canvas.width = Math.round(video.videoWidth * scale); canvas.height = Math.round(video.videoHeight * scale);
+    const context = canvas.getContext("2d");
+    if (!context) { setError("Could not capture a photo. Please try again."); return; }
+    context.translate(canvas.width, 0); context.scale(-1, 1);
+    context.drawImage(video, 0, 0, canvas.width, canvas.height);
+    canvas.toBlob(blob => {
+      if (!blob) { setError("Could not capture a photo. Please try again."); return; }
+      const file = new File([blob], "profile-photo.jpg", { type: "image/jpeg" });
+      clearCapture(); setCapturedPhoto(file); setCapturedUrl(URL.createObjectURL(file)); stopCamera();
+    }, "image/jpeg", 0.92);
+  }
   async function uploadPhoto(file: File) {
     if (file.size > 10 * 1024 * 1024) { setError("Choose an image smaller than 10 MB."); return; }
     setBusy(true); setError(""); setMessage("");
     try {
       const form = new FormData(); form.append("photo", file, file.name || "profile-photo.jpg");
       await request("/api/student/profile/photo", { method: "POST", body: form });
+      stopCamera(); clearCapture();
       await refresh();
       setMessage("Profile photo saved and locked.");
-    } catch (e) { setError((e as Error).message); }
+    } catch (e) { setError((e as Error).message || "Upload failed, try again."); }
     finally { setBusy(false); }
   }
   async function save(event: FormEvent<HTMLFormElement>) {
@@ -780,16 +833,21 @@ export function Profile() {
         <div className="profile-avatar-wrap">
           <span className="avatar large">{photoUrl ? <img src={photoUrl} alt="Your verified profile"/> : student.full_name.split(/\s+/).slice(0, 2).map(n => n[0]).join("")}</span>
         </div>
-        <div><h2>{displayName(student.full_name)}</h2><p>{displayName(student.college_name) || "Student"}</p></div>
+        <div className="profile-heading-identity"><h2>{displayName(student.full_name)}</h2><p>{displayName(student.college_name) || "Student"}</p></div>
         <div className="profile-heading-actions">
           <span className="pill">Student account</span>
-          {!student.photo_url && <>
-            <button type="button" className="button secondary profile-upload-button" aria-label="Upload photo" disabled={busy} onClick={() => photoInput.current?.click()}><Pencil size={15}/>Upload photo</button>
-            <input ref={photoInput} className="profile-photo-input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy} aria-label="Choose profile photo" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) void uploadPhoto(file); e.currentTarget.value = ""; }}/>
-          </>}
+          {!student.photo_url && !cameraOpen && !capturedPhoto && <div className="profile-photo-actions">
+            <button type="button" className="button secondary profile-upload-button" disabled={busy} onClick={() => photoInput.current?.click()}><Upload size={15}/>Upload photo</button>
+            <button type="button" className="button secondary profile-upload-button" disabled={busy} onClick={() => void startCamera()}><Camera size={15}/>Use webcam</button>
+          </div>}
+          {!student.photo_url && cameraOpen && <div className="profile-photo-actions"><button type="button" className="button primary profile-upload-button" onClick={capturePhoto}><Camera size={15}/>Capture</button><button type="button" className="button secondary profile-upload-button" onClick={stopCamera}>Cancel</button></div>}
+          {!student.photo_url && capturedPhoto && <div className="profile-photo-actions"><button type="button" className="button secondary profile-upload-button" disabled={busy} onClick={() => { clearCapture(); void startCamera(); }}>Retake</button><button type="button" className="button primary profile-upload-button" disabled={busy} onClick={() => void uploadPhoto(capturedPhoto)}>{busy ? "Saving…" : "Use this photo"}</button></div>}
+          <input ref={photoInput} className="profile-photo-input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || Boolean(student.photo_url)} aria-label="Choose profile photo" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) void uploadPhoto(file); e.currentTarget.value = ""; }}/>
         </div>
       </div>
-      {photoLoadError && <p className="profile-photo-load-error" role="alert">Could not load your saved profile photo. It is still locked. <button type="button" onClick={() => setPhotoLoadAttempt(value => value + 1)}>Retry</button></p>}
+      {cameraOpen && <div className="profile-camera-preview"><video ref={videoRef} autoPlay playsInline muted aria-label="Webcam preview"/><p>Center your face in the frame, then capture. The photo is checked before it is saved.</p></div>}
+      {capturedPhoto && <div className="profile-camera-preview"><img src={capturedUrl} alt="Captured profile photo preview"/><p>Review the photo before saving. You can retake it if needed.</p></div>}
+      {photoLoadError && <p className="profile-photo-load-error" role="alert">Photo could not be loaded. It is still locked. <button type="button" onClick={() => setPhotoLoadAttempt(value => value + 1)}>Retry</button></p>}
       {error && <ErrorMessage message={error}/>} {message && <p role="status">{message}</p>}
       <dl className="profile-details">{[["Email", student.email], ["Roll number", student.roll_number], ["Program", student.program], ["Department", student.department_code], ["Graduation year", student.graduation_year], ["CGPA", student.cgpa]].map(([key, value]) => <div key={key}><dt>{key}</dt><dd>{value ?? "Not provided"}</dd></div>)}</dl>
       <form className="profile-date-form" onSubmit={save}><label htmlFor="profile-date-of-birth">Date of birth</label><div><input id="profile-date-of-birth" name="date_of_birth" type="date" max={new Date(Date.now() - new Date().getTimezoneOffset() * 60000).toISOString().slice(0, 10)} defaultValue={student.date_of_birth?.slice(0, 10) || ""}/><button className="button primary" disabled={busy}>{busy ? "Saving…" : "Save date of birth"}</button></div></form>
