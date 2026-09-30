@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 
-const identity = { student: { id: "s1", full_name: "Student", email: "student@example.edu", roll_number: "CS01" } };
+const identity = { student: { id: "s1", full_name: "Student", email: "student@example.edu", roll_number: "CS01", allow_student_photo_upload: true } };
 
 async function camera(page: Page, denied = false) {
   await page.addInitScript(({ denied }) => {
@@ -21,10 +21,10 @@ async function camera(page: Page, denied = false) {
   }, { denied });
 }
 
-async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolean; rosterPhoto?: boolean; photoValidationError?: boolean } = {}) {
+async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolean; rosterPhoto?: boolean; photoValidationError?: boolean; photoPermission?: boolean } = {}) {
   let signedIn = false;
   let hasPhoto = Boolean(options.rosterPhoto);
-  const signedInIdentity = () => ({ student: { ...identity.student, ...(hasPhoto ? { photo_url: "/api/student/profile/photo" } : {}) } });
+  const signedInIdentity = () => ({ student: { ...identity.student, allow_student_photo_upload: options.photoPermission ?? true, ...(hasPhoto ? { photo_url: "/api/student/profile/photo" } : {}) } });
   const captures: Record<string, unknown>[] = [];
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
@@ -208,4 +208,17 @@ test("profile photo validation errors are shown instead of a generic connection 
   await (await chooserPromise).setFiles({ name: "profile.png", mimeType: "image/png", buffer: Buffer.from("image") });
   await expect(page.getByRole("alert")).toContainText("No face detected in the uploaded photo.");
   await expect(page.getByRole("alert")).not.toContainText("Unable to connect to VoiceDots");
+});
+
+test("My Profile hides photo controls when placement manages the photo", async ({ page }) => {
+  await camera(page);
+  await auth(page, { photoPermission: false });
+  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
+  await page.route("**/api/student/resume-studio/resumes", route => route.fulfill({ json: [] }));
+  await signIn(page);
+  await page.getByRole("button", { name: "Capture and verify" }).click();
+  await page.getByRole("link", { name: "My profile", exact: true }).click();
+  await expect(page.getByText("Your profile photo is managed by the placement team.")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Upload photo" })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "Use webcam" })).toHaveCount(0);
 });

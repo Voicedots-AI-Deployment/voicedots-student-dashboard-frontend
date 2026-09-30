@@ -16,6 +16,7 @@ export type Student = {
   target_role?: string;
   current_resume_submission_id?: string;
   photo_url?: string;
+  allow_student_photo_upload?: boolean;
   has_readable_resume?: boolean;
 };
 export type Identity = {
