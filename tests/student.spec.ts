@@ -840,12 +840,12 @@ test('Resume Studio saves project evidence and reloads it from the student API',
  await page.goto('/resume-studio');
  await page.getByRole('button',{name:'Create manually',exact:true}).click();
  await page.getByRole('tab',{name:'Resume editor'}).click();
- await page.getByLabel('Add resume section').selectOption('projects');
+ await page.getByRole('button',{name:'Add content'}).click();
+ await page.getByRole('button',{name:/Projects Academic, personal/}).click();
  await page.getByRole('button',{name:'Add Project',exact:true}).click();
  await page.getByLabel('Project title',{exact:true}).fill('Library API');
  await page.getByLabel('Description / achievements',{exact:true}).fill('Built a Python API with book search.');
- await page.getByRole('button',{name:'Save now',exact:true}).click();
- await expect(page.locator('.rs-save-state')).toHaveText('Saved');
+ await expect(page.locator('.rs-save-state')).toHaveText('Saved',{timeout:5000});
  expect(savedProject.revision).toBe(2);
  await page.reload();
  await page.getByRole('button',{name:/Open Resume 1/}).click();
@@ -1213,15 +1213,21 @@ test("profile upload becomes the single active resume and enables replacement", 
       const body = route.request().postData() || "";
       expect(body).toContain('name="analyze_for_coaching"\r\n\r\ntrue');
       active = { resume_id: "profile-file-1", submission_id: "profile-submission-1", label: "profile-resume", original_filename: "profile-resume.pdf", is_primary: true, uploaded_at: "2026-09-29T10:00:00Z" };
-      return route.fulfill({ json: { analysis_status: "ready" } });
+      return route.fulfill({ json: { analysis_status: "ready", resume_id: "profile-file-1" } });
     }
     return route.fulfill({ json: { resumes: active ? [active] : [] } });
   });
+  await page.route("**/api/student/resume-library/profile-file-1/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 profile resume" }));
+  let profileSyncBody = "";
+  await page.route("**/api/student/resume-studio/resumes/import", async route => { profileSyncBody = route.request().postData() || ""; return route.fulfill({ status: 201, json: { id: "studio-profile-1", import_report: { warnings: [] } } }); });
   await page.goto("/profile");
   await page.getByLabel("Upload active resume").setInputFiles({ name: "profile-resume.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 profile resume") });
   await expect(page.getByRole("status")).toContainText("ready to use across AI Coach, placement interviews, self-practice, and Career Coach");
   await expect(page.getByText("profile-resume", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Replace active resume")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Edit this resume in Resume Studio →" })).toHaveAttribute("href", "/resume-studio?resume=studio-profile-1");
+  expect(profileSyncBody).toContain('name="profile_resume_id"');
+  expect(profileSyncBody).toContain("profile-file-1");
 });
 
 test("Career Coach labels an evidence fallback and remains readable on mobile with limited evidence", async ({ page }) => {
@@ -1354,7 +1360,7 @@ test('Resume Studio asks before connecting its single resume as Main Resume',asy
  expect(uploads).toHaveLength(0);
  await page.getByRole('button',{name:'Set as Main Resume'}).click();
  await page.getByRole('dialog').getByRole('button',{name:'Allow and set Main Resume'}).click();
- await expect(page.getByText('Main Resume updated and saved to Resume Library.')).toBeVisible();
+ await expect(page.getByText(/Main Resume updated from Verified resume and shared across your student features/)).toBeVisible();
  expect(uploads).toEqual([{primary:'true',label:'Verified resume',name:'Verified-resume.pdf'}]);
 });
 

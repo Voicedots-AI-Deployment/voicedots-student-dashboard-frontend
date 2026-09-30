@@ -419,7 +419,7 @@ export function App() {
         </div>
       </aside>
       <div className="dashboard-body">
-        <header className="dashboard-topbar">
+        {location.pathname !== "/resume-studio" && <header className="dashboard-topbar">
           <div>
             <button
               className="icon-button"
@@ -449,7 +449,7 @@ export function App() {
             </button>
             <span className="student-badge">Student</span>
           </div>
-        </header>
+        </header>}
         <main id="main-content" className="dashboard-content">
           {error && <ErrorMessage message={error} />}
           <Routes>
