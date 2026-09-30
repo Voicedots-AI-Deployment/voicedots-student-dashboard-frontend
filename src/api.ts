@@ -100,6 +100,10 @@ export type DriveContext = {
   max_attempts: number;
   action: string;
   can_start_next_attempt?: boolean;
+  coach_gate_required?: boolean;
+  coach_gate_complete?: boolean;
+  coach_gate_locked?: boolean;
+  lock_reason?: string | null;
   publication_status: string;
   decision: string;
   submission_id?: string;

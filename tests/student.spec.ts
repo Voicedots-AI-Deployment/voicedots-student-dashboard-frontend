@@ -429,6 +429,28 @@ test("eligibility without assignment is explained and does not enable interview 
   ).toHaveCount(0);
 });
 
+test("Coach-required score rule keeps the next placement attempt locked", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [
+    { id: "drive-coach", company_name: "Example Company", role_title: "Graduate engineer", status: "active", eligibility_status: "eligible" },
+  ] }));
+  await page.route("**/api/student/drives/drive-coach/interview-context", route => route.fulfill({ json: {
+    drive_id: "drive-coach", company_name: "Example Company", role_title: "Graduate engineer",
+    action: "blocked", assignment_status: "completed", attempt_number: 1, max_attempts: 2,
+    attempts_used: 1, attempts_remaining: 1, attempt_history: [{ attempt_number: 1, submission_id: "sub-1" }],
+    coach_gate_required: true, coach_gate_complete: false, coach_gate_locked: true,
+    lock_reason: "ai_coach_required", eligibility: { status: "eligible" }, interview_window: "open",
+    can_start: false, can_resume: false,
+  } }));
+  await page.goto("/placements");
+  await page.getByRole("button", { name: "View opportunity" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("Complete AI Coach preparation to unlock your next attempt")).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "Continue with AI Coach" })).toHaveAttribute("href", "/coach?drive=drive-coach");
+  await expect(dialog.getByRole("button", { name: /Start attempt/ })).toHaveCount(0);
+  await expect(dialog.getByText(/Your assignment is blocked/)).toHaveCount(0);
+});
+
 test("API failures show retry and expired sessions return to sign in", async ({
   page,
 }) => {

@@ -557,6 +557,7 @@ export function Placements() {
             <>
               {context.action === "not_assigned" && <p className="placement-assignment-pending">{context.interview_window === "closed" ? "This placement drive is closed. You can review its details, but no interview attempt can be started." : "You’re eligible. Your placement cell hasn’t assigned an interview attempt yet, so there’s nothing to start or resume."}</p>}
               {context.action !== "not_assigned" && <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={safeAttemptNumber(attempt.attempt_number)}><div><strong>Attempt {safeAttemptNumber(attempt.attempt_number, 1, context.max_attempts)}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{context.interview_window !== "closed" && (context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {safeAttemptNumber(context.attempt_number, 1, context.max_attempts)}</strong><span>Available to start</span></div></div>}</section>}
+              {context.coach_gate_locked && <section className="gentle-note" role="status"><div><strong>Complete AI Coach preparation to unlock your next attempt</strong><p>Your placement score requires AI Coach teaching, the linked focused practice interview, and independent validation. Opening AI Coach alone will not unlock the attempt.</p><Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Continue with AI Coach <ArrowRight size={16}/></Link></div></section>}
               {context.publication_status === "released" && context.decision && decisionTone(context.decision) !== "shortlisted" && (
                 <p className="placement-decision-note">Placement decision: <strong>{humanize(context.decision)}</strong></p>
               )}
@@ -587,7 +588,7 @@ export function Placements() {
                   </button>
                 )}
               {context.attempt_number > 1 && <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Prepare with your AI Coach</Link>}
-              {!["start", "resume", "retry_preparation"].includes(
+              {!context.coach_gate_locked && !["start", "resume", "retry_preparation"].includes(
                 context.action,
               ) && !(context.action === "completed" && context.attempt_number < context.max_attempts) && (
                 <p>
