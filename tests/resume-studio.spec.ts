@@ -408,6 +408,35 @@ test("the four section controls are one shared component on every Resume Studio 
  await expect(page.getByRole("tablist",{name:"Resume Studio sections"})).toHaveCount(1);
 });
 
+test("section tabs and editor toolbar stay fixed in separate rows while scrolling",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Details",exact:true}).click();
+ const tabs=page.locator(".rs-app-tabs"),toolbar=page.locator(".rs-project-toolbar");await expect(tabs).toHaveCSS("position","sticky");await expect(toolbar).toHaveCSS("position","sticky");
+ await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBeGreaterThan(0);
+ const navBox=await tabs.boundingBox(),toolbarBox=await toolbar.boundingBox();expect(navBox).not.toBeNull();expect(toolbarBox).not.toBeNull();expect(Math.round(navBox!.y)).toBe(81);expect(Math.round(toolbarBox!.y)).toBe(129);expect(toolbarBox!.y).toBeGreaterThanOrEqual(navBox!.y+navBox!.height+7);
+ await expect(tabs.getByRole("tab",{name:"Overview"})).toBeVisible();await expect(tabs.getByRole("tab",{name:"AI tools"})).toBeVisible();
+});
+
+test("resume photo is chosen explicitly, saved with its resume, and profile photo imports only on request",async({page})=>{
+ await mockResumeStudio(page);let profilePhotoRequests=0;const savedDocuments:any[]=[];
+ await page.route("**/api/student/profile/photo",async route=>{profilePhotoRequests++;return route.fulfill({status:200,contentType:"image/png",body:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF8sAAAAASUVORK5CYII=","base64")})});
+ await page.route("**/api/student/resume-studio/resumes/rs-1",async route=>{if(route.request().method()==="PUT")savedDocuments.push(route.request().postDataJSON().document);return route.fallback()});
+ await page.setViewportSize({width:1440,height:1000});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Details",exact:true}).click();
+ await expect(page.getByText("No photo selected",{exact:true})).toBeVisible();expect(profilePhotoRequests).toBe(0);
+ await page.getByLabel("Upload photo for resume").setInputFiles({name:"resume-photo.png",mimeType:"image/png",buffer:Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jF8sAAAAASUVORK5CYII=","base64")});
+ const selectedPhoto=page.locator(".rs-photo-source-preview img");await expect(selectedPhoto).toBeVisible();await expect(selectedPhoto).toHaveAttribute("src",/^data:image\/png;base64,/);await expect(page.getByLabel("Position").getByRole("button",{name:"Right",exact:true})).toBeVisible();
+ await expect.poll(()=>savedDocuments.length).toBeGreaterThan(0);expect(savedDocuments.at(-1).personal_details.photo).toMatch(/^data:image\/png;base64,/);expect(profilePhotoRequests).toBe(0);
+ await page.getByRole("button",{name:"Remove"}).click();await expect(page.getByText("No photo selected",{exact:true})).toBeVisible();await page.getByRole("button",{name:"Import profile photo"}).click();await expect(selectedPhoto).toBeVisible();expect(profilePhotoRequests).toBe(1);
+});
+
+test("AI chat stage controls call the backend to open any selected editing step",async({page})=>{
+ await mockResumeStudio(page);const requests:any[]=[];
+ await page.route("**/api/student/resume-studio/interviews/chat-1/messages",async route=>{if(route.request().method()==="POST"){const payload=route.request().postDataJSON();requests.push(payload);const stage=payload.message.endsWith("Education")?"education":"experience";return route.fulfill({json:{id:"chat-1",messages:[{role:"assistant",text:`Now let's edit **${stage}**.`,kind:"question"}],state:{stage,audit_done:[]},document:baseProject.document,resume_revision:1}})}return route.fallback()});
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"AI tools"}).click();await page.getByRole("button",{name:/Build your resume by chatting/}).click();
+ const stages=page.locator(".rs-chat-stages");await expect(stages.getByRole("button",{name:/Experience/})).toBeEnabled();await stages.getByRole("button",{name:/Experience/}).click();await expect(stages.getByRole("button",{name:/Experience/})).toHaveAttribute("aria-current","step");await expect(page.locator(".rs-chat-message strong")).toHaveText("experience");await expect(page.locator(".rs-chat-log")).not.toContainText("**");
+ await stages.getByRole("button",{name:/Education/}).click();await expect(stages.getByRole("button",{name:/Education/})).toHaveAttribute("aria-current","step");expect(requests.map(item=>item.message)).toEqual(["Go to Experience","Go to Education"]);expect(requests.every(item=>item.expected_revision===1)).toBe(true);
+ await expect(page.locator(".rs-ai-engine")).toHaveCount(0);
+});
+
 test("collapsing the Student Portal sidebar widens the Resume Editor preview with no refresh",async({page})=>{
  await mockResumeStudio(page);await page.setViewportSize({width:1600,height:950});await page.goto("/resume-studio");
  await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();

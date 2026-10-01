@@ -102,7 +102,7 @@
 .resume-studio .rs-studio-nav {
   position: sticky;
   top: 81px;
-  z-index: 25;
+  z-index: 45;
   display: flex;
   width: 100%;
   max-width: 100%;
@@ -505,8 +505,8 @@
 /* ============================================== Resume editor toolbar */
 .resume-studio .rs-project-toolbar {
   position: sticky;
-  top: 97px;
-  z-index: 20;
+  top: 129px;
+  z-index: 44;
   display: flex;
   min-height: 58px;
   flex-wrap: nowrap;
@@ -1031,8 +1031,6 @@
 .resume-studio .rs-ai-tool-list button > span { display: grid; width: 44px; height: 44px; flex: none; place-items: center; border-radius: 12px; background: var(--purple-soft); color: var(--purple); }
 .resume-studio .rs-ai-tool-list strong { display: grid; min-width: 0; gap: 3px; font-size: 15px; font-weight: 600; }
 .resume-studio .rs-ai-tool-list small { color: var(--muted); font-size: 13.5px; font-weight: 400; }
-.resume-studio .rs-ai-engine { display: flex; align-items: flex-start; gap: 8px; padding: 10px 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); color: var(--muted); font-size: 12.5px; }
-.resume-studio .rs-ai-engine svg { flex: none; }
 .resume-studio .rs-ai-working { display: inline-flex; align-items: center; gap: 8px; color: var(--purple); font-size: 13px; }
 .resume-studio .rs-ai-import-file { display: none; }
 .resume-studio .rs-ai-import-action { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
@@ -1089,14 +1087,17 @@
 .resume-studio .rs-chat-builder > .rs-section-heading { flex-wrap: wrap; }
 .resume-studio .rs-chat-builder > .rs-section-heading > div:first-child { flex: 1 1 150px; }
 .resume-studio .rs-chat-stages { display: flex; width: 100%; min-width: 0; gap: 6px; overflow-x: auto; padding: 1px 0; white-space: nowrap; }
-.resume-studio .rs-chat-stages span { flex: 0 0 auto; padding: 5px 10px; border-radius: 999px; background: var(--soft-2); color: var(--muted); font-size: 12px; font-weight: 600; }
-.resume-studio .rs-chat-stages span.active { background: var(--purple); color: #fff; }
+.resume-studio .rs-chat-stages button { flex: 0 0 auto; min-height: 32px; padding: 5px 10px; border: 1px solid transparent; border-radius: 999px; background: var(--soft-2); color: var(--muted); font: 600 12px var(--rs-font-body); cursor: pointer; }
+.resume-studio .rs-chat-stages button:hover:not(:disabled) { border-color: var(--purple-edge); color: var(--purple); }
+.resume-studio .rs-chat-stages button.active { border-color: var(--purple); background: var(--purple); color: #fff; }
+.resume-studio .rs-chat-stages button:disabled { opacity: .55; cursor: default; }
 .resume-studio .rs-chat-end { justify-self: end; margin-top: -8px; font-size: 12px; }
 .resume-studio .rs-chat-log { display: grid; max-height: min(48vh, 500px); min-height: 210px; align-content: start; gap: 10px; overflow: auto; padding: 14px; border-radius: 12px; background: var(--soft); }
 .resume-studio .rs-chat-message { max-width: 88%; padding: 11px 14px; border: 1px solid var(--line); border-radius: 16px 16px 16px 4px; background: var(--card); color: var(--ink); }
 .resume-studio .rs-chat-message.user { justify-self: end; border-color: var(--purple); border-radius: 16px 16px 4px 16px; background: var(--purple); color: #fff; }
 .resume-studio .rs-chat-message > span { font-size: 11px; font-weight: 700; opacity: .8; }
-.resume-studio .rs-chat-message p { margin: 5px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+.resume-studio .rs-chat-message p { margin: 5px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 14px; line-height: 1.6; }
+.resume-studio .rs-chat-message p strong { color: inherit; font-weight: 750; }
 .resume-studio .rs-chat-added-pill { display: inline-flex; margin-top: 8px; padding: 4px 8px; border-radius: 999px; background: var(--purple-soft); color: var(--purple); font-size: 11px; font-weight: 600; }
 .resume-studio .rs-chat-suggestions { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 9px; }
 .resume-studio .rs-chat-suggestions button { min-height: 30px; padding: 4px 10px; border: 1px solid var(--purple-edge); border-radius: 999px; background: var(--purple-soft); color: var(--purple); font: 500 12px var(--rs-font-body); cursor: pointer; }
@@ -1248,7 +1249,7 @@
 .resume-studio .rs-design-screen { display: grid; gap: 18px; }
 .resume-studio .rs-design-tabs {
   position: sticky;
-  top: 0;
+  top: 194px;
   z-index: 3;
   display: inline-flex;
   width: max-content;
@@ -1268,6 +1269,13 @@
 .resume-studio .rs-design-tabs button[aria-selected="true"] { background: var(--card); color: var(--purple); box-shadow: 0 1px 3px rgba(22, 19, 31, .1); }
 .resume-studio .rs-design-group { display: grid; gap: 18px; }
 .resume-studio .rs-design-card { position: relative; display: grid; gap: 18px; padding: 22px 24px 26px; border: 1px solid var(--line); border-radius: var(--radius-card); background: var(--card); }
+.resume-studio .rs-design-card > *,
+.resume-studio .rs-design-card .rs-toggle-row,
+.resume-studio .rs-design-card .rs-font-picker,
+.resume-studio .rs-design-card .rs-segmented-field,
+.resume-studio .rs-design-card .rs-choice-set,
+.resume-studio .rs-design-card .rs-step-meter { width: 100%; min-width: 0; }
+.resume-studio .rs-design-card .rs-toggle-row { flex-direction: row; align-items: center; justify-content: space-between; text-align: left; }
 .resume-studio .rs-design-card-head { display: flex; min-height: 22px; align-items: center; justify-content: space-between; gap: 18px; }
 .resume-studio .rs-design-card-head h3 { position: relative; margin: 0; padding-left: 13px; font: 600 15px/1.4 var(--rs-font-head); }
 .resume-studio .rs-design-card-head h3::before { position: absolute; top: 4px; left: 0; width: 3px; height: 16px; border-radius: 2px; background: var(--purple); content: ""; }
@@ -1305,12 +1313,12 @@
 .resume-studio .rs-template-card > strong { font-size: 14px; font-weight: 600; }
 .resume-studio .rs-template-card > small { display: -webkit-box; overflow: hidden; color: var(--muted); font-size: 12px; -webkit-box-orient: vertical; -webkit-line-clamp: 2; }
 .resume-studio .rs-template-preview { position: relative; display: grid; width: 100%; height: 112px; place-items: center; overflow: hidden; border-radius: 8px; background: var(--soft-2); color: var(--purple); }
-.resume-studio .rs-template-preview iframe { width: 100%; height: 100%; border: 0; pointer-events: none; }
+.resume-studio .rs-template-preview iframe { position: absolute; top: 0; left: 50%; display: block; max-width: none; border: 0; background: white; box-shadow: 0 1px 5px rgba(22, 19, 31, .16); pointer-events: none; transform-origin: top center; }
 .resume-studio .rs-template-tags { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; color: var(--muted); font-size: 10px; }
 .resume-studio .rs-template-tags em { padding: 3px 7px; border-radius: 999px; background: var(--success-soft); color: var(--success); font-style: normal; font-weight: 600; }
 .resume-studio .rs-template-tags em.warn { background: var(--warn-soft); color: var(--warn); }
 .resume-studio .rs-browse-templates {
-  justify-self: center;
+  justify-self: start;
   min-height: 38px;
   padding: 0 18px;
   border: 1px solid var(--line-strong);
@@ -1390,6 +1398,17 @@
 .resume-studio .rs-colour-row button.selected { outline: 2px solid var(--purple); outline-offset: 2px; }
 .resume-studio .rs-custom-colour, .resume-studio .rs-colour-value { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--muted); font-size: 12px; }
 .resume-studio .rs-custom-colour input, .resume-studio .rs-colour-value input { width: 32px; height: 32px; padding: 2px; border: 1px solid var(--line); border-radius: 7px; background: var(--card); cursor: pointer; }
+.resume-studio .rs-photo-source { display: grid; width: 100%; min-width: 0; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--soft); }
+.resume-studio .rs-photo-source-preview { display: grid; min-height: 120px; place-items: center; overflow: hidden; border: 1px dashed var(--line-strong); border-radius: 10px; background: var(--card); color: var(--muted); }
+.resume-studio .rs-photo-source-preview > img { display: block; width: 120px; height: 120px; object-fit: cover; border-radius: 12px; }
+.resume-studio .rs-photo-source-preview > span { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; }
+.resume-studio .rs-photo-source-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.resume-studio .rs-photo-upload-button { position: relative; overflow: hidden; }
+.resume-studio .rs-photo-upload-button input { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; cursor: pointer; }
+.resume-studio .rs-photo-source > small { color: var(--muted); font-size: 12px; line-height: 1.5; }
+.resume-studio .rs-photo-error { margin: 0; color: var(--danger); font-size: 12px; }
+.resume-studio .rs-photo-remove { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 0 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); color: var(--danger); cursor: pointer; }
+.resume-studio .rs-photo-field-summary { display: grid; gap: 8px; padding-top: 4px; color: var(--text); font-size: 13px; }
 .resume-studio .rs-toggle-row { display: flex; min-height: 37px; align-items: center; justify-content: space-between; gap: 12px; color: var(--text); font-size: 13px; text-transform: capitalize; }
 .resume-studio .rs-toggle { position: relative; width: 38px; height: 22px; flex: none; padding: 2px; border: 0; border-radius: 99px; background: var(--line-strong); cursor: pointer; }
 .resume-studio .rs-toggle i { display: block; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; }
