@@ -295,6 +295,7 @@ export function App() {
   );
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
+  const [resumeOverviewActive, setResumeOverviewActive] = useState(() => !new URLSearchParams(window.location.search).has("resume"));
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.setItem("theme", dark ? "dark" : "light");
@@ -419,7 +420,7 @@ export function App() {
         </div>
       </aside>
       <div className="dashboard-body">
-        {location.pathname !== "/resume-studio" && <header className="dashboard-topbar">
+        {(location.pathname !== "/resume-studio" || resumeOverviewActive) && <header className="dashboard-topbar">
           <div>
             <button
               className="icon-button"
@@ -434,11 +435,11 @@ export function App() {
             </span>
           </div>
           <div className="topbar-tools">
-            <span className="college-name" title={displayName(student.college_name) || "Student portal"}>
+            <span className="college-name" title={location.pathname === "/resume-studio" ? displayName(student.full_name) : displayName(student.college_name) || "Student portal"}>
               {auth.identity.logo_url && (
                 <img src={auth.identity.logo_url} alt="" />
               )}
-              {displayName(student.college_name) || "Student portal"}
+              {location.pathname === "/resume-studio" ? displayName(student.full_name) : displayName(student.college_name) || "Student portal"}
             </span>
             <button
               className="icon-button"
@@ -466,7 +467,7 @@ export function App() {
             <Route path="/academics" element={<Academics />} />
             <Route path="/coach" element={<Coach />} />
             <Route path="/coach/skills" element={<CoachSkills />} />
-            <Route path="/resume-studio" element={<ResumeStudio />} />
+            <Route path="/resume-studio" element={<ResumeStudio onOverviewChange={setResumeOverviewActive} />} />
             <Route path="/career" element={<CareerCoach />} />
             <Route path="/coach/session" element={<CoachSessionRoute />} />
             <Route path="/profile" element={<Profile />} />

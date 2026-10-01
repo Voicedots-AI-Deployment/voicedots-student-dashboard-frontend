@@ -4,8 +4,8 @@ const student={student:{id:"s-1",full_name:"Asha Kumar",email:"asha@example.edu"
 const details={full_name:"",headline:"",email:"",phone:"",location:"",website:"",linkedin:"",github:"",links:[],photo:""};
 const baseProject={id:"rs-1",title:"Resume 1",revision:1,source:"created",updated_at:"2026-09-23T10:00:00Z",presentation:{template_id:"classic",paper_size:"a4",layout:"single",font_family:"DM Sans",accent_color:"#6b30e8",body_font_size_pt:9,section_spacing_px:12,margin_horizontal_mm:14},document:{title:"Resume 1",personal_details:details,sections:[]}};
 
-async function mockResumeStudio(page:Page, conflict=false, profileResume=false, existingProject=true, additionalProjects:any[]=[]){
- let project:any={...baseProject,document:{...baseProject.document,personal_details:{...details}}};
+async function mockResumeStudio(page:Page, conflict=false, profileResume=false, existingProject=true, additionalProjects:any[]=[], linkedMain=false){
+ let project:any={...baseProject,linked_resume_id:linkedMain?"profile-1":null,document:{...baseProject.document,personal_details:{...details}}};
  let profileProject:any=null;
  await page.route("**/api/**",async route=>{
   const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
@@ -43,7 +43,12 @@ test("Resume Studio appears below AI Coach and saves project content through the
  const studio=await nav.getByRole("link",{name:"Resume Studio"}).evaluate(el=>Array.from(el.parentElement!.children).indexOf(el));
  expect(studio).toBe(coach+1);
  await page.getByRole("link",{name:"Resume Studio"}).click();
- await expect(page.locator(".rs-studio-header")).toHaveCount(0);await expect(page.locator(".rs-home-intro")).toHaveCSS("background-image","none");await expect(page.locator(".rs-home-intro")).toHaveCSS("border-top-width","0px");await page.screenshot({path:"test-results/resume-studio-header-tabs.png"});
+ await expect(page.locator(".dashboard-topbar")).toBeVisible();
+ await expect(page.locator(".dashboard-topbar .breadcrumb")).toContainText("Workspace");
+ await expect(page.locator(".dashboard-topbar .breadcrumb")).toContainText("Resume Studio");
+ await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
+ await expect(page.locator(".rs-library-tabs")).toHaveCSS("height","52px");
+ await expect(page.getByRole("tab",{name:"Overview"})).toHaveAttribute("aria-selected","true");await expect(page.locator(".rs-home-intro")).toHaveCSS("background-image","none");await expect(page.locator(".rs-home-intro")).toHaveCSS("border-top-width","0px");await page.screenshot({path:"test-results/resume-studio-header-tabs.png"});
  await expect.poll(()=>page.locator(".rs-thumbnail-viewport iframe").first().getAttribute("srcdoc")).toContain('class="rd"');
  await page.getByRole("button",{name:/Open Resume 1/}).click();
  await page.getByRole("tab",{name:"Resume editor"}).click();
@@ -52,29 +57,50 @@ test("Resume Studio appears below AI Coach and saves project content through the
  await expect(page.locator(".rs-save-state")).toHaveText("Saved");
 });
 
-test("Resume Studio does not import a profile resume just by loading; the student can add it explicitly",async({page})=>{
+test("Main Resume from My Profile appears first as one linked Studio resume",async({page})=>{
  await mockResumeStudio(page,false,true,false);await page.goto("/resume-studio");
- await expect(page.locator(".rs-profile-resume").getByText("Asha profile resume",{exact:true})).toBeVisible();
- await expect(page.getByText("This is your active profile resume",{exact:true})).toHaveCount(0);
- await expect(page.getByRole("button",{name:"Add to Resume Studio"})).toBeVisible();
- await expect(page.getByRole("button",{name:/Open Asha profile resume/})).toHaveCount(0);
- await page.getByRole("button",{name:"Add to Resume Studio"}).click();
- await page.getByRole("button",{name:"Add to Resume Studio"}).last().click();
- await page.getByRole("tab",{name:"Overview"}).click();
- await expect(page.getByText("This is your main resume and is synced with Resume Studio.")).toBeVisible();
- const toast=await page.locator(".rs-notice").boundingBox();expect(toast?.x).toBeGreaterThan(0);expect((toast?.x||0)+(toast?.width||0)).toBeLessThanOrEqual(1280);await page.locator(".rs-project-card-new.is-main-resume").screenshot({path:"test-results/resume-studio-overview-main-resume.png"});
- await page.getByRole("button",{name:"Edit in Resume Studio"}).click();
- await expect(page.locator(".rs-editor-heading h1")).toHaveText("Asha profile resume");
- await page.getByRole("tab",{name:"Resume editor"}).click();
- await expect(page.getByLabel("Full name")).toHaveValue("Asha Kumar");
+ await expect(page.locator(".rs-profile-resume")).toHaveCount(0);
+ await expect(page.getByText("1 resume",{exact:true})).toBeVisible();
+ const cards=page.locator(".rs-project-card-new");await expect(cards).toHaveCount(1);
+ await expect(cards.first().getByText("Main resume",{exact:true})).toBeVisible();
+ await expect(cards.first().getByRole("button",{name:/Open Asha profile resume/})).toBeVisible();
+ await expect.poll(()=>page.locator(".rs-thumbnail-viewport iframe").first().getAttribute("srcdoc")).toContain('class="rd"');
+ await expect(page.getByRole("button",{name:"Add to Resume Studio"})).toHaveCount(0);
 });
 
-test("Resume Studio keeps its existing project and does not auto-import the active profile resume",async({page})=>{
- await mockResumeStudio(page,false,true,true);await page.goto("/resume-studio");
+test("Resume Studio places Main Resume first and does not duplicate an already linked profile resume",async({page})=>{
+ await mockResumeStudio(page,false,true,true,[],true);await page.goto("/resume-studio");
  await expect(page.getByText("1 resume",{exact:true})).toBeVisible();
- await expect(page.getByRole("button",{name:/Open Resume 1/})).toBeVisible();
- await expect(page.getByRole("button",{name:/Open Asha profile resume/})).toHaveCount(0);
- await expect(page.getByRole("button",{name:"Add to Resume Studio"})).toBeVisible();
+ const cards=page.locator(".rs-project-card-new");await expect(cards).toHaveCount(1);
+});
+
+test("Main Resume is first while unrelated Studio resumes remain available",async({page})=>{
+ const second={...baseProject,id:"rs-2",title:"Resume 2",updated_at:"2026-09-24T10:00:00Z"};
+ await mockResumeStudio(page,false,true,true,[second]);await page.goto("/resume-studio");
+ await expect(page.getByText("3 resumes",{exact:true})).toBeVisible();
+ const cards=page.locator(".rs-project-card-new");await expect(cards).toHaveCount(3);
+ await expect(cards.first().getByText("Main resume",{exact:true})).toBeVisible();
+ await expect(cards.nth(1).getByRole("button",{name:/Open Resume 2/})).toBeVisible();
+ await expect(cards.nth(2).getByRole("button",{name:/Open Resume 1/})).toBeVisible();
+ await expect(page.getByRole("button",{name:"Add to Resume Studio"})).toHaveCount(0);
+});
+
+test("Main Resume card prevents deletion and its menu closes on outside click",async({page})=>{
+ await mockResumeStudio(page,false,true,false);await page.goto("/resume-studio");
+ const mainCard=page.locator(".rs-project-card-new.is-main-resume");
+ await mainCard.getByRole("button",{name:/Actions for/}).click();
+ const menu=mainCard.getByRole("menu");await expect(menu).toBeVisible();
+ await expect(menu.getByRole("menuitem",{name:/Delete · Main Resume/})).toBeDisabled();
+ const box=await menu.boundingBox();expect(box?.x).toBeGreaterThanOrEqual(0);expect((box?.x||0)+(box?.width||0)).toBeLessThanOrEqual(1280);
+ await page.locator(".rs-home-intro h1").click();await expect(menu).toHaveCount(0);
+});
+
+test("Resume list failures stay compact and can be retried without hiding the Overview",async({page})=>{
+ await mockResumeStudio(page);await page.route("**/api/student/resume-studio/resumes",route=>route.fulfill({status:503,json:{detail:"Unavailable"}}));
+ await page.goto("/resume-studio");
+ await expect(page.locator(".rs-overview-load-error")).toContainText("Your Resume Studio list could not be loaded.");
+ await expect(page.locator(".rs-overview-load-error").getByRole("button",{name:/Retry/})).toBeVisible();
+ await expect(page.locator(".rs-home-intro h1")).toBeVisible();
 });
 
 test("Resume Studio landing actions have consistent button sizing and alignment",async({page})=>{
@@ -94,12 +120,24 @@ test("Resume Studio library fills the desktop workspace with aligned sections an
  const boxes=await page.evaluate(()=>Object.fromEntries([".rs-home-intro",".rs-home-actions",".rs-library-rebuilt",".rs-project-card-new"].map(selector=>{const r=document.querySelector(selector)!.getBoundingClientRect();return[selector,{x:r.x,width:r.width,height:r.height}]})));
  expect(boxes[".rs-home-intro"].width).toBeGreaterThan(1000);
  expect(boxes[".rs-library-rebuilt"].width).toBeGreaterThan(1000);
+ expect(boxes[".rs-library-rebuilt"].width).toBeLessThanOrEqual(1240);
  expect(Math.abs(boxes[".rs-home-intro"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
  expect(Math.abs(boxes[".rs-home-actions"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
- expect(boxes[".rs-home-intro"].width).toBeLessThanOrEqual(1100);
+ expect(boxes[".rs-home-intro"].width).toBeLessThanOrEqual(1240);
  expect(boxes[".rs-project-card-new"].height).toBeLessThan(340);
- expect(boxes[".rs-project-card-new"].width).toBeGreaterThanOrEqual(240);
+ expect(boxes[".rs-project-card-new"].width).toBeGreaterThanOrEqual(220);
  expect(boxes[".rs-project-card-new"].width).toBeLessThanOrEqual(280);
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test("Resume Studio Overview remains usable at tablet and mobile widths",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1024,height:900});await page.goto("/resume-studio");
+ await expect(page.locator(".rs-library-tabs")).toBeVisible();
+ await expect(page.locator(".rs-project-card-new").first()).toBeVisible();
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.setViewportSize({width:390,height:844});
+ await expect(page.locator(".rs-home-intro h1")).toBeVisible();
+ await expect(page.locator(".rs-home-actions > .button")).toHaveCount(3);
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
@@ -174,6 +212,7 @@ test("Resume Studio opens with the guided overview and keeps workspace navigatio
  await expect(page.locator(".rs-editor-heading h1")).toHaveText("Resume 1");
  await expect(page.locator(".rs-preview-panel")).toBeHidden();
  await expect(page.getByRole("tab",{name:"Resume editor"})).toHaveAttribute("aria-current","page");
+ await expect(page.locator(".dashboard-topbar")).toHaveCount(0);
  await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.getByRole("tab",{name:"Template",exact:true})).toBeVisible();await expect(page.getByRole("heading",{name:"Template",exact:true})).toBeVisible();
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
@@ -194,7 +233,7 @@ test("Resume Studio overview uses the full desktop workspace and spacing has wor
  expect(workspace?.width).toBeGreaterThan(1000);expect(editor?.width).toBeGreaterThanOrEqual(540);expect(editor?.width).toBeLessThan(600);await expect(page.locator(".rs-preview-panel")).toBeVisible();
  await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Spacing"}).click();
  await page.screenshot({path:"test-results/resume-studio-spacing-desktop.png",fullPage:true});
- await expect(page.getByText("Add a name or resume content and the live preview will appear here.")).toBeVisible();await expect(page.getByRole("button",{name:"Set as Main Resume"})).toBeDisabled();
+ await expect(page.getByText("Add a name or resume content and the live preview will appear here.")).toBeVisible();await expect(page.getByRole("button",{name:"Set as Main Resume",exact:true})).toBeDisabled();
  const spacing=page.getByRole("slider",{name:"Section spacing"});
  await expect(spacing).toBeVisible();await expect(page.getByRole("slider",{name:"Horizontal margin"})).toHaveCount(0);await spacing.focus();await spacing.press("ArrowRight");await expect(spacing).toHaveAttribute("aria-valuenow","13");await page.getByRole("tab",{name:"Template",exact:true}).click();await expect(page.getByRole("slider",{name:"Horizontal margin"})).toBeVisible();
 });
