@@ -198,6 +198,12 @@ test("Resume Studio autosaves edits and keeps the save state tied to the backend
   await expect(page.getByRole("button",{name:"Choose resume"})).toContainText("Resume 1");
 });
 
+test("Skills editor uses one category field and a dedicated skills list field",async({page})=>{
+ await mockResumeStudio(page);const skills={id:"skills-1",kind:"skills",name:"Skills",hidden:false,column:"aside",variant:"inline",page_break_before:false,entries:[{id:"skill-entry-1",title:"Programming Languages",subtitle:"",location:"",start_date:"",end_date:"",url:"",body_html:"<p>Python, TypeScript</p>",tags:[],hidden:false}]};const project={...baseProject,document:{...baseProject.document,personal_details:{...details},sections:[skills]}};
+ await page.route("**/api/student/resume-studio/resumes",route=>route.fulfill({json:[project]}));await page.route("**/api/student/resume-studio/resumes/rs-1",route=>route.fulfill({json:project}));await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await expect(page.getByLabel("Category")).toHaveValue("Programming Languages");await expect(page.getByRole("textbox",{name:"Skills and tools"})).toContainText("Python, TypeScript");await expect(page.getByLabel("Category or proficiency")).toHaveCount(0);await expect(page.getByText("Skills 1",{exact:true})).toHaveCount(0);await expect(page.getByText("Tags, separated by commas")).toHaveCount(0);
+});
+
 test("Resume Studio undo history coalesces edits and supports undo and redo",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Kumar");await expect(page.locator(".rs-save-state")).toHaveText("Saved");await page.evaluate(()=>{(document.activeElement as HTMLElement|null)?.blur()});
