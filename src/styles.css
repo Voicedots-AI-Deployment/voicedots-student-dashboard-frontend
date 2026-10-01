@@ -2375,3 +2375,64 @@ dialog.modal::backdrop {
   .resume-studio.rs-library-home > .rs-library-tabs { justify-content: flex-start; }
   .resume-studio.rs-library-home > .rs-home-intro { padding-top: 24px; }
 }
+
+/* Keep the same compact button tabs in each of the four Resume Studio sections. */
+.resume-studio.rs-library-home > .rs-library-tabs button::after,
+.resume-studio.rs-project-editor > .rs-app-tabs button::after { display: none !important; content: none !important; }
+.resume-studio.rs-project-editor > .rs-app-tabs {
+  position: static;
+  top: auto;
+  z-index: auto;
+  display: flex;
+  width: max-content;
+  max-width: 100%;
+  height: 40px;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  margin: 0 0 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  scrollbar-width: none;
+}
+.resume-studio.rs-project-editor > .rs-app-tabs::-webkit-scrollbar { display: none; }
+.resume-studio.rs-project-editor > .rs-app-tabs button {
+  position: relative;
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid #ecebf1;
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: none !important;
+  color: #6e6b7b;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.resume-studio.rs-project-editor > .rs-app-tabs button:hover { background: #f7f6fb; }
+.resume-studio.rs-project-editor > .rs-app-tabs button.active,
+.resume-studio.rs-project-editor > .rs-app-tabs button[aria-selected="true"] {
+  border-color: #d9ccfb;
+  background: #f1ecfe;
+  color: #6b30e8;
+  font-weight: 600;
+}
+.resume-studio.rs-project-editor > .rs-app-tabs button:focus-visible { outline: 3px solid #9776ee; outline-offset: 2px; }
+@media (max-width: 780px) {
+  .resume-studio.rs-project-editor > .rs-app-tabs { width: 100%; }
+}
+
+/* Keep card-menu actions on one row and clear the Main Resume badge below them. */
+.resume-studio.rs-library-home .rs-card-menu { bottom: calc(100% + 30px); }
+.resume-studio.rs-library-home .rs-card-menu button {
+  box-sizing: border-box;
+  width: 100%;
+  height: auto;
+  justify-content: flex-start;
+  white-space: nowrap;
+}

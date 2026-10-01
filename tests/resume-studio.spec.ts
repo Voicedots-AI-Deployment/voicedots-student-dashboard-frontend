@@ -48,10 +48,24 @@ test("Resume Studio appears below AI Coach and saves project content through the
  await expect(page.locator(".dashboard-topbar .breadcrumb")).toContainText("Resume Studio");
  await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
  await expect(page.locator(".rs-library-tabs")).toHaveCSS("height","40px");
+ const overviewTabs=page.locator(".rs-library-tabs");
+ for(const name of ["Overview","Resume editor","Design & templates","AI tools"])await expect(overviewTabs.getByRole("tab",{name})).toHaveCSS("border-radius","10px");
+ await expect(overviewTabs.getByRole("tab",{name:"Overview"})).toHaveCSS("background-color","rgb(241, 236, 254)");
+ expect(await overviewTabs.getByRole("tab",{name:"Overview"}).evaluate(el=>getComputedStyle(el,"::after").display)).toBe("none");
+ await expect(overviewTabs).toHaveCSS("border-bottom-width","0px");
  await expect(page.getByRole("tab",{name:"Overview"})).toHaveAttribute("aria-selected","true");await expect(page.locator(".rs-home-intro")).toHaveCSS("background-image","none");await expect(page.locator(".rs-home-intro")).toHaveCSS("border-top-width","0px");await page.screenshot({path:"test-results/resume-studio-header-tabs.png"});
  await expect.poll(()=>page.locator(".rs-thumbnail-viewport iframe").first().getAttribute("srcdoc")).toContain('class="rd"');
  await page.getByRole("button",{name:/Open Resume 1/}).click();
  await page.getByRole("tab",{name:"Resume editor"}).click();
+ const editorTabs=page.locator(".rs-app-tabs");
+ for(const name of ["Overview","Resume editor","Design & templates","AI tools"])await expect(editorTabs.getByRole("tab",{name})).toHaveCSS("border-radius","10px");
+ for(const [name,background] of [["Resume editor","rgb(241, 236, 254)"],["Design & templates","rgb(241, 236, 254)"],["AI tools","rgb(241, 236, 254)"]] as const){
+  await expect(editorTabs.getByRole("tab",{name})).toHaveCSS("border-radius","10px");
+  await editorTabs.getByRole("tab",{name}).click();
+  await expect(editorTabs.getByRole("tab",{name})).toHaveCSS("background-color",background);
+  expect(await editorTabs.getByRole("tab",{name}).evaluate(el=>getComputedStyle(el,"::after").display)).toBe("none");
+ }
+ await editorTabs.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Kumar");
  await expect(page.locator(".rs-save-state")).toHaveText("Unsaved changes");
  await expect(page.locator(".rs-save-state")).toHaveText("Saved");
@@ -92,6 +106,10 @@ test("Main Resume card prevents deletion and its menu closes on outside click",a
  const menu=mainCard.getByRole("menu");await expect(menu).toBeVisible();
  await expect(menu.getByRole("menuitem",{name:/Delete · Main Resume/})).toBeDisabled();
  const box=await menu.boundingBox();expect(box?.x).toBeGreaterThanOrEqual(0);expect((box?.x||0)+(box?.width||0)).toBeLessThanOrEqual(1280);
+ const mainBadge=await mainCard.locator(".rs-main-label").boundingBox();
+ expect(box&&mainBadge).toBeTruthy();expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual(mainBadge?.y||0);
+ await expect(menu.getByRole("menuitem",{name:/Delete · Main Resume/})).toHaveCSS("white-space","nowrap");
+ await expect(menu.getByRole("menuitem",{name:/Delete · Main Resume/})).toHaveCSS("width","196px");
  await page.locator(".rs-home-intro h1").click();await expect(menu).toHaveCount(0);
 });
 
