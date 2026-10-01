@@ -30,8 +30,8 @@ async function mockResumeStudio(page:Page, conflict=false, profileResume=false, 
   if(path==="/api/student/resume-studio/proposals/p-1/accept"&&method==="POST")return route.fulfill({json:{id:"p-1",operation:"review",status:"accepted",source_revision:project.revision,proposal:{changes:[{id:"c-1",target:"headline",field:"headline",before:"",after:"Data Analyst"}],grounding:{grounded:true,unsupported_claims:[]}}}});
   if(path==="/api/student/resume-studio/proposals/p-1/apply"&&method==="POST"){project={...project,revision:project.revision+1};return route.fulfill({json:{resume:project,revision:project.revision,applied_ids:["c-1"]}})}
   if(path.match(/\/api\/student\/resume-studio\/resumes\/[^/]+\/export$/)&&method==="POST")return route.fulfill({status:200,contentType:"application/pdf",body:"%PDF-1.4 test"});
-  if(path==="/api/student/resume-studio/resumes/rs-1/preview"&&method==="POST"){const draft=route.request().postDataJSON();return route.fulfill({contentType:"text/html",body:`<!doctype html><html><head><style>@page{size:A4;margin:0}.pg-wrap{background:#f3f1ec;padding:18px}.rd{box-sizing:border-box;width:210mm;min-height:297mm;margin:auto;padding:24mm;background:white;border:1px solid #ddd;font-family:Arial,sans-serif}.rd h1{font-size:28px}</style></head><body><div class="pg-wrap"><main class="rd tpl-classic layout-single"><h1>${draft.document.personal_details.full_name||draft.title}</h1></main></div></body></html>`})}
-  if(path.match(/\/api\/student\/resume-studio\/resumes\/[^/]+\/preview$/)&&method==="GET")return route.fulfill({contentType:"text/html",body:`<!doctype html><html><head><style>.rd{width:210mm;min-height:297mm;padding:20mm;background:white;border:1px solid #ddd}.rd h1{font:700 28px Georgia}</style></head><body><main class="rd"><h1>${project.document.personal_details.full_name||project.title}</h1><h2>Education</h2></main></body></html>`});
+  if(path.match(/\/api\/student\/resume-studio\/resumes\/[^/]+\/preview$/)&&method==="POST"){const draft=route.request().postDataJSON();return route.fulfill({contentType:"text/html",body:`<!doctype html><html><head><style>@page{size:A4;margin:0}html,body{margin:0;padding:0}*{box-sizing:border-box}.pg-wrap{position:relative;background:#f3f1ec}.rd{position:relative;width:210mm;min-height:297mm;margin:0 auto;padding:24mm;background:white;border:1px solid #ddd;font-family:Arial,sans-serif}.rd h1{font-size:28px}</style></head><body><div class="pg-wrap"><main class="rd tpl-classic layout-single"><h1>${draft.document.personal_details.full_name||draft.title}</h1></main></div></body></html>`})}
+  if(path.match(/\/api\/student\/resume-studio\/resumes\/[^/]+\/preview$/)&&method==="GET")return route.fulfill({contentType:"text/html",body:`<!doctype html><html><head><style>html,body{margin:0}.rd{box-sizing:border-box;width:210mm;min-height:297mm;padding:20mm;background:white;border:1px solid #ddd}.rd h1{font:700 28px Georgia}</style></head><body><main class="rd"><h1>${project.document.personal_details.full_name||project.title}</h1><h2>Education</h2></main></body></html>`});
   return route.fulfill({status:404,json:{detail:`Not found ${method} ${path}`}});
  });
 }
@@ -110,7 +110,7 @@ test("Main Resume card prevents deletion and its menu closes on outside click",a
  const title=await mainCard.locator(".rs-project-open > strong").boundingBox();
  expect(box&&mainBadge&&title).toBeTruthy();expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual((title?.y||0)-8);expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual(mainBadge?.y||0);
  const deleteMain=menu.getByRole("menuitem",{name:/Delete · Main Resume/});
- await expect(deleteMain).toHaveCSS("display","flex");await expect(deleteMain).toHaveCSS("align-items","center");await expect(deleteMain).toHaveCSS("white-space","nowrap");await expect(deleteMain).toHaveCSS("width","196px");await expect(deleteMain).toHaveCSS("height","36px");await expect(deleteMain).toHaveCSS("border-top-width","0px");
+ await expect(deleteMain).toHaveCSS("display","flex");await expect(deleteMain).toHaveCSS("align-items","center");await expect(deleteMain).toHaveCSS("white-space","nowrap");await expect(deleteMain).toHaveCSS("width","198px");await expect(deleteMain).toHaveCSS("height","36px");await expect(deleteMain).toHaveCSS("border-top-width","0px");
  await page.locator(".rs-home-intro h1").click();await expect(menu).toHaveCount(0);
 });
 
@@ -144,11 +144,11 @@ test("Resume Studio Overview shares one aligned container at desktop widths",asy
   });
   expect(Math.max(...layout.lefts)-Math.min(...layout.lefts)).toBeLessThanOrEqual(1);
   expect(layout.navWidth).toBeLessThanOrEqual(1240);
-  expect(layout.navPosition).toBe("static");
-  expect(layout.navBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(layout.navPosition).toBe("sticky");
+  expect(layout.navBackground).toBe("rgb(248, 248, 250)");
   expect(layout.card.height).toBeLessThan(340);
   expect(layout.card.width).toBeGreaterThanOrEqual(220);
-  expect(layout.card.width).toBeLessThanOrEqual(280);
+  expect(layout.card.width).toBeLessThanOrEqual(300);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  }
  await page.screenshot({path:"test-results/resume-studio-library-desktop.png",fullPage:true});
@@ -191,7 +191,7 @@ test("Resume Studio autosaves edits and keeps the save state tied to the backend
  await page.getByLabel("Full name").fill("Asha Autosaved");
  await expect(page.locator(".rs-save-state")).toHaveText("Unsaved changes");
  await expect(page.locator(".rs-save-state")).toHaveText("Saved",{timeout:5000});
- await expect(page.locator(".rs-editor-heading h1")).toHaveText("Resume 1");
+  await expect(page.getByRole("button",{name:"Choose resume"})).toContainText("Resume 1");
 });
 
 test("Resume Studio undo history coalesces edits and supports undo and redo",async({page})=>{
@@ -227,18 +227,18 @@ test("Resume Studio imports a file and downloads an export",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");
  await page.locator('input[type="file"]').setInputFiles({name:"resume.txt",mimeType:"text/plain",buffer:Buffer.from("Asha Kumar\nPython and SQL")});
  await page.getByRole("button",{name:"Import resume",exact:true}).click();
- await expect(page.locator(".rs-editor-heading h1")).toHaveText("Imported resume");
+ await expect(page.getByRole("button",{name:"Choose resume"})).toContainText("Imported resume");
  await page.getByRole("button",{name:"Download"}).click();const download=page.waitForEvent("download");await page.getByRole("menuitem",{name:/PDF/}).click();expect((await download).suggestedFilename()).toContain("Imported-resume.pdf");
 });
 
 test("Resume Studio opens with the guided overview and keeps workspace navigation usable on mobile",async({page})=>{
  await mockResumeStudio(page);await page.setViewportSize({width:390,height:844});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();
- await expect(page.locator(".rs-editor-heading h1")).toHaveText("Resume 1");
+ await expect(page.getByRole("button",{name:"Choose resume"})).toContainText("Resume 1");
  await expect(page.locator(".rs-preview-panel")).toBeHidden();
  await expect(page.getByRole("tab",{name:"Resume editor"})).toHaveAttribute("aria-current","page");
  await expect(page.locator(".dashboard-topbar")).toBeVisible();await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
  await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.getByRole("tab",{name:"Template",exact:true})).toBeVisible();await expect(page.getByRole("heading",{name:"Template",exact:true})).toBeVisible();await expect(page.locator(".dashboard-topbar")).toBeVisible();
- await page.getByRole("tab",{name:"AI tools"}).click();await expect(page.locator(".dashboard-topbar")).toBeVisible();await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
+ await page.locator(".rs-studio-nav").evaluate(element=>{element.scrollLeft=element.scrollWidth});await page.getByRole("tab",{name:"AI tools"}).click();await expect(page.locator(".dashboard-topbar")).toBeVisible();await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
@@ -278,14 +278,29 @@ test("Resume Studio preview renders the unsaved editor draft",async({page})=>{
  const preview=page.frameLocator('iframe[title="Resume preview"]');await expect(preview.locator("main.rd.tpl-classic.layout-single")).toBeVisible();await expect(preview.locator("h1")).toHaveText("Asha Draft Preview");
 });
 
+test("Resume Studio preview reads renderer page metadata and focuses mapped fields on click",async({page})=>{
+ await mockResumeStudio(page);await page.route("**/api/student/resume-studio/resumes/rs-1/preview",async route=>{
+  if(route.request().method()==="POST"){
+   const draft=route.request().postDataJSON();
+   return route.fulfill({contentType:"text/html",body:`<!doctype html><html><head><style>*{box-sizing:border-box}html,body{margin:0}.rd{width:210mm;min-height:297mm;padding:20mm}</style></head><body><main class="rd"><h1 data-edit="p:full_name">${draft.document.personal_details.full_name||draft.title}</h1></main><script>parent.postMessage({type:"resume-preview",pages:2,height:2264},"*");document.querySelector("[data-edit]").addEventListener("click",()=>parent.postMessage({type:"resume-edit",key:"p:full_name"},"*"))</script></body></html>`});
+  }
+  return route.fallback();
+ });
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();await page.getByLabel("Full name").fill("Asha Preview");
+ await expect(page.locator('iframe[title="Resume preview"]')).toBeVisible();
+ await expect(page.locator(".rs-preview-page-size")).toHaveText("2 pages · A4");
+ await page.frameLocator('iframe[title="Resume preview"]').locator("[data-edit='p:full_name']").click();
+ await expect(page.getByLabel("Full name")).toBeFocused();
+});
+
 test("Resume Editor toolbar and fitted preview stay aligned across desktop sizes",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
  await page.getByLabel("Full name").fill("Asha Preview");await expect(page.frameLocator('iframe[title="Resume preview"]').locator(".rd")).toBeVisible();const tabs=page.locator(".rs-app-tabs");await expect(tabs.getByRole("tab",{name:"Resume editor"})).toHaveCSS("height","40px");await expect(tabs.getByRole("tab",{name:"Resume editor"})).toHaveCSS("background-color","rgb(241, 236, 254)");
- const toolbar=page.locator(".rs-project-toolbar");await expect(toolbar).toHaveCSS("min-height","58px");await expect(toolbar.locator(".rs-project-picker")).toHaveCSS("height","40px");await expect(toolbar.locator("button.button.secondary").first()).toHaveCSS("height","40px");await expect(toolbar.locator("button.button.primary")).toHaveCSS("height","40px");await expect(toolbar.locator(".rs-toolbar-kebab")).toHaveCSS("height","40px");await expect(page.locator(".rs-preview-page-size")).toHaveText("A4 preview");await expect(page.locator(".rs-preview-edit-hint")).toHaveText("Edit content in the editor");
+ const toolbar=page.locator(".rs-project-toolbar");await expect(toolbar).toHaveCSS("min-height","58px");await expect(toolbar.locator(".rs-project-picker")).toHaveCSS("height","40px");await expect(toolbar.locator("button.button.secondary").first()).toHaveCSS("height","40px");await expect(toolbar.locator("button.button.primary")).toHaveCSS("height","40px");await expect(toolbar.locator(".rs-toolbar-kebab")).toHaveCSS("height","40px");await expect(page.locator(".rs-preview-page-size")).toHaveText("1 page · A4");await expect(page.locator(".rs-preview-edit-hint")).toHaveText("Click text to edit it");
  for(const width of [1920,1600,1440,1280]){
   await page.setViewportSize({width,height:1000});
   const editor=await page.locator(".rs-editor").boundingBox(),preview=await page.locator(".rs-preview-panel").boundingBox();
-  expect(editor?.width).toBeGreaterThanOrEqual(width<=1300?350:400);expect(editor?.width).toBeLessThan(510);expect(preview?.width).toBeGreaterThan(editor?.width||0);
+  expect(editor?.width).toBeGreaterThanOrEqual(width<=1300?350:400);expect(editor?.width).toBeLessThanOrEqual(560);expect(preview?.width).toBeGreaterThan(editor?.width||0);expect((preview?.width||0)/((editor?.width||0)+(preview?.width||0))).toBeGreaterThan(.55);
   const paper=page.frameLocator('iframe[title="Resume preview"]').locator(".rd");await expect(paper).toBeVisible();
   await expect.poll(()=>paper.evaluate(element=>element.ownerDocument.documentElement.scrollWidth<=element.ownerDocument.documentElement.clientWidth+1)).toBe(true);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
@@ -341,6 +356,15 @@ test("Build with AI chat opens the guided conversation after creating the projec
  await expect(page.getByText("What experience should we include?")).toBeVisible();
 });
 
+test("AI chat uses backend reply chips and added-to-resume evidence",async({page})=>{
+ await mockResumeStudio(page);
+ await page.route("**/api/student/resume-studio/resumes/rs-1/interviews",route=>route.fulfill({json:{id:"chat-1",messages:[{role:"assistant",text:"What role are you targeting?",chips:["Software engineer","Data analyst"],kind:"text"},{role:"assistant",text:"✓ Added your experience.",chips:["Add education"],kind:"added"}],state:{stage:"experience"},document:baseProject.document,resume_revision:baseProject.revision}}));
+ await page.goto("/resume-studio");await page.getByRole("button",{name:"Build with AI chat"}).click();
+ await expect(page.getByRole("status").filter({hasText:"Added to your resume"})).toBeVisible();
+ const suggestions=page.getByRole("group",{name:"Suggested replies"});await expect(suggestions).toBeVisible();
+ await suggestions.getByRole("button",{name:"Add education"}).click();await expect(page.locator(".rs-chat-form textarea")).toHaveValue("Add education");
+});
+
 test("choosing a design template applies its presentation settings and saves them",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();
  await page.getByRole("button",{name:/Editorial Clear modern layout/}).click();
@@ -357,4 +381,82 @@ test("AI chat starts from the hub and restart confirms whether to preserve or cl
  await dialog.getByRole("button",{name:"Keep my details"}).click();await expect.poll(()=>restarts.length).toBe(2);expect(restarts[1]).toEqual({restart:true});
  await page.getByRole("button",{name:"Restart"}).click();await page.getByRole("dialog").getByRole("button",{name:"Clear everything"}).click();
  await expect(page.getByText("Saving a clean resume revision before restarting the chat.")).toBeVisible();await expect.poll(()=>restarts.length).toBe(3);expect(restarts[2]).toEqual({restart:true});
+});
+
+
+test("the four section controls are one shared component on every Resume Studio screen",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");
+ const names=["Overview","Resume editor","Design & templates","AI tools"];
+ const measure=async(scope:string)=>page.locator(scope).evaluate(nav=>Array.from(nav.querySelectorAll("button")).map(button=>{
+  const style=getComputedStyle(button);
+  return [style.height,style.paddingLeft,style.paddingRight,style.borderRadius,getComputedStyle(button,"::after").display].join("|");
+ }).concat([getComputedStyle(nav).gap]));
+ const overview=await measure(".rs-library-tabs");
+ expect(new Set(overview.slice(0,4).map(row=>row.split("|").slice(0,4).join("|"))).size).toBe(1);
+ expect(overview.every(row=>!row.endsWith("block"))).toBe(true);
+ expect(overview.at(-1)).toBe("8px");
+ await page.getByRole("button",{name:/Open Resume 1/}).click();
+ for(const name of names.slice(1)){
+  await page.locator(".rs-app-tabs").getByRole("tab",{name}).click();
+  const current=await measure(".rs-app-tabs");
+  expect(current.slice(0,4).map(row=>row.split("|").slice(0,4).join("|"))).toEqual(overview.slice(0,4).map(row=>row.split("|").slice(0,4).join("|")));
+  expect(current.at(-1)).toBe("8px");
+  await expect(page.locator(".rs-app-tabs").getByRole("tab",{name})).toHaveCSS("background-color","rgb(241, 236, 254)");
+  await expect(page.locator(".rs-app-tabs").getByRole("tab",{name})).toHaveCSS("color","rgb(107, 48, 232)");
+ }
+ // Only one navigation on the page: the old duplicate workspace rail is gone.
+ await expect(page.getByRole("tablist",{name:"Resume Studio sections"})).toHaveCount(1);
+});
+
+test("collapsing the Student Portal sidebar widens the Resume Editor preview with no refresh",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1600,height:950});await page.goto("/resume-studio");
+ await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.getByLabel("Full name").fill("Asha Kumar");
+ await expect(page.frameLocator('iframe[title="Resume preview"]').locator(".rd")).toBeVisible();
+ const expanded=await page.locator(".rs-preview-frame").boundingBox();
+ const expandedSheet=await page.locator(".rs-preview-stage").boundingBox();
+ await page.getByRole("button",{name:"Close navigation"}).click();
+ await expect.poll(async()=>(await page.locator(".rs-preview-frame").boundingBox())!.width).toBeGreaterThan(expanded!.width+100);
+ const collapsedSheet=await page.locator(".rs-preview-stage").boundingBox();
+ expect(collapsedSheet!.width).toBeGreaterThan(expandedSheet!.width);
+ // No fixed sidebar-width margin is left behind and nothing is clipped.
+ expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.getByRole("button",{name:"Open navigation"}).click();
+ await expect.poll(async()=>Math.round((await page.locator(".rs-preview-frame").boundingBox())!.width)).toBe(Math.round(expanded!.width));
+});
+
+test("the preview sheet keeps A4 proportions and stays centred in its panel",async({page})=>{
+ await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");
+ await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.getByLabel("Full name").fill("Asha Kumar");
+ const sheet=page.locator(".rs-preview-stage");await expect(sheet).toBeVisible();
+ const box=await sheet.boundingBox(),frame=await page.locator(".rs-preview-frame").boundingBox();
+ expect(box!.height/box!.width).toBeCloseTo(1123/794,1);
+ expect(box!.width).toBeLessThanOrEqual(frame!.width);
+ const leftGap=box!.x-frame!.x,rightGap=frame!.x+frame!.width-(box!.x+box!.width);
+ expect(Math.abs(leftGap-rightGap)).toBeLessThanOrEqual(2);
+ await page.getByRole("button",{name:"Zoom in"}).click();
+ await expect(page.locator(".rs-preview-zoom-value")).toHaveText("110%");
+ const zoomed=await sheet.boundingBox();
+ expect(zoomed!.width).toBeGreaterThan(box!.width);
+ expect(zoomed!.height/zoomed!.width).toBeCloseTo(1123/794,1);
+});
+
+test("a resume card without a Main resume badge keeps the same metadata rhythm",async({page})=>{
+ await mockResumeStudio(page,false,true,true);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");
+ const cards=page.locator(".rs-project-card-new");
+ await expect(cards).toHaveCount(2);
+ const main=cards.filter({has:page.locator(".rs-main-label")}).first();
+ const plain=cards.filter({hasNot:page.locator(".rs-main-label")}).first();
+ for(const card of [main,plain]){
+  const title=await card.locator(".rs-project-open > strong").boundingBox();
+  const meta=await card.locator(".rs-project-open > span:not(.rs-card-paper):not(.rs-main-label)").boundingBox();
+  const cardBox=await card.boundingBox();
+  expect(Math.round(meta!.x-title!.x)).toBe(16);
+  // The metadata row sits a consistent distance above the bottom of the card.
+  expect(Math.round(cardBox!.y+cardBox!.height-(meta!.y+meta!.height))).toBeLessThanOrEqual(16);
+  // The rendered page, not the text, owns most of the card.
+  const paper=await card.locator(".rs-card-paper").boundingBox();
+  expect(paper!.height/cardBox!.height).toBeGreaterThan(.6);
+ }
 });
