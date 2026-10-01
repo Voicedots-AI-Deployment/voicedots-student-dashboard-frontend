@@ -156,12 +156,12 @@
   .resume-studio .rs-template-strip.gallery { grid-template-columns: minmax(0, 1fr); }
   .resume-studio .rs-choice-tiles { grid-template-columns: repeat(auto-fit, minmax(94px, 1fr)); }
   .resume-studio .rs-design-reset-all { flex-direction: column; align-items: flex-start; }
-  .resume-studio .rs-design-tabs { width: 100%; }
+  .resume-studio .rs-design-tabs { width: calc(100% - 32px); margin: 16px 16px 0; }
   .resume-studio .rs-design-tabs button { flex: 1; padding-inline: 6px; font-size: 12px; }
 }
 
 @media (max-width: 620px) {
-  .resume-studio .rs-project-grid { grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 14px; }
+  .resume-studio .rs-project-grid { grid-template-columns: repeat(auto-fill, minmax(min(100%, 180px), 210px)); gap: 14px; }
   .resume-studio .rs-add-content-modal { max-height: calc(100vh - 24px); }
   .resume-studio .rs-add-content-modal > header { padding: 18px 18px 12px; }
   .resume-studio .rs-add-content-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; padding: 0 18px 18px; }

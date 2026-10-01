@@ -145,13 +145,14 @@ test("Resume Studio Overview shares one aligned container at desktop widths",asy
   expect(Math.max(...layout.lefts)-Math.min(...layout.lefts)).toBeLessThanOrEqual(1);
   // Overview now shares the full shell gutter with every workspace section.
   expect(layout.navWidth).toBe(await page.locator(".resume-studio").evaluate(el=>el.getBoundingClientRect().width));
-  expect(layout.navPosition).toBe("sticky");
+  expect(layout.navPosition).toBe("relative");
   expect(layout.navBackground).toBe("rgb(248, 248, 250)");
   // Show the entire first paper page, rather than the former cropped 190px thumbnail.
   const thumb=await page.locator(".rs-card-paper").first().boundingBox();
-  expect(thumb!.height/ thumb!.width).toBeCloseTo(1123/794,1);
-  expect(layout.card.width).toBeGreaterThanOrEqual(220);
-  expect(layout.card.width).toBeLessThanOrEqual(300);
+  expect(thumb!.height).toBe(220);expect(thumb!.width).toBeLessThanOrEqual(210);
+  const sheet=(await page.locator(".rs-thumbnail-viewport iframe").first().boundingBox())!;expect(sheet.x).toBeGreaterThanOrEqual(thumb!.x-1);expect(sheet.x+sheet.width).toBeLessThanOrEqual(thumb!.x+thumb!.width+1);expect(sheet.height/sheet.width).toBeCloseTo(1123/794,1);
+  expect(layout.card.width).toBeGreaterThanOrEqual(190);
+  expect(layout.card.width).toBeLessThanOrEqual(210);
   expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
  }
  await page.screenshot({path:"test-results/resume-studio-library-desktop.png",fullPage:true});
@@ -411,12 +412,11 @@ test("the four section controls are one shared component on every Resume Studio 
  await expect(page.getByRole("tablist",{name:"Resume Studio sections"})).toHaveCount(1);
 });
 
-test("section tabs and editor toolbar stay fixed in separate rows while scrolling",async({page})=>{
+test("section navigation and design groups scroll away while the toolbar stays accessible",async({page})=>{
  await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Details",exact:true}).click();
- const tabs=page.locator(".rs-app-tabs"),toolbar=page.locator(".rs-project-toolbar");await expect(tabs).toHaveCSS("position","sticky");await expect(toolbar).toHaveCSS("position","sticky");
- await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await expect.poll(()=>page.evaluate(()=>window.scrollY)).toBeGreaterThan(0);
- const navBox=await tabs.boundingBox(),toolbarBox=await toolbar.boundingBox();expect(navBox).not.toBeNull();expect(toolbarBox).not.toBeNull();expect(Math.round(navBox!.y)).toBe(81);expect(Math.round(toolbarBox!.y)).toBe(129);expect(toolbarBox!.y).toBeGreaterThanOrEqual(navBox!.y+navBox!.height+7);
- await expect(tabs.getByRole("tab",{name:"Overview"})).toBeVisible();await expect(tabs.getByRole("tab",{name:"AI tools"})).toBeVisible();
+ const tabs=page.locator(".rs-app-tabs"),toolbar=page.locator(".rs-project-toolbar"),groups=page.locator(".rs-design-tabs");await expect(tabs).not.toHaveCSS("position","sticky");await expect(groups).toHaveCSS("position","static");await expect(toolbar).toHaveCSS("position","sticky");
+ await page.evaluate(()=>window.scrollTo(0,800));const nav=(await tabs.boundingBox())!,group=(await groups.boundingBox())!,bar=(await toolbar.boundingBox())!;expect(nav.y+nav.height).toBeLessThan(0);expect(group.y+group.height).toBeLessThan(0);expect(Math.round(bar.y)).toBe(89);
+ await page.evaluate(()=>window.scrollTo(0,0));await expect(tabs.getByRole("tab",{name:"Overview"})).toBeInViewport();await expect(groups.getByRole("tab",{name:"Details"})).toBeInViewport();
 });
 
 test("resume photo is chosen explicitly, saved with its resume, and profile photo imports only on request",async({page})=>{
@@ -501,7 +501,7 @@ test("all sections keep the same workspace columns and navigation gutter",async(
 
 test("sticky toolbar and preview stay separated at short desktop and phone sizes",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Details",exact:true}).click();
- for(const [width,height] of [[1366,768],[1440,900],[1920,900],[390,844]]){await page.setViewportSize({width,height});await page.evaluate(()=>window.scrollTo(0,800));await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);const nav=(await page.locator(".rs-studio-nav").boundingBox())!,toolbar=(await page.locator(".rs-project-toolbar").boundingBox())!,groups=(await page.locator(".rs-design-tabs").boundingBox())!;expect(toolbar.y).toBeGreaterThanOrEqual(nav.y+nav.height+7);expect(groups.y).toBeGreaterThanOrEqual(toolbar.y+toolbar.height+11);if(width>1100){const preview=(await page.locator(".rs-preview-panel").boundingBox())!;expect(preview.y).toBeGreaterThanOrEqual(toolbar.y+toolbar.height+11);expect(preview.y+preview.height).toBeLessThanOrEqual(height-15)}}
+ for(const [width,height] of [[1366,768],[1440,900],[1920,900],[390,844]]){await page.setViewportSize({width,height});await page.evaluate(()=>window.scrollTo(0,800));await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);const nav=(await page.locator(".rs-studio-nav").boundingBox())!,toolbar=(await page.locator(".rs-project-toolbar").boundingBox())!,groups=(await page.locator(".rs-design-tabs").boundingBox())!;expect(toolbar.y).toBeGreaterThanOrEqual(nav.y+nav.height+7);expect(groups.y+groups.height).toBeLessThan(0);if(width>1100){const preview=(await page.locator(".rs-preview-panel").boundingBox())!;expect(preview.y).toBeGreaterThanOrEqual(toolbar.y+toolbar.height+11);expect(preview.y+preview.height).toBeLessThanOrEqual(height-15)}}
 });
 
 test("photo settings are absent before a photo exists and crop preview follows selection",async({page})=>{
@@ -526,3 +526,5 @@ test("Letter preview uses Letter dimensions without horizontal clipping",async({
 test("changing from scrolled design settings to a short AI tool brings its heading below sticky controls",async({page})=>{
  await mockResumeStudio(page);await page.setViewportSize({width:1440,height:900});await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await page.getByRole("tab",{name:"Details",exact:true}).click();await page.evaluate(()=>window.scrollTo(0,document.body.scrollHeight));await page.getByRole("tab",{name:"AI tools",exact:true}).click();await page.locator(".rs-ai-tool-list").getByRole("button",{name:/Version history/}).click();await expect.poll(()=>page.evaluate(()=>{const toolbar=document.querySelector(".rs-project-toolbar")!.getBoundingClientRect(),preview=document.querySelector(".rs-preview-panel")!.getBoundingClientRect(),nav=document.querySelector(".rs-studio-nav")!.getBoundingClientRect(),shell=document.querySelector(".dashboard-topbar")!.getBoundingClientRect();return preview.top>=toolbar.bottom+11&&nav.top>=shell.bottom})).toBe(true);
 });
+
+ test("design colour controls align as label and swatch rows",async({page})=>{await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.locator(".rs-colour-value").first()).toHaveCSS("flex-direction","row");await expect(page.locator(".rs-custom-colour")).toHaveCSS("flex-direction","row");await expect(page.locator(".rs-design-tabs")).toHaveCSS("position","static");});

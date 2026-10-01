@@ -108,9 +108,9 @@
    Overview, Resume editor, Design & templates and AI tools are the same
    component on every screen, so they share one rule set here. */
 .resume-studio .rs-studio-nav {
-  position: sticky;
-  top: var(--rs-shell-height);
-  z-index: 45;
+  position: relative;
+  top: auto;
+  z-index: 1;
   display: flex;
   width: 100%;
   max-width: 100%;
@@ -331,7 +331,7 @@
 .resume-studio .rs-project-grid {
   display: grid;
   width: 100%;
-  grid-template-columns: repeat(auto-fill, minmax(226px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(min(100%, 190px), 210px));
   gap: 18px;
   align-items: start;
   margin-top: 18px;
@@ -382,7 +382,7 @@
   display: block;
   width: 100%;
   min-height: 0;
-  aspect-ratio: 794 / 1123;
+  height: 220px;
   flex: none;
   overflow: hidden;
   padding: 0;
@@ -469,7 +469,7 @@
   position: absolute;
   z-index: 40;
   right: 0;
-  bottom: calc(100% + 70px);
+  bottom: calc(100% + 82px);
   display: grid;
   width: 212px;
   gap: 2px;
@@ -1284,11 +1284,12 @@
 /* ============================================ Design & templates */
 .resume-studio .rs-design-screen { display: grid; gap: 18px; }
 .resume-studio .rs-design-tabs {
-  position: sticky;
-  top: var(--rs-workspace-top);
-  z-index: 3;
-  display: inline-flex;
-  width: max-content;
+  position: static;
+  top: auto;
+  z-index: auto;
+  display: flex;
+  width: calc(100% - 40px);
+  margin: 16px 20px 0;
   max-width: 100%;
   align-self: flex-start;
   gap: 2px;
@@ -1299,7 +1300,7 @@
   background: var(--soft-2);
   scrollbar-width: none;
 }
-.resume-studio .rs-design-tabs button { min-height: 36px; padding: 0 18px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 13.5px; font-weight: 600; cursor: pointer; }
+.resume-studio .rs-design-tabs button { flex: 1; min-width: 0; min-height: 36px; padding: 0 8px; border: 0; border-radius: 9px; background: transparent; color: var(--muted); font-size: 13.5px; font-weight: 600; cursor: pointer; }
 .resume-studio .rs-design-tabs button:hover { color: var(--ink); }
 .resume-studio .rs-design-tabs button.selected,
 .resume-studio .rs-design-tabs button[aria-selected="true"] { background: var(--card); color: var(--purple); box-shadow: 0 1px 3px rgba(22, 19, 31, .1); }
@@ -1452,7 +1453,7 @@
 .resume-studio .rs-toggle i { display: block; width: 18px; height: 18px; border-radius: 50%; background: #fff; transition: transform .15s; }
 .resume-studio .rs-toggle.on { background: var(--purple); }
 .resume-studio .rs-toggle.on i { transform: translateX(16px); }
-.resume-studio .rs-design-reset-all { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 18px 0 0; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
+.resume-studio .rs-design-reset-all { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px; padding: 20px; border-top: 1px solid var(--line); color: var(--muted); font-size: 13px; }
 .resume-studio .rs-design-reset-all > div:not(.rs-fit-result) { display: flex; flex-wrap: wrap; gap: 8px; }
 .resume-studio .rs-fit-result { display: flex; width: 100%; flex-wrap: wrap; align-items: center; gap: 10px; padding: 14px; border: 1px solid var(--line); border-radius: 10px; background: var(--soft); }
 .resume-studio .rs-fit-result ul { flex-basis: 100%; margin: 0; }
@@ -1469,3 +1470,11 @@
 .resume-studio .rs-ai-actions-label { width: 100%; color: var(--muted); font-size: 12px; font-weight: 500; }
 .resume-studio .error-message { padding: 12px 14px; font-size: 13px; margin: 0; }
 .resume-studio .rs-import-selection strong { overflow-wrap: anywhere; }
+
+/* Keep design label/control pairs independent of the portal's column labels. */
+.resume-studio .rs-design-screen label.rs-custom-colour,
+.resume-studio .rs-design-screen label.rs-colour-value,
+.resume-studio .rs-design-screen label.rs-toggle-row { flex-direction: row; text-align: left; justify-content: space-between; width: 100%; margin: 0; }
+.resume-studio .rs-design-screen .rs-option-segments { display: grid; grid-auto-flow: column; grid-auto-columns: minmax(0, 1fr); }
+.resume-studio .rs-design-screen .rs-option-segments:has(button:nth-child(5)) { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.resume-studio .rs-design-screen .rs-option-segments button { min-width: 0; padding: 0 6px; }
