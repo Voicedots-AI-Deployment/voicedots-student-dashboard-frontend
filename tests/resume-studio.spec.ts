@@ -47,7 +47,7 @@ test("Resume Studio appears below AI Coach and saves project content through the
  await expect(page.locator(".dashboard-topbar .breadcrumb")).toContainText("Workspace");
  await expect(page.locator(".dashboard-topbar .breadcrumb")).toContainText("Resume Studio");
  await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
- await expect(page.locator(".rs-library-tabs")).toHaveCSS("height","52px");
+ await expect(page.locator(".rs-library-tabs")).toHaveCSS("height","40px");
  await expect(page.getByRole("tab",{name:"Overview"})).toHaveAttribute("aria-selected","true");await expect(page.locator(".rs-home-intro")).toHaveCSS("background-image","none");await expect(page.locator(".rs-home-intro")).toHaveCSS("border-top-width","0px");await page.screenshot({path:"test-results/resume-studio-header-tabs.png"});
  await expect.poll(()=>page.locator(".rs-thumbnail-viewport iframe").first().getAttribute("srcdoc")).toContain('class="rd"');
  await page.getByRole("button",{name:/Open Resume 1/}).click();
@@ -114,20 +114,25 @@ test("Resume Studio landing actions have consistent button sizing and alignment"
 });
 
 
-test("Resume Studio library fills the desktop workspace with aligned sections and compact resume cards",async({page})=>{
- await mockResumeStudio(page);await page.setViewportSize({width:1700,height:900});await page.goto("/resume-studio");
+test("Resume Studio Overview shares one aligned container at desktop widths",async({page})=>{
+ await mockResumeStudio(page);await page.goto("/resume-studio");
+ for(const width of [1920,1440,1280]){
+  await page.setViewportSize({width,height:900});
+  const layout=await page.evaluate(()=>{
+   const selectors=[".rs-library-tabs button:first-child",".rs-home-kicker",".rs-home-intro h1",".rs-home-actions",".rs-library-rebuilt"];
+   const boxes=selectors.map(selector=>document.querySelector(selector)!.getBoundingClientRect());
+   return {lefts:boxes.map(box=>box.left),navWidth:document.querySelector(".rs-library-tabs")!.getBoundingClientRect().width,navPosition:getComputedStyle(document.querySelector(".rs-library-tabs")!).position,navBackground:getComputedStyle(document.querySelector(".rs-library-tabs")!).backgroundColor,card:document.querySelector(".rs-project-card-new")!.getBoundingClientRect().toJSON()};
+  });
+  expect(Math.max(...layout.lefts)-Math.min(...layout.lefts)).toBeLessThanOrEqual(1);
+  expect(layout.navWidth).toBeLessThanOrEqual(1240);
+  expect(layout.navPosition).toBe("static");
+  expect(layout.navBackground).toBe("rgba(0, 0, 0, 0)");
+  expect(layout.card.height).toBeLessThan(340);
+  expect(layout.card.width).toBeGreaterThanOrEqual(220);
+  expect(layout.card.width).toBeLessThanOrEqual(280);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ }
  await page.screenshot({path:"test-results/resume-studio-library-desktop.png",fullPage:true});
- const boxes=await page.evaluate(()=>Object.fromEntries([".rs-home-intro",".rs-home-actions",".rs-library-rebuilt",".rs-project-card-new"].map(selector=>{const r=document.querySelector(selector)!.getBoundingClientRect();return[selector,{x:r.x,width:r.width,height:r.height}]})));
- expect(boxes[".rs-home-intro"].width).toBeGreaterThan(1000);
- expect(boxes[".rs-library-rebuilt"].width).toBeGreaterThan(1000);
- expect(boxes[".rs-library-rebuilt"].width).toBeLessThanOrEqual(1240);
- expect(Math.abs(boxes[".rs-home-intro"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
- expect(Math.abs(boxes[".rs-home-actions"].x-boxes[".rs-library-rebuilt"].x)).toBeLessThanOrEqual(2);
- expect(boxes[".rs-home-intro"].width).toBeLessThanOrEqual(1240);
- expect(boxes[".rs-project-card-new"].height).toBeLessThan(340);
- expect(boxes[".rs-project-card-new"].width).toBeGreaterThanOrEqual(220);
- expect(boxes[".rs-project-card-new"].width).toBeLessThanOrEqual(280);
- expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
 test("Resume Studio Overview remains usable at tablet and mobile widths",async({page})=>{
@@ -212,8 +217,9 @@ test("Resume Studio opens with the guided overview and keeps workspace navigatio
  await expect(page.locator(".rs-editor-heading h1")).toHaveText("Resume 1");
  await expect(page.locator(".rs-preview-panel")).toBeHidden();
  await expect(page.getByRole("tab",{name:"Resume editor"})).toHaveAttribute("aria-current","page");
- await expect(page.locator(".dashboard-topbar")).toHaveCount(0);
- await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.getByRole("tab",{name:"Template",exact:true})).toBeVisible();await expect(page.getByRole("heading",{name:"Template",exact:true})).toBeVisible();
+ await expect(page.locator(".dashboard-topbar")).toBeVisible();await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
+ await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.getByRole("tab",{name:"Template",exact:true})).toBeVisible();await expect(page.getByRole("heading",{name:"Template",exact:true})).toBeVisible();await expect(page.locator(".dashboard-topbar")).toBeVisible();
+ await page.getByRole("tab",{name:"AI tools"}).click();await expect(page.locator(".dashboard-topbar")).toBeVisible();await expect(page.locator(".dashboard-topbar")).toHaveCSS("position","sticky");
  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
@@ -226,7 +232,7 @@ test("Resume Studio overview uses the full desktop workspace and spacing has wor
   toolbar:document.querySelector(".rs-project-toolbar")!.getBoundingClientRect().top,
   shellHeader:document.querySelector(".dashboard-topbar"),
  }));
- expect(toolbarClearance.shellHeader).toBeNull();
+ expect(toolbarClearance.shellHeader).not.toBeNull();await expect(page.locator(".dashboard-topbar")).toBeVisible();await expect(page.locator(".dashboard-topbar")).toHaveCSS("top","0px");
  await page.screenshot({path:"test-results/resume-studio-toolbar-scrolled-desktop.png"});
  await page.evaluate(()=>window.scrollTo(0,0));
  const workspace=await page.locator(".rs-workspace").boundingBox();const editor=await page.locator(".rs-editor").boundingBox();

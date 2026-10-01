@@ -2309,3 +2309,69 @@ dialog.modal::backdrop {
   .resume-studio.rs-library-home .rs-project-card-new .rs-card-paper { height: 220px; min-height: 220px; }
   .resume-studio.rs-library-home .rs-overview-load-error { align-items: flex-start; flex-direction: column; }
 }
+
+/* Shared Overview container and compact section navigation. */
+.dashboard-content:has(.resume-studio.rs-library-home) { padding-top: 28px; }
+.resume-studio.rs-library-home { --rs-overview-container-width: min(calc(100% - 64px), 1240px); }
+.resume-studio.rs-library-home > .rs-library-tabs,
+.resume-studio.rs-library-home > .rs-home-intro,
+.resume-studio.rs-library-home > .rs-home-actions,
+.resume-studio.rs-library-home > .rs-library-rebuilt,
+.resume-studio.rs-library-home > .rs-import-selection {
+  box-sizing: border-box;
+  width: var(--rs-overview-container-width);
+  max-width: 1240px;
+  margin-left: auto;
+  margin-right: auto;
+}
+.resume-studio.rs-library-home > .rs-library-tabs {
+  position: static;
+  top: auto;
+  z-index: auto;
+  display: flex;
+  height: 40px;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+  scrollbar-width: none;
+}
+.resume-studio.rs-library-home > .rs-library-tabs::-webkit-scrollbar { display: none; }
+.resume-studio.rs-library-home > .rs-library-tabs button {
+  flex: 0 0 auto;
+  min-height: 40px;
+  padding: 0 15px;
+  border: 1px solid #ecebf1;
+  border-radius: 10px;
+  background: #fff;
+  color: #6e6b7b;
+  font-size: 14px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+.resume-studio.rs-library-home > .rs-library-tabs button:hover { background: #f7f6fb; }
+.resume-studio.rs-library-home > .rs-library-tabs button[aria-selected="true"] {
+  border-color: #d9ccfb;
+  background: #f1ecfe;
+  color: #6b30e8;
+  font-weight: 600;
+}
+.resume-studio.rs-library-home > .rs-library-tabs button:focus-visible {
+  outline: 3px solid #9776ee;
+  outline-offset: 2px;
+}
+.resume-studio.rs-library-home > .rs-home-intro { margin-top: 0; padding: 28px 0 0; }
+.resume-studio.rs-library-home > .rs-home-actions { margin-top: 24px; }
+.resume-studio.rs-library-home > .rs-library-rebuilt { margin-top: 38px; }
+@media (max-width: 900px) {
+  .resume-studio.rs-library-home { --rs-overview-container-width: calc(100% - 32px); }
+}
+@media (max-width: 620px) {
+  .dashboard-content:has(.resume-studio.rs-library-home) { padding-top: 20px; }
+  .resume-studio.rs-library-home > .rs-library-tabs { justify-content: flex-start; }
+  .resume-studio.rs-library-home > .rs-home-intro { padding-top: 24px; }
+}

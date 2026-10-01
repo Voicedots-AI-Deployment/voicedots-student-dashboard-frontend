@@ -295,7 +295,6 @@ export function App() {
   );
   const [error, setError] = useState("");
   const [loggingOut, setLoggingOut] = useState(false);
-  const [resumeOverviewActive, setResumeOverviewActive] = useState(() => !new URLSearchParams(window.location.search).has("resume"));
   useEffect(() => {
     document.documentElement.classList.toggle("dark", dark);
     localStorage.setItem("theme", dark ? "dark" : "light");
@@ -420,7 +419,7 @@ export function App() {
         </div>
       </aside>
       <div className="dashboard-body">
-        {(location.pathname !== "/resume-studio" || resumeOverviewActive) && <header className="dashboard-topbar">
+        <header className="dashboard-topbar">
           <div>
             <button
               className="icon-button"
@@ -450,7 +449,7 @@ export function App() {
             </button>
             <span className="student-badge">Student</span>
           </div>
-        </header>}
+        </header>
         <main id="main-content" className="dashboard-content">
           {error && <ErrorMessage message={error} />}
           <Routes>
@@ -467,7 +466,7 @@ export function App() {
             <Route path="/academics" element={<Academics />} />
             <Route path="/coach" element={<Coach />} />
             <Route path="/coach/skills" element={<CoachSkills />} />
-            <Route path="/resume-studio" element={<ResumeStudio onOverviewChange={setResumeOverviewActive} />} />
+            <Route path="/resume-studio" element={<ResumeStudio />} />
             <Route path="/career" element={<CareerCoach />} />
             <Route path="/coach/session" element={<CoachSessionRoute />} />
             <Route path="/profile" element={<Profile />} />
