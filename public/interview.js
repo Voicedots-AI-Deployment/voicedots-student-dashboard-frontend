@@ -69,6 +69,9 @@ const camSelectEl = document.getElementById("cam-select");
 const micSelectEl = document.getElementById("mic-select");
 const pjShareAllowBtn = document.getElementById("pj-share-allow");
 const pjJoinBtn = document.getElementById("pj-join-btn");
+const recordingConsentEl = document.getElementById("recording-consent");
+const recordingStatusEl = document.getElementById("recording-status");
+const callRecordingStatusEl = document.getElementById("call-recording-status");
 const micStatusText = document.getElementById("mic-status-text");
 const micOkWrap = document.getElementById("mic-ok-wrap");
 const micErrorEl = document.getElementById("mic-error");
@@ -148,6 +151,14 @@ let ws = null;
 let audioContext = null;
 let playbackAudioContext = null;
 let playbackAnalyser = null;
+let recordingAudioDestination = null;
+let recordingMicStream = null;
+let interviewRecorder = null;
+let recordingSegmentId = null;
+let recordingChunkSequence = 0;
+let recordingUploadQueue = Promise.resolve();
+let recordingStartedAt = 0;
+let recordingUploadFailed = false;
 let userMediaStream = null;
 let screenStream = null;
 let micProcessor = null;
@@ -302,6 +313,7 @@ window.addEventListener("pagehide", () => {
   clearTimeout(initialConnectionTimer);
   photoVerifier.stop();
   stopMicLevelTest();
+  if (interviewRecorder?.state === "recording") interviewRecorder.stop();
   userMediaStream?.getTracks().forEach(track => track.stop());
   screenStream?.getTracks().forEach(track => track.stop());
 });
@@ -338,6 +350,10 @@ document.addEventListener("DOMContentLoaded", async () => {
   // query-param-with-sessionStorage-fallback pattern submission_id already
   // uses above.
   currentSessionId = urlParams.get("session_id") || (sessionStorage.getItem("current_submission_id") === currentSubmissionId ? sessionStorage.getItem("current_session_id") : null);
+  if (currentSessionId && sessionStorage.getItem(`vd_interview_recording_consent_${currentSessionId}`) === "true") {
+    recordingConsentEl.checked = true;
+    renderPreflight();
+  }
 
   if (!currentSubmissionId) {
     alert("No interview session found. Redirecting to student portal...");
@@ -545,6 +561,7 @@ function setupStudentProfileInfo() {
 
 function setupPrejoinFlow() {
   pjJoinBtn?.addEventListener("click", () => void runPreflight());
+  recordingConsentEl?.addEventListener("change", renderPreflight);
   document.getElementById("pj-cam-retry")?.addEventListener("click", () => void retryPreflight("camera"));
   document.getElementById("pj-mic-retry")?.addEventListener("click", () => void retryPreflight("microphone"));
   photoCaptureBtn?.addEventListener("click", () => void retryPreflight("identity"));
@@ -565,7 +582,7 @@ function renderPreflight() {
     panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
   }
   document.getElementById("preflight-loading").hidden = !preflightBusy;
-  pjJoinBtn.disabled = preflightBusy;
+  pjJoinBtn.disabled = preflightBusy || !recordingConsentEl?.checked;
   pjJoinBtn.hidden = Object.values(preflightChecks).includes("failed");
   pjJoinBtn.textContent = preflightBusy ? "Preparing Interview…" : "Start AI Interview";
   document.getElementById("preflight-title").textContent = preflightStarted ? "Preparing Interview" : "Start AI Interview";
@@ -1864,6 +1881,12 @@ async function startMediaCapture() {
   // PCM and sends it, same output contract to the backend as before.
   await audioContext.audioWorklet.addModule("pcm-worklet-processor.js");
   const micSource = audioContext.createMediaStreamSource(userMediaStream);
+  const micRecorderDestination = audioContext.createMediaStreamDestination();
+  micSource.connect(micRecorderDestination);
+  recordingMicStream = micRecorderDestination.stream;
+  if (recordingAudioDestination) {
+    playbackAudioContext.createMediaStreamSource(recordingMicStream).connect(recordingAudioDestination);
+  }
   micProcessor = new AudioWorkletNode(audioContext, "pcm-capture-processor", {
     processorOptions: { targetSampleRate: STT_SAMPLE_RATE },
   });
@@ -2001,6 +2024,125 @@ function handleBinaryFrame(data) {
   schedulePCMChunk(pcm, epoch);
 }
 
+function setRecordingStatus(message, error = false) {
+  if (recordingStatusEl) {
+    recordingStatusEl.hidden = !message;
+    recordingStatusEl.textContent = message;
+    recordingStatusEl.style.color = error ? "#b42336" : "";
+  }
+  if (callRecordingStatusEl) {
+    callRecordingStatusEl.hidden = !message || !_isCallScreenActive();
+    callRecordingStatusEl.textContent = error ? "Recording issue" : message.includes("finalizing") ? "Saving recording…" : message.includes("saved securely") ? "Recording saved" : message.includes("Recording in progress") ? "Recording" : "Recording update";
+    callRecordingStatusEl.title = message || "";
+  }
+}
+
+async function markRecordingFailed() {
+  if (!currentSessionId) return;
+  try { await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/fail`, { method: "POST" }); }
+  catch (error) { console.warn("Could not update recording status", error); }
+}
+
+async function startInterviewRecording() {
+  if (interviewRecorder || !currentSessionId || !userMediaStream || !recordingConsentEl?.checked) return;
+  if (typeof MediaRecorder === "undefined" || !recordingAudioDestination) {
+    setRecordingStatus("This browser cannot record the interview. Your interview can continue, but its recording will be unavailable.", true);
+    return;
+  }
+  const videoTrack = userMediaStream.getVideoTracks().find(track => track.readyState === "live");
+  const audioTrack = recordingAudioDestination.stream.getAudioTracks().find(track => track.readyState === "live");
+  if (!videoTrack || !audioTrack) {
+    setRecordingStatus("The camera or microphone recording track is unavailable. Your interview can continue.", true);
+    return;
+  }
+  recordingSegmentId = crypto.randomUUID();
+  recordingChunkSequence = 0;
+  recordingUploadQueue = Promise.resolve();
+  recordingUploadFailed = false;
+  recordingStartedAt = Date.now();
+  try {
+    const started = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/start`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ consent: true, segment_id: recordingSegmentId }),
+    });
+    if (!started.ok) throw new Error((await started.json().catch(() => ({}))).detail || "Recording could not be started.");
+    sessionStorage.setItem(`vd_interview_recording_consent_${currentSessionId}`, "true");
+    const media = new MediaStream([videoTrack, audioTrack]);
+    const mimeType = ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm"]
+      .find(type => MediaRecorder.isTypeSupported(type));
+    const recorderOptions = { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: 1_200_000, audioBitsPerSecond: 96_000 };
+    interviewRecorder = new MediaRecorder(media, recorderOptions);
+    interviewRecorder.ondataavailable = event => {
+      if (!event.data?.size || !recordingSegmentId) return;
+      const sequence = recordingChunkSequence++;
+      const elapsed = Date.now() - recordingStartedAt;
+      recordingUploadQueue = recordingUploadQueue.then(async () => {
+        const url = `${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/chunks/${encodeURIComponent(recordingSegmentId)}/${sequence}?duration_ms=${elapsed}`;
+        let lastError;
+        for (let attempt = 0; attempt < 5; attempt++) {
+          try {
+            const response = await studentFetch(url, { method: "PUT", headers: { "Content-Type": event.data.type || mimeType || "video/webm" }, body: event.data });
+            if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording chunk upload failed.");
+            return;
+          } catch (error) {
+            lastError = error;
+            await new Promise(resolve => setTimeout(resolve, Math.min(12000, 700 * (2 ** attempt))));
+          }
+        }
+        recordingUploadFailed = true;
+        setRecordingStatus("Recording upload is delayed. The interview will continue; reconnect to retry saving this recording.", true);
+        console.error("Interview recording chunk could not be saved", lastError);
+        if (interviewRecorder?.state === "recording") interviewRecorder.pause();
+        throw lastError;
+      }).catch(error => { recordingUploadFailed = true; console.warn("Interview recording remains incomplete", error); });
+    };
+    interviewRecorder.onerror = event => {
+      recordingUploadFailed = true;
+      void markRecordingFailed();
+      setRecordingStatus("The interview recording encountered a browser error. Your interview can continue.", true);
+      console.error("Interview MediaRecorder error", event);
+    };
+    interviewRecorder.start(10000);
+    setRecordingStatus("Recording in progress · video and audio are secured for placement review.");
+  } catch (error) {
+    recordingUploadFailed = true;
+    void markRecordingFailed();
+    setRecordingStatus("The interview recording could not be started. Your interview can continue without it.", true);
+    console.error("Interview recording start failed", error);
+  }
+}
+
+async function stopInterviewRecording(finalize = false) {
+  const recorder = interviewRecorder;
+  if (!recorder) return;
+  if (recorder.state !== "inactive") {
+    await new Promise(resolve => {
+      recorder.addEventListener("stop", resolve, { once: true });
+      try { recorder.stop(); } catch { resolve(); }
+    });
+  }
+  interviewRecorder = null;
+  await recordingUploadQueue;
+  if (!finalize) return;
+  if (recordingUploadFailed) {
+    await markRecordingFailed();
+    setRecordingStatus("Interview completed. Some recording data could not be uploaded, so the full recording is unavailable.", true);
+    return;
+  }
+  try {
+    setRecordingStatus("Interview completed · finalizing the secure recording…");
+    const response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ duration_seconds: Math.floor((Date.now() - recordingStartedAt) / 1000) }),
+    });
+    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording finalization failed.");
+    setRecordingStatus("Interview recording saved securely.");
+  } catch (error) {
+    setRecordingStatus("Interview completed, but its recording could not be finalized. Placement staff will see it as unavailable.", true);
+    console.error("Interview recording finalization failed", error);
+  }
+}
+
 // ============================================================
 // CONTROL MESSAGES
 // ============================================================
@@ -2039,6 +2181,7 @@ function handleControlMessage(payload) {
       proctoringActive = true;
       photoVerifier.start();
       _flushPendingIntegrityEvents();
+      void startInterviewRecording();
       break;
 
     case "integrity_event_recorded":
@@ -2057,6 +2200,7 @@ function handleControlMessage(payload) {
         if (state) state.textContent = "DONE";
       });
       if (rndStatus) rndStatus.textContent = `Reconnected — ${Number(payload.turns_completed || 0)} answers safely restored`;
+      void startInterviewRecording();
       break;
     }
 
@@ -2261,6 +2405,8 @@ async function startInterview(submissionId) {
     playbackAnalyser.fftSize = 256;
     playbackAnalyser.smoothingTimeConstant = 0.42;
     playbackAnalyser.connect(playbackAudioContext.destination);
+    recordingAudioDestination = playbackAudioContext.createMediaStreamDestination();
+    playbackAnalyser.connect(recordingAudioDestination);
 
     await audioContext.resume();
     await playbackAudioContext.resume();
@@ -2389,6 +2535,10 @@ function stopInterview() {
     micProcessor.disconnect();
     micProcessor = null;
   }
+  if (interviewRecorder?.state !== "inactive") {
+    try { interviewRecorder?.stop(); } catch {}
+  }
+  interviewRecorder = null;
   if (audioContext) {
     audioContext.close();
     audioContext = null;
@@ -2398,6 +2548,10 @@ function stopInterview() {
     playbackAudioContext = null;
     playbackAnalyser = null;
   }
+  recordingAudioDestination?.stream.getTracks().forEach(track => track.stop());
+  recordingMicStream?.getTracks().forEach(track => track.stop());
+  recordingAudioDestination = null;
+  recordingMicStream = null;
   if (userMediaStream) {
     userMediaStream.getTracks().forEach(t => t.stop());
     userMediaStream = null;
@@ -2417,6 +2571,7 @@ async function finishAndGenerateReport() {
     return;
   }
   reportGenerationStarted = true;
+  await stopInterviewRecording(true);
   stopInterview();
   if (callScreen) callScreen.style.display = "none";
   if (liveChip) liveChip.style.display = "none";

@@ -40,10 +40,14 @@
     @keyframes livePulse{0%,100%{opacity:1;transform:scale(1);}50%{opacity:0.3;transform:scale(1.4);}}
     .topbar-right{display:flex;align-items:center;gap:12px;}
     .round-chip{font-size:0.75rem;font-weight:700;color:var(--accent-bright);background:var(--accent-soft);border:1px solid var(--accent-border);border-radius:var(--r-full);padding:4px 12px;}
+    .recording-live{font-size:.68rem;font-weight:700;color:#86efac;background:rgba(22,101,52,.24);border:1px solid rgba(74,222,128,.3);border-radius:999px;padding:4px 9px}
 
     /* ── PRE-JOIN FLOW ── */
     #prejoin-screen{flex:1;display:flex;align-items:center;justify-content:center;padding:24px;overflow-y:auto;}
     .prejoin-card{margin:auto 0;background:var(--surf);border:1px solid var(--border);border-radius:var(--r-lg);width:100%;max-width:560px;overflow:hidden;}
+    .recording-consent{display:flex;align-items:flex-start;gap:10px;margin:0 0 14px;padding:12px;border:1px solid var(--border);border-radius:10px;text-align:left;font-size:.8rem;line-height:1.45;color:var(--text);cursor:pointer}
+    .recording-consent input{margin-top:2px;accent-color:var(--accent);flex:0 0 auto}
+    .recording-status{margin:8px 0;color:var(--muted);font-size:.75rem}
 
     .pj-panel{display:none;padding:32px;animation:fadeUp .25s ease both;}
     .pj-panel.active{display:block;}
@@ -246,6 +250,7 @@
     </a>
     <div class="topbar-right">
       <span class="round-chip" id="topbar-round-label">Panel Interview</span>
+      <span class="recording-live" id="call-recording-status" role="status" aria-live="polite" hidden></span>
       <div class="live-chip" id="live-chip" style="display:none;">
         <div class="live-dot"></div>LIVE
       </div>
@@ -263,7 +268,9 @@
           <video id="lobby-video" autoplay muted playsinline></video>
           <div class="cam-overlay" id="cam-overlay"><span>Waiting for camera access…</span></div>
         </div>
-        <p style="font-size:.8rem;color:var(--muted);margin:16px 0;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
+        <p style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
+        <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand this interview will be video and audio recorded for evaluation and can be reviewed by authorized placement staff.</span></label>
+        <p id="recording-status" class="recording-status" role="status" aria-live="polite" hidden></p>
         <button class="pj-btn pj-btn-primary" id="pj-join-btn" type="button" disabled>Start AI Interview</button>
       </div>
       <div class="pj-panel" id="pj-panel-1">

@@ -107,11 +107,21 @@ async function prepare(page: Page, failure = "") {
   });
   await page.goto("/interview.html?id=sub-1");
   await expect(page.getByRole("button", { name: "Start AI Interview", exact: true })).toBeVisible();
+  await expect(page.locator("#pj-join-btn")).toBeDisabled();
+  await page.locator("#recording-consent").check();
+  await expect(page.locator("#pj-join-btn")).toBeEnabled();
   return {
     counts,
     recover: async () => { failed = ""; await page.evaluate(() => { (window as any).failure = ""; }); },
   };
 }
+
+test("recording disclosure requires explicit consent before interview setup starts", async ({ page }) => {
+  const { counts } = await prepare(page);
+  await page.locator("#recording-consent").uncheck();
+  await expect(page.locator("#pj-join-btn")).toBeDisabled();
+  expect(counts).toEqual({ create: 0, identity: 0, readiness: 0, preflight: 0 });
+});
 
 test("one click checks permissions and identity before creating the session, with no preflight STT", async ({ page }) => {
   const { counts } = await prepare(page);
