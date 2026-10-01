@@ -107,9 +107,10 @@ test("Main Resume card prevents deletion and its menu closes on outside click",a
  await expect(menu.getByRole("menuitem",{name:/Delete · Main Resume/})).toBeDisabled();
  const box=await menu.boundingBox();expect(box?.x).toBeGreaterThanOrEqual(0);expect((box?.x||0)+(box?.width||0)).toBeLessThanOrEqual(1280);
  const mainBadge=await mainCard.locator(".rs-main-label").boundingBox();
- expect(box&&mainBadge).toBeTruthy();expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual(mainBadge?.y||0);
- await expect(menu.getByRole("menuitem",{name:/Delete · Main Resume/})).toHaveCSS("white-space","nowrap");
- await expect(menu.getByRole("menuitem",{name:/Delete · Main Resume/})).toHaveCSS("width","196px");
+ const title=await mainCard.locator(".rs-project-open > strong").boundingBox();
+ expect(box&&mainBadge&&title).toBeTruthy();expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual((title?.y||0)-8);expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual(mainBadge?.y||0);
+ const deleteMain=menu.getByRole("menuitem",{name:/Delete · Main Resume/});
+ await expect(deleteMain).toHaveCSS("display","flex");await expect(deleteMain).toHaveCSS("align-items","center");await expect(deleteMain).toHaveCSS("white-space","nowrap");await expect(deleteMain).toHaveCSS("width","196px");await expect(deleteMain).toHaveCSS("height","36px");await expect(deleteMain).toHaveCSS("border-top-width","0px");
  await page.locator(".rs-home-intro h1").click();await expect(menu).toHaveCount(0);
 });
 

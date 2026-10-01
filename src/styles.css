@@ -2428,11 +2428,23 @@ dialog.modal::backdrop {
 }
 
 /* Keep card-menu actions on one row and clear the Main Resume badge below them. */
-.resume-studio.rs-library-home .rs-card-menu { bottom: calc(100% + 30px); }
+.resume-studio.rs-library-home .rs-card-menu { bottom: calc(100% + 68px); }
 .resume-studio.rs-library-home .rs-card-menu button {
   box-sizing: border-box;
+  display: flex;
   width: 100%;
-  height: auto;
+  height: 36px;
+  min-height: 36px;
+  align-items: center;
   justify-content: flex-start;
+  gap: 8px;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink);
+  text-align: left;
+  font-size: 13px;
+  font-weight: 400;
   white-space: nowrap;
 }
