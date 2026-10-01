@@ -347,9 +347,8 @@
 .resume-studio .rs-project-skeleton > * { display: none; }
 @keyframes rs-shimmer { to { background-position: -220% 0; } }
 
-/* Resume card: the rendered page is the subject, and the metadata is one
-   consistent block pinned to the bottom of every card. A card without a
-   Main Resume badge uses the same reserved preview footer on every card. */
+/* Resume cards keep one consistent size. The Main Resume marker floats over
+   the preview so it does not reserve space or shift the rendered page. */
 .resume-studio .rs-project-card-new {
   position: relative;
   display: flex;
@@ -363,7 +362,15 @@
   box-shadow: var(--shadow-soft);
 }
 .resume-studio .rs-project-card-new:hover { border-color: var(--line-strong); box-shadow: 0 8px 24px rgba(22, 19, 31, .07); }
-.resume-studio .rs-project-card-new.is-main-resume { border-color: var(--purple); outline: 1px solid var(--purple); outline-offset: -2px; }
+.resume-studio .rs-project-card-new.is-main-resume {
+  border-color: var(--line);
+  outline: 0;
+  box-shadow: 0 0 0 2px rgba(107, 48, 232, .10), 0 5px 18px rgba(107, 48, 232, .12), var(--shadow-soft);
+}
+.resume-studio .rs-project-card-new.is-main-resume:hover {
+  border-color: var(--line-strong);
+  box-shadow: 0 0 0 2px rgba(107, 48, 232, .14), 0 8px 22px rgba(107, 48, 232, .16);
+}
 .resume-studio .rs-project-card-new .rs-project-open {
   display: flex;
   min-width: 0;
@@ -379,6 +386,7 @@
   cursor: pointer;
 }
 .resume-studio .rs-project-card-new .rs-card-paper {
+  position: relative;
   display: block;
   width: 100%;
   min-height: 0;
@@ -395,7 +403,7 @@
   position: relative;
   display: block;
   width: 100%;
-  height: calc(100% - 28px);
+  height: 100%;
   min-height: 0;
   overflow: hidden;
   background: var(--card);
@@ -1479,5 +1487,5 @@
 .resume-studio .rs-design-screen .rs-option-segments:has(button:nth-child(5)) { grid-auto-flow: row; grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .resume-studio .rs-design-screen .rs-option-segments button { min-width: 0; padding: 0 6px; }
 
-.resume-studio .rs-project-card-new .rs-card-status { display: flex; height: 28px; align-items: center; justify-content: flex-end; padding: 0 12px; background: var(--card); }
+.resume-studio .rs-project-card-new .rs-card-status { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; align-items: center; justify-content: flex-end; pointer-events: none; }
 .resume-studio .rs-project-card-new .rs-project-open > span:not(.rs-card-paper):not(.rs-main-label) { height: 36px; overflow: hidden; }
