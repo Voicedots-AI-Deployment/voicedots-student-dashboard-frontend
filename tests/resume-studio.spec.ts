@@ -76,7 +76,7 @@ test("Main Resume from My Profile appears first as one linked Studio resume",asy
  await expect(page.locator(".rs-profile-resume")).toHaveCount(0);
  await expect(page.getByText("1 resume",{exact:true})).toBeVisible();
  const cards=page.locator(".rs-project-card-new");await expect(cards).toHaveCount(1);
- await expect(cards.first().getByText("Main resume",{exact:true})).toBeVisible();
+ await expect(cards.first().getByText("Main Resume",{exact:true})).toBeVisible();
  await expect(cards.first().getByRole("button",{name:/Open Asha profile resume/})).toBeVisible();
  await expect(page.frameLocator(".rs-thumbnail-viewport iframe").first().locator(".rd")).toBeVisible();
  await expect(page.getByRole("button",{name:"Add to Resume Studio"})).toHaveCount(0);
@@ -93,7 +93,7 @@ test("Main Resume is first while unrelated Studio resumes remain available",asyn
  await mockResumeStudio(page,false,true,true,[second]);await page.goto("/resume-studio");
  await expect(page.getByText("3 resumes",{exact:true})).toBeVisible();
  const cards=page.locator(".rs-project-card-new");await expect(cards).toHaveCount(3);
- await expect(cards.first().getByText("Main resume",{exact:true})).toBeVisible();
+ await expect(cards.first().getByText("Main Resume",{exact:true})).toBeVisible();
  await expect(cards.nth(1).getByRole("button",{name:/Open Resume 2/})).toBeVisible();
  await expect(cards.nth(2).getByRole("button",{name:/Open Resume 1/})).toBeVisible();
  await expect(page.getByRole("button",{name:"Add to Resume Studio"})).toHaveCount(0);
@@ -108,7 +108,7 @@ test("Main Resume card prevents deletion and its menu closes on outside click",a
  const box=await menu.boundingBox();expect(box?.x).toBeGreaterThanOrEqual(0);expect((box?.x||0)+(box?.width||0)).toBeLessThanOrEqual(1280);
  const mainBadge=await mainCard.locator(".rs-main-label").boundingBox();
  const title=await mainCard.locator(".rs-project-open > strong").boundingBox();
- expect(box&&mainBadge&&title).toBeTruthy();expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual((title?.y||0)-8);expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual(mainBadge?.y||0);
+ expect(box&&mainBadge&&title).toBeTruthy();expect((box?.y||0)+(box?.height||0)).toBeLessThanOrEqual((title?.y||0)-8);
  const deleteMain=menu.getByRole("menuitem",{name:/Delete · Main Resume/});
  await expect(deleteMain).toHaveCSS("display","flex");await expect(deleteMain).toHaveCSS("align-items","center");await expect(deleteMain).toHaveCSS("white-space","nowrap");await expect(deleteMain).toHaveCSS("width","198px");await expect(deleteMain).toHaveCSS("height","36px");await expect(deleteMain).toHaveCSS("border-top-width","0px");
  await page.locator(".rs-home-intro h1").click();await expect(menu).toHaveCount(0);
@@ -325,7 +325,7 @@ test("Resume Editor section cards and Add Content modal use the shared card trea
 test("Resume Studio Overview card info aligns title, Main Resume badge, metadata, and actions",async({page})=>{
  await mockResumeStudio(page,false,true,false);await page.goto("/resume-studio");const card=page.locator(".rs-project-card-new.is-main-resume");
  const boxes=await Promise.all([card.locator(".rs-project-open > strong").boundingBox(),card.locator(".rs-main-label").boundingBox(),card.locator(".rs-project-open > span:not(.rs-card-paper):not(.rs-main-label)").boundingBox(),card.locator(".rs-card-menu-trigger").boundingBox()]);
- expect(boxes.every(Boolean)).toBe(true);expect(boxes[0]!.x+16).toBeCloseTo(boxes[1]!.x,0);expect(boxes[1]!.x).toBeCloseTo(boxes[2]!.x,0);expect(boxes[3]!.width).toBe(36);expect(boxes[3]!.height).toBe(36);
+ expect(boxes.every(Boolean)).toBe(true);expect(boxes[0]!.x+16).toBeCloseTo(boxes[2]!.x,0);expect(boxes[1]!.x).toBeGreaterThan(boxes[2]!.x);expect(boxes[3]!.width).toBe(36);expect(boxes[3]!.height).toBe(36);
 });
 
 test("Resume Studio preview exposes a retry state after a rendering request fails",async({page})=>{
@@ -528,3 +528,27 @@ test("changing from scrolled design settings to a short AI tool brings its headi
 });
 
  test("design colour controls align as label and swatch rows",async({page})=>{await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Design & templates"}).click();await expect(page.locator(".rs-colour-value").first()).toHaveCSS("flex-direction","row");await expect(page.locator(".rs-custom-colour")).toHaveCSS("flex-direction","row");await expect(page.locator(".rs-design-tabs")).toHaveCSS("position","static");});
+
+test("Main Resume badge occupies its own preview footer without changing card dimensions",async({page})=>{
+ await mockResumeStudio(page,false,true,true);await page.goto("/resume-studio");const cards=page.locator(".rs-project-card-new");await expect(cards).toHaveCount(2);const main=cards.filter({has:page.locator(".rs-main-label")}),plain=cards.filter({hasNot:page.locator(".rs-main-label")});const a=(await main.boundingBox())!,b=(await plain.boundingBox())!;expect(a.width).toBe(b.width);expect(a.height).toBe(b.height);const badge=main.locator(".rs-card-paper .rs-card-status .rs-main-label");await expect(badge).toHaveText("Main Resume");const label=(await badge.boundingBox())!,preview=(await main.locator(".rs-thumbnail-viewport").boundingBox())!,paper=(await main.locator(".rs-card-paper").boundingBox())!;expect(label.y).toBeGreaterThanOrEqual(preview.y+preview.height);expect(label.y+label.height).toBeLessThanOrEqual(paper.y+paper.height);await expect(main).toHaveCSS("border-top-color","rgb(107, 48, 232)");const ta=(await main.locator(".rs-project-open > strong").boundingBox())!,tb=(await plain.locator(".rs-project-open > strong").boundingBox())!;expect(ta.y).toBe(tb.y);
+});
+
+test("chat saves returned content, refreshes the real preview request, and reloads the saved document",async({page})=>{
+ await mockResumeStudio(page);let saved:any={...baseProject,document:{...baseProject.document,personal_details:{...details,full_name:"Asha Kumar"}}};let payload:any;
+ await page.route("**/api/student/resume-studio/resumes/rs-1",route=>route.fulfill({json:saved}));
+ await page.route("**/api/student/resume-studio/interviews/chat-1/messages",route=>{payload=route.request().postDataJSON();saved={...saved,revision:2,document:{...saved.document,personal_details:{...saved.document.personal_details,headline:"Python developer"}}};return route.fulfill({json:{id:"chat-1",project_id:"rs-1",messages:[{role:"user",text:payload.message},{role:"assistant",text:"Updated your headline.",chips:["Improve my summary"]}],state:{stage:"target"},document:saved.document,resume_revision:2,changed_fields:["headline"]}})});
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"AI tools"}).click();await page.getByRole("button",{name:/Build your resume by chatting/}).click();
+ await page.locator(".rs-chat-form textarea").fill("Set my headline to Python developer");await page.locator(".rs-chat-form button").click();await expect(page.getByText("Updated your headline.",{exact:true})).toBeVisible();expect(payload.expected_revision).toBe(1);
+ await page.getByRole("tab",{name:"Resume editor"}).click();await expect(page.getByLabel("Headline")).toHaveValue("Python developer");await page.reload();await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();await expect(page.getByLabel("Headline")).toHaveValue("Python developer");
+});
+
+test("chat shows provider errors without fabricated success or content changes",async({page})=>{
+ await mockResumeStudio(page);await page.route("**/api/student/resume-studio/interviews/chat-1/messages",route=>route.fulfill({status:502,json:{detail:"Resume AI could not complete this request. Your resume has not changed; please try again."}}));
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"AI tools"}).click();await page.getByRole("button",{name:/Build your resume by chatting/}).click();await page.locator(".rs-chat-form textarea").fill("Improve my summary");await page.locator(".rs-chat-form button").click();await expect(page.getByText(/Resume AI could not complete this request/)).toBeVisible();await expect(page.locator(".rs-chat-form textarea")).toHaveValue("Improve my summary");await expect(page.locator(".rs-chat-log")).not.toContainText("Updated");
+});
+
+test("a pending resume deep link keeps its selected resume when a section is clicked",async({page})=>{
+ await mockResumeStudio(page);const other={...baseProject,id:"rs-2",title:"Requested resume",document:{...baseProject.document,personal_details:{...details,headline:"Requested headline"}}};
+ await page.route("**/api/student/resume-studio/resumes/rs-2",async route=>{await new Promise(resolve=>setTimeout(resolve,300));return route.fulfill({json:other})});
+ await page.goto("/resume-studio?resume=rs-2");await page.getByRole("tab",{name:"Resume editor",exact:true}).click();await expect(page.getByLabel("Professional headline",{exact:true})).toHaveValue("Requested headline");await expect(page.getByRole("button",{name:"Choose resume",exact:true})).toContainText("Requested resume");
+});
