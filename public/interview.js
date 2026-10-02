@@ -159,6 +159,14 @@ let recordingChunkSequence = 0;
 let recordingUploadQueue = Promise.resolve();
 let recordingStartedAt = 0;
 let recordingUploadFailed = false;
+let recordingDataDropped = false;
+let recordingMimeType = "video/webm";
+let recordingExtension = "webm";
+let recordingCanvasTimer = null;
+let recordingCanvasStream = null;
+let recordingPartMetadata = [];
+let recordingPartNumber = 1;
+let recordingServerClockOffsetMs = 0;
 let userMediaStream = null;
 let screenStream = null;
 let micProcessor = null;
@@ -1685,7 +1693,7 @@ function _sendIntegrityEvent(eventType, severity = "warning", details = {}) {
     severity,
     sequence: ++integritySequence,
     details,
-    timestamp: new Date().toISOString(),
+    timestamp: new Date(Date.now() + recordingServerClockOffsetMs).toISOString(),
   };
   if (!ws || ws.readyState !== WebSocket.OPEN) {
     pendingIntegrityEvents.push(message);
@@ -2043,6 +2051,117 @@ async function markRecordingFailed() {
   catch (error) { console.warn("Could not update recording status", error); }
 }
 
+const RECORDING_PART_BYTES = 5 * 1024 * 1024;
+const RECORDING_QUEUE_MAX_BYTES = 160 * 1024 * 1024;
+function recordingDb() {
+  return new Promise((resolve, reject) => {
+    const request = indexedDB.open("voicedots-interview-recording-v1", 1);
+    request.onupgradeneeded = () => {
+      const db = request.result;
+      if (!db.objectStoreNames.contains("chunks")) db.createObjectStore("chunks", { keyPath: "id" });
+      if (!db.objectStoreNames.contains("meta")) db.createObjectStore("meta", { keyPath: "id" });
+    };
+    request.onsuccess = () => resolve(request.result);
+    request.onerror = () => reject(request.error || new Error("Local recording queue is unavailable."));
+  });
+}
+async function recordingDbRequest(storeName, mode, run) {
+  const db = await recordingDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeName, mode);
+    const request = run(transaction.objectStore(storeName));
+    transaction.oncomplete = () => { db.close(); resolve(request?.result); };
+    transaction.onerror = transaction.onabort = () => { db.close(); reject(transaction.error || request?.error); };
+  });
+}
+async function recordingDbTransaction(storeNames, run) {
+  const db = await recordingDb();
+  return new Promise((resolve, reject) => {
+    const transaction = db.transaction(storeNames, "readwrite");
+    run(transaction);
+    transaction.oncomplete = () => { db.close(); resolve(); };
+    transaction.onerror = transaction.onabort = () => { db.close(); reject(transaction.error); };
+  });
+}
+function recordingQueueId(sequence) { return `${currentSessionId}:${recordingSegmentId}:${sequence}`; }
+async function saveRecordingChunk(blob, sequence) {
+  const all = await recordingDbRequest("chunks", "readonly", store => store.getAll());
+  const bytes = (all || []).reduce((sum, row) => sum + row.blob.size, 0);
+  if (bytes + blob.size > RECORDING_QUEUE_MAX_BYTES) throw new Error("The local recording retry queue is full. Reconnect to the internet before continuing.");
+  const item = { id: recordingQueueId(sequence), session: currentSessionId, segment: recordingSegmentId, sequence, blob, createdAt: Date.now() };
+  await recordingDbRequest("chunks", "readwrite", store => store.put(item));
+}
+async function pendingRecordingChunks() {
+  const all = await recordingDbRequest("chunks", "readonly", store => store.getAll());
+  return (all || []).filter(row => row.session === currentSessionId && row.segment === recordingSegmentId)
+    .sort((a, b) => a.sequence - b.sequence);
+}
+async function uploadRecordingPart(chunks) {
+  const partNumber = recordingPartNumber;
+  const blob = new Blob(chunks.map(row => row.blob), { type: recordingMimeType });
+  const authorize = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/parts/${encodeURIComponent(recordingSegmentId)}/${partNumber}/authorize`, { method: "POST" });
+  const authData = await authorize.json().catch(() => ({}));
+  if (!authorize.ok || !authData.url) throw new Error(authData.detail || "Recording part upload could not be authorized.");
+  const uploaded = await fetch(authData.url, { method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob, credentials: "omit" });
+  if (!uploaded.ok) throw new Error(`Direct recording upload failed (${uploaded.status}).`);
+  const etag = uploaded.headers.get("ETag") || uploaded.headers.get("etag");
+  if (!etag) throw new Error("Storage did not confirm the recording part. Check the bucket CORS expose headers.");
+  const part = { PartNumber: partNumber, ETag: etag };
+  const nextParts = [...recordingPartMetadata, part];
+  const nextPartNumber = partNumber + 1;
+  const metaId = `${currentSessionId}:${recordingSegmentId}`;
+  await recordingDbTransaction(["meta", "chunks"], transaction => {
+    transaction.objectStore("meta").put({ id: metaId, session: currentSessionId,
+      segment: recordingSegmentId, startedAt: recordingStartedAt, nextPart: nextPartNumber, parts: nextParts });
+    for (const row of chunks) transaction.objectStore("chunks").delete(row.id);
+  });
+  recordingPartMetadata = nextParts;
+  recordingPartNumber = nextPartNumber;
+}
+async function flushRecordingQueue(force = false) {
+  const queued = await pendingRecordingChunks();
+  let batch = [], bytes = 0;
+  for (const row of queued) {
+    batch.push(row); bytes += row.blob.size;
+    if (bytes >= RECORDING_PART_BYTES) {
+      await uploadRecordingPart(batch);
+      batch = []; bytes = 0;
+    }
+  }
+  if (force && batch.length) await uploadRecordingPart(batch);
+}
+async function retryRecordingFlush(force = false) {
+  let lastError;
+  for (let attempt = 0; attempt < 7; attempt++) {
+    try { await flushRecordingQueue(force); recordingUploadFailed = recordingDataDropped; return; }
+    catch (error) {
+      lastError = error;
+      await new Promise(resolve => setTimeout(resolve, Math.min(30000, 800 * (2 ** attempt))));
+    }
+  }
+  recordingUploadFailed = true;
+  setRecordingStatus("Recording upload is delayed. Your interview can continue; keep this page open and reconnect to retry.", true);
+  throw lastError;
+}
+async function clearRecordingQueue() {
+  const chunks = await pendingRecordingChunks();
+  for (const row of chunks) await recordingDbRequest("chunks", "readwrite", store => store.delete(row.id));
+  await recordingDbRequest("meta", "readwrite", store => store.delete(`${currentSessionId}:${recordingSegmentId}`));
+}
+
+function selectInterviewRecordingMimeType(isSupported = type => MediaRecorder.isTypeSupported(type)) {
+  return ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm;codecs=vp8", "video/webm", "video/mp4;codecs=h264,aac", "video/mp4"]
+    .find(isSupported) || "";
+}
+function describeInterviewRecordingFormat(mimeType) {
+  const contentType = String(mimeType || "").split(";")[0];
+  return {
+    mimeType: contentType,
+    extension: contentType === "video/mp4" ? "mp4" : "webm",
+    codec: mimeType.includes("vp8") ? "vp8,opus" : mimeType.includes("vp9") ? "vp9,opus" : mimeType.toLowerCase().includes("h264") ? "h264,aac" : null,
+  };
+}
+
 async function startInterviewRecording() {
   if (interviewRecorder || !currentSessionId || !userMediaStream || !recordingConsentEl?.checked) return;
   if (typeof MediaRecorder === "undefined" || !recordingAudioDestination) {
@@ -2059,42 +2178,55 @@ async function startInterviewRecording() {
   recordingChunkSequence = 0;
   recordingUploadQueue = Promise.resolve();
   recordingUploadFailed = false;
+  recordingDataDropped = false;
   recordingStartedAt = Date.now();
   try {
+    const mimeType = selectInterviewRecordingMimeType();
+    if (!mimeType) throw new Error("This browser does not expose a supported video recording format.");
+    const format = describeInterviewRecordingFormat(mimeType);
+    recordingMimeType = format.mimeType;
+    recordingExtension = format.extension;
+    recordingPartMetadata = [];
+    recordingPartNumber = 1;
+    const existing = await recordingDbRequest("chunks", "readonly", store => store.getAll());
+    const stale = (existing || []).filter(item => Date.now() - Number(item.createdAt || 0) > 7 * 24 * 60 * 60 * 1000);
+    for (const item of stale) await recordingDbRequest("chunks", "readwrite", store => store.delete(item.id));
     const started = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/start`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ consent: true, segment_id: recordingSegmentId }),
+      body: JSON.stringify({ consent: true, segment_id: recordingSegmentId, mime_type: recordingMimeType,
+        extension: recordingExtension, codec: format.codec }),
     });
     if (!started.ok) throw new Error((await started.json().catch(() => ({}))).detail || "Recording could not be started.");
+    const startedData = await started.json().catch(() => ({}));
+    const serverStartedAt = Date.parse(String(startedData.started_at || ""));
+    if (Number.isFinite(serverStartedAt)) recordingServerClockOffsetMs = serverStartedAt - Date.now();
     sessionStorage.setItem(`vd_interview_recording_consent_${currentSessionId}`, "true");
-    const media = new MediaStream([videoTrack, audioTrack]);
-    const mimeType = ["video/webm;codecs=vp8,opus", "video/webm;codecs=vp9,opus", "video/webm"]
-      .find(type => MediaRecorder.isTypeSupported(type));
-    const recorderOptions = { ...(mimeType ? { mimeType } : {}), videoBitsPerSecond: 1_200_000, audioBitsPerSecond: 96_000 };
+    // Capture a low-resolution recording-only camera track. The live proctor
+    // pipeline keeps the original camera stream and its existing quality.
+    const canvas = document.createElement("canvas");
+    canvas.width = 640; canvas.height = 360;
+    const context = canvas.getContext("2d");
+    const videoElement = candidateVideoEl || lobbyVideoEl;
+    recordingCanvasTimer = window.setInterval(() => {
+      if (context && videoElement?.readyState >= 2) context.drawImage(videoElement, 0, 0, 640, 360);
+    }, 67);
+    recordingCanvasStream = canvas.captureStream(15);
+    const lowResolutionVideo = recordingCanvasStream.getVideoTracks()[0];
+    const media = new MediaStream([lowResolutionVideo, audioTrack]);
+    const recorderOptions = { mimeType, videoBitsPerSecond: 250_000, audioBitsPerSecond: 32_000 };
     interviewRecorder = new MediaRecorder(media, recorderOptions);
     interviewRecorder.ondataavailable = event => {
       if (!event.data?.size || !recordingSegmentId) return;
       const sequence = recordingChunkSequence++;
-      const elapsed = Date.now() - recordingStartedAt;
       recordingUploadQueue = recordingUploadQueue.then(async () => {
-        const url = `${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/chunks/${encodeURIComponent(recordingSegmentId)}/${sequence}?duration_ms=${elapsed}`;
-        let lastError;
-        for (let attempt = 0; attempt < 5; attempt++) {
-          try {
-            const response = await studentFetch(url, { method: "PUT", headers: { "Content-Type": event.data.type || mimeType || "video/webm" }, body: event.data });
-            if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording chunk upload failed.");
-            return;
-          } catch (error) {
-            lastError = error;
-            await new Promise(resolve => setTimeout(resolve, Math.min(12000, 700 * (2 ** attempt))));
-          }
-        }
+        try { await saveRecordingChunk(event.data, sequence); }
+        catch (error) { recordingDataDropped = true; throw error; }
+        await retryRecordingFlush(false);
+      }).catch(error => {
         recordingUploadFailed = true;
-        setRecordingStatus("Recording upload is delayed. The interview will continue; reconnect to retry saving this recording.", true);
-        console.error("Interview recording chunk could not be saved", lastError);
-        if (interviewRecorder?.state === "recording") interviewRecorder.pause();
-        throw lastError;
-      }).catch(error => { recordingUploadFailed = true; console.warn("Interview recording remains incomplete", error); });
+        setRecordingStatus(error?.message || "Recording data could not be queued locally. Your interview can continue, but this video may be incomplete.", true);
+        console.warn("Interview recording remains incomplete", error);
+      });
     };
     interviewRecorder.onerror = event => {
       recordingUploadFailed = true;
@@ -2103,8 +2235,11 @@ async function startInterviewRecording() {
       console.error("Interview MediaRecorder error", event);
     };
     interviewRecorder.start(10000);
-    setRecordingStatus("Recording in progress · video and audio are secured for placement review.");
+  setRecordingStatus("Recording in progress · video and audio are being uploaded securely for placement review.");
   } catch (error) {
+    if (recordingCanvasTimer) { clearInterval(recordingCanvasTimer); recordingCanvasTimer = null; }
+    recordingCanvasStream?.getTracks().forEach(track => track.stop());
+    recordingCanvasStream = null;
     recordingUploadFailed = true;
     void markRecordingFailed();
     setRecordingStatus("The interview recording could not be started. Your interview can continue without it.", true);
@@ -2122,22 +2257,28 @@ async function stopInterviewRecording(finalize = false) {
     });
   }
   interviewRecorder = null;
+  if (recordingCanvasTimer) { clearInterval(recordingCanvasTimer); recordingCanvasTimer = null; }
+  recordingCanvasStream?.getTracks().forEach(track => track.stop());
+  recordingCanvasStream = null;
   await recordingUploadQueue;
   if (!finalize) return;
-  if (recordingUploadFailed) {
+  if (recordingDataDropped) {
     await markRecordingFailed();
-    setRecordingStatus("Interview completed. Some recording data could not be uploaded, so the full recording is unavailable.", true);
+    setRecordingStatus("Interview completed, but local recording storage filled before all video data could be secured.", true);
     return;
   }
   try {
+    await retryRecordingFlush(true);
     setRecordingStatus("Interview completed · finalizing the secure recording…");
     const response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ duration_seconds: Math.floor((Date.now() - recordingStartedAt) / 1000) }),
+      body: JSON.stringify({ duration_seconds: Math.floor((Date.now() - recordingStartedAt) / 1000), parts: recordingPartMetadata }),
     });
     if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording finalization failed.");
-    setRecordingStatus("Interview recording saved securely.");
+    await clearRecordingQueue();
+    setRecordingStatus("Interview completed · securely processing the recording.");
   } catch (error) {
+    await markRecordingFailed();
     setRecordingStatus("Interview completed, but its recording could not be finalized. Placement staff will see it as unavailable.", true);
     console.error("Interview recording finalization failed", error);
   }

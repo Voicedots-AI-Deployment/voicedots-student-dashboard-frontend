@@ -95,6 +95,15 @@ async function prepare(page: Page, failure = "") {
       };
       const originalWait = waitForPreflight;
       waitForPreflight = (check, message) => originalWait(check, message, 1800);
+      window.__testRecordingSetup = (session, stream, destination) => {
+        currentSessionId = session;
+        userMediaStream = stream;
+        recordingAudioDestination = destination;
+        if (candidateVideoEl) { candidateVideoEl.srcObject = stream; void candidateVideoEl.play(); }
+      };
+      window.__testStartRecording = startInterviewRecording;
+      window.__testStopRecording = stopInterviewRecording;
+      window.__testInterviewRecordingFormat = { select: selectInterviewRecordingMimeType, describe: describeInterviewRecordingFormat };
       if (window.failure !== "runtime") startInterview = async () => { window.starts++; };
       else {
         const originalControl = handleControlMessage;
@@ -132,6 +141,74 @@ test("one click checks permissions and identity before creating the session, wit
   expect(counts).toEqual({ create: 1, identity: 1, readiness: 1, preflight: 1 });
   expect(await page.evaluate(() => (window as any).shares)).toBe(1);
   expect(await page.evaluate(() => (window as any).mediaCalls.length)).toBe(1);
+});
+
+test("consented recording aggregates queued chunks and uploads multipart bytes directly to storage", async ({ page }) => {
+  await prepare(page);
+  const calls: { start?: any; part?: number; put?: number; options?: number; finalize?: any } = {};
+  await page.route("**/recording/start", async route => {
+    calls.start = route.request().postDataJSON();
+    await route.fulfill({ json: { status: "recording" } });
+  });
+  await page.route("**/recording/parts/*/*/authorize", async route => {
+    calls.part = Number(new URL(route.request().url()).pathname.split("/").slice(-2, -1)[0]);
+    await route.fulfill({ json: { url: "https://r2.invalid/signed-part" } });
+  });
+  await page.route("https://r2.invalid/**", async route => {
+    const origin = route.request().headers().origin || "http://127.0.0.1:4173";
+    if (route.request().method() === "OPTIONS") {
+      calls.options = (calls.options || 0) + 1;
+      await route.fulfill({ status: 200, headers: {
+        "access-control-allow-origin": origin,
+        "access-control-allow-methods": "PUT",
+        "access-control-allow-headers": "content-type",
+        "access-control-expose-headers": "ETag",
+      } });
+      return;
+    }
+    calls.put = (calls.put || 0) + 1;
+    expect(route.request().method()).toBe("PUT");
+    expect(route.request().postDataBuffer()?.byteLength || 0).toBeGreaterThan(0);
+    await route.fulfill({ status: 200, headers: {
+      etag: '"test-etag"', "access-control-allow-origin": origin,
+      "access-control-expose-headers": "ETag",
+    } });
+  });
+  await page.route("**/recording/finalize", async route => {
+    calls.finalize = route.request().postDataJSON();
+    await route.fulfill({ json: { status: "processing" } });
+  });
+  await page.evaluate(async () => {
+    const input = document.createElement("canvas"); input.width = 640; input.height = 360;
+    const inputContext = input.getContext("2d")!;
+    inputContext.fillStyle = "#7340e8"; inputContext.fillRect(0, 0, 640, 360);
+    const inputStream = input.captureStream(15);
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const destination = audioContext.createMediaStreamDestination();
+    oscillator.connect(destination); oscillator.start(); await audioContext.resume();
+    (window as any).__testRecordingSetup("recording-test-session", inputStream, destination);
+  });
+  await page.evaluate(() => (window as any).__testStartRecording());
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => (window as any).__testStopRecording(true));
+  expect(calls.start).toMatchObject({ consent: true, mime_type: "video/webm", extension: "webm" });
+  expect(calls.part).toBe(1);
+  expect(calls.put).toBe(1);
+  expect(calls.finalize?.parts).toEqual([{ PartNumber: 1, ETag: '"test-etag"' }]);
+  expect(calls.finalize?.duration_seconds).toEqual(expect.any(Number));
+});
+
+test("recording format selection supports Chromium WebM and Safari MP4 fallback", async ({ page }) => {
+  await prepare(page);
+  const formats = await page.evaluate(() => {
+    const helpers = (window as any).__testInterviewRecordingFormat;
+    const webm = helpers.select((type: string) => type.startsWith("video/webm"));
+    const safari = helpers.select((type: string) => type.startsWith("video/mp4"));
+    return { webm: helpers.describe(webm), safari: helpers.describe(safari) };
+  });
+  expect(formats.webm).toEqual({ mimeType: "video/webm", extension: "webm", codec: "vp8,opus" });
+  expect(formats.safari).toEqual({ mimeType: "video/mp4", extension: "mp4", codec: "h264,aac" });
 });
 
 for (const [failure, retry, panel] of [
