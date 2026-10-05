@@ -1,4 +1,6 @@
-import { useState, type FormEvent } from 'react';
+import { useState, type FormEvent, type CSSProperties } from 'react';
+import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, FileText, GraduationCap, Library, Megaphone, RefreshCw, Utensils, Wallet, Building2, type LucideIcon } from 'lucide-react';
+import './student-erp.css';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from './auth';
 import { Dialog, ErrorMessage, PageHeading, date, dateTime, humanize, useResource } from './ui';
@@ -19,6 +21,7 @@ const SERVICES: Service[] = [
   { id: 'hostel-attendance', title: 'Hostel Attendance', description: 'Your hostel check-ins.', columns: [['attendance_date','Date'],['hostel','Hostel'],['room','Room'],['checked_at','Check-in'],['status','Status']] },
   { id: 'mess-attendance', title: 'Mess Attendance', description: 'Your breakfast, lunch and dinner attendance.', columns: [['attendance_date','Date'],['meal','Meal'],['status','Attendance']] },
 ];
+const SERVICE_ICONS: Record<string, LucideIcon> = { timetable:CalendarDays, attendance:ClipboardCheck, 'internal-marks':FileText, 'semester-marks':GraduationCap, fees:Wallet, homework:BookOpen, circulars:Megaphone, exams:CalendarDays, opac:Library, 'hostel-attendance':Building2, 'mess-attendance':Utensils };
 const SUMMARY_LABELS: Record<string,string> = { total_fee:'Total fees', amount_paid:'Paid', outstanding_balance:'Balance due', attendance_percentage:'Attendance', hours_conducted:'Hours conducted', hours_present:'Hours present', hours_absent:'Hours absent', days_conducted:'Days conducted', days_present:'Days present', days_absent:'Days absent', semester_gpa:'Semester GPA', overall_cgpa:'CGPA', overall_result:'Result', hours_on_duty:'On duty', eligibility_status:'Eligibility' };
 
 function display(key: string, value: Row[string], currency = 'INR'): string {
@@ -40,16 +43,21 @@ export function StudentErp() {
   const { service } = useParams();
   const student = useAuth().identity?.student;
   const selected = SERVICES.find(item => item.id === service);
-  return <>
+  return <div className="student-erp">
     <PageHeading eyebrow="YOUR INSTITUTION RECORDS" title={selected?.title || 'My ERP'}>
       {student?.full_name} · {student?.roll_number} · Records maintained by your institution.
     </PageHeading>
-    {!service && <div className="career-grid">{SERVICES.map(item => <section className="panel" key={item.id}>
-      <h2>{item.title}</h2><p className="muted">{item.description}</p><Link className="button secondary" to={`/erp/${item.id}`}>View {item.title.toLowerCase()} →</Link>
-    </section>)}</div>}
+    {!service && <div className="career-grid student-erp-services">{SERVICES.map(item => {
+      const Icon = SERVICE_ICONS[item.id];
+      return <section className="panel student-erp-service" key={item.id}>
+        <span className="student-erp-service-icon"><Icon size={22} aria-hidden="true"/></span>
+        <h2>{item.title}</h2><p className="muted">{item.description}</p>
+        <Link className="button secondary" to={`/erp/${item.id}`}>View {item.title.toLowerCase()} <ArrowRight size={16} aria-hidden="true"/></Link>
+      </section>;
+    })}</div>}
     {service && !selected && <section className="panel"><p>This ERP service is unavailable.</p><Link to="/erp">Back to My ERP</Link></section>}
-    {selected && <><div className="career-actions"><Link className="button secondary" to="/erp">← All ERP services</Link></div><ServiceView key={selected.id} service={selected}/></>}
-  </>;
+    {selected && <><div className="student-erp-navigation"><Link className="button secondary" to="/erp">← All ERP services</Link><span className="student-erp-readonly">Read-only access</span></div><ServiceView key={selected.id} service={selected}/></>}
+  </div>;
 }
 
 function ServiceView({service}:{service:Service}) {
@@ -76,37 +84,56 @@ function ServiceView({service}:{service:Service}) {
   const currency = /^[A-Z]{3}$/.test(rawCurrency) ? rawCurrency : 'INR';
   function submit(event:FormEvent) { event.preventDefault();setQuery(search.trim());setOffset(0); }
   return <>
-    <section className="panel placement-filter-panel"><div className="placement-filter-grid">
+    {(isMarks || service.id==='attendance' || isCampusAttendance || service.id==='opac') && <section className="panel placement-filter-panel student-erp-toolbar"><div className="placement-filter-grid student-erp-filters">
       {isMarks && <label>Semester<select aria-label="Semester" value={semester} onChange={event=>{setSemester(event.target.value);setOffset(0);}}><option value="">All semesters</option>{Array.from({length:8},(_,index)=><option key={index} value={index+1}>Semester {index+1}</option>)}</select></label>}
       {service.id==='attendance' && <label>Period<select aria-label="Period" value={period} onChange={event=>{setPeriod(event.target.value);setOffset(0);}}>{['today','week','month','semester'].map(value=><option key={value} value={value}>{humanize(value)}</option>)}</select></label>}
       {isCampusAttendance && <label>Date<input type="date" value={attendanceDate} onChange={event=>{setAttendanceDate(event.target.value);setOffset(0);}}/></label>}
       {service.id==='mess-attendance' && <label>Meal<select aria-label="Meal" value={meal} onChange={event=>{setMeal(event.target.value);setOffset(0);}}><option value="">All meals</option>{['breakfast','lunch','dinner','other'].map(value=><option key={value} value={value}>{humanize(value)}</option>)}</select></label>}
     </div>{service.id==='opac' && <form className="career-actions" onSubmit={submit}><label>Book title, author, subject or ISBN<input value={search} maxLength={120} onChange={event=>setSearch(event.target.value)} placeholder="Search your library"/></label><button className="button secondary" type="submit">Search</button></form>}
-    <div className="career-actions"><button className="button secondary" disabled={resource.loading} onClick={resource.reload}>Refresh</button></div></section>
+    </section>}
     {resource.error && <ErrorMessage message={resource.error} retry={resource.reload}/>}
     {resource.loading && <p role="status">Loading your {service.title.toLowerCase()}…</p>}
     {data && <>
-      <p className="muted">{[data.student.department_display_name || data.student.department_code, data.student.batch_label].filter(Boolean).join(' · ')}</p>
-      {data.summary && <div className="career-grid">{Object.entries(SUMMARY_LABELS).filter(([key])=>data.summary?.[key]!=null).map(([key,label])=><section className="panel" key={key}><span className="eyebrow">{label}</span><p className="academic-value">{display(key,data.summary![key],currency)}</p></section>)}</div>}
+      <p className="muted student-erp-context">{[data.student.department_display_name || data.student.department_code, data.student.batch_label].filter(Boolean).join(' · ')}</p>
+      {data.summary && <div className="career-grid student-erp-summary">{Object.entries(SUMMARY_LABELS).filter(([key])=>data.summary?.[key]!=null).map(([key,label])=><section className="panel" key={key}><span className="eyebrow">{label}</span><p className="academic-value">{display(key,data.summary![key],currency)}</p></section>)}</div>}
       {data.summary?.as_of_date && <p className="muted">Attendance updated: {display('as_of_date',data.summary.as_of_date)}</p>}
       {data.summary_status==='unavailable' && <p className="muted">Your institution has not provided a summary for this selection.</p>}
-      <section className="panel"><h2>{service.id==='fees'?'Payment history':service.title}</h2>
-      {!data.items.length ? <p>No records are available for this selection. Your institution maintains these records.</p> : service.id === 'timetable' ? <WeeklyTimetable rows={data.items} open={setDetail}/> : <div className="academic-table"><table><thead><tr>{service.columns.map(([key,label])=><th key={key} scope="col">{label}</th>)}<th scope="col">Details</th></tr></thead><tbody>{data.items.map((row,index)=><tr key={index}>{service.columns.map(([key])=><td key={key}>{key==='status'?<span className="pill">{service.id==='mess-attendance' && ['present','absent'].includes(String(row[key]))?<><span aria-hidden="true">{row[key]==='present'?'✓':'✕'} </span>{display(key,row[key])}</>:display(key,row[key])}</span>:display(key,row[key],currency)}</td>)}<td><button className="text-button" onClick={()=>setDetail(row)} aria-label={`View ${row.title || row.subject || 'record'} details`}>View</button></td></tr>)}</tbody></table></div>}
-      <div className="career-actions"><button className="button secondary" disabled={resource.loading || offset===0} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>Previous</button><span>Page {offset/pageSize+1}</span><button className="button secondary" disabled={resource.loading || !data.has_more || offset>=10000} onClick={()=>setOffset(value=>value+pageSize)}>Next</button></div>
+      <section className="panel student-erp-records"><div className="student-erp-records-heading"><div><h2>{service.id==='fees'?'Payment history':service.title}</h2><p className="muted">{service.id==='timetable'?'Your weekly schedule · select a class to view details.':'Records for your selection · open a record to view details.'}</p></div><div className="student-erp-record-actions"><button className="button secondary student-erp-view" disabled={resource.loading} onClick={resource.reload}><RefreshCw size={14} aria-hidden="true"/> Refresh</button><span className="student-erp-count">{data.items.length}{data.has_more?'+':''} records</span></div></div>
+      {!data.items.length ? <div className="student-erp-empty"><FileText size={28} aria-hidden="true"/><strong>No records available</strong><p>No records are available for this selection. Your institution maintains these records.</p></div> : service.id === 'timetable' ? <WeeklyTimetable rows={data.items} open={setDetail}/> : <div className="academic-table student-erp-table"><table><thead><tr>{service.columns.map(([key,label])=><th key={key} scope="col">{label}</th>)}<th scope="col">Details</th></tr></thead><tbody>{data.items.map((row,index)=><tr key={index}>{service.columns.map(([key])=><td key={key}>{key==='status'?<span className={`pill student-erp-status student-erp-status-${String(row[key]).toLowerCase().replace(/[^a-z]/g,'')}`}>{service.id==='mess-attendance' && ['present','absent'].includes(String(row[key]))?<><span aria-hidden="true">{row[key]==='present'?'✓':'✕'} </span>{display(key,row[key])}</>:display(key,row[key])}</span>:display(key,row[key],currency)}</td>)}<td><button className="button secondary student-erp-view" onClick={()=>setDetail(row)} aria-label={`View ${row.title || row.subject || 'record'} details`}>View</button></td></tr>)}</tbody></table></div>}
+      <div className="career-actions student-erp-pagination"><button className="button secondary" disabled={resource.loading || offset===0} onClick={()=>setOffset(value=>Math.max(0,value-pageSize))}>Previous</button><span>Page {offset/pageSize+1}</span><button className="button secondary" disabled={resource.loading || !data.has_more || offset>=10000} onClick={()=>setOffset(value=>value+pageSize)}>Next</button></div>
       </section>
     </>}
-    {detail && <Dialog close={()=>setDetail(null)} labelledBy="erp-record-title"><h2 id="erp-record-title">{detail.title || detail.subject || service.title}</h2><dl>{Object.entries(detail).filter(([,value])=>value!=null).map(([key,value])=><div key={key}><dt>{service.columns.find(([column])=>column===key)?.[1] || humanize(key)}</dt><dd style={{whiteSpace:'pre-wrap'}}>{display(key,value,currency)}</dd></div>)}</dl><button className="button secondary" onClick={()=>setDetail(null)}>Close</button></Dialog>}
+    {detail && <Dialog close={()=>setDetail(null)} labelledBy="erp-record-title"><p className="eyebrow">{service.title} · Record details</p><h2 id="erp-record-title">{detail.title || detail.subject || service.title}</h2><dl className="student-erp-details">{Object.entries(detail).filter(([,value])=>value!=null).map(([key,value])=><div key={key}><dt>{service.columns.find(([column])=>column===key)?.[1] || humanize(key)}</dt><dd style={{whiteSpace:'pre-wrap'}}>{display(key,value,currency)}</dd></div>)}</dl><button className="button secondary" onClick={()=>setDetail(null)}>Close</button></Dialog>}
   </>;
 }
 
 function WeeklyTimetable({ rows, open }: { rows: Row[]; open: (row: Row) => void }) {
-  const slots = [...new Set(rows.map(row => `${row.starts_at}|${row.ends_at}`))].sort();
-  return <div className="academic-table"><table>
-    <caption className="muted">Your enrolled class timetable · all times in 12-hour format</caption>
-    <thead><tr><th scope="col">Time</th>{['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'].map(day => <th key={day} scope="col">{day}</th>)}</tr></thead>
-    <tbody>{slots.map(slot => {
-      const [start, end] = slot.split('|');
-      return <tr key={slot}><th scope="row" style={{minWidth:130,whiteSpace:'nowrap'}}>{display('starts_at',start)}<br/><span className="muted">to {display('ends_at',end)}</span></th>{Array.from({length:7},(_,day) => <td key={day} style={{minWidth:160,verticalAlign:'top'}}>{rows.filter(row => Number(row.weekday)===day && `${row.starts_at}|${row.ends_at}`===slot).map((row,index) => <div key={index} style={{marginBottom:12}}><button className="text-button" onClick={()=>open(row)}>{row.subject || 'Class'}</button>{row.faculty && <p className="muted">{row.faculty}</p>}{row.room && <p className="muted">{row.room}</p>}</div>)}</td>)}</tr>;
-    })}</tbody>
+  const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
+  const slots = [...new Map(rows.map(row => {
+    const start = String(row.starts_at || '').slice(0,5);
+    const end = String(row.ends_at || '').slice(0,5);
+    return [`${start}|${end}`, { key:`${start}|${end}`, start, end }];
+  })).values()].sort((a,b) => a.start.localeCompare(b.start) || a.end.localeCompare(b.end));
+  const byCell = new Map<string, Row[]>();
+  for (const row of rows) {
+    const key = `${row.weekday}|${String(row.starts_at || '').slice(0,5)}|${String(row.ends_at || '').slice(0,5)}`;
+    byCell.set(key, [...(byCell.get(key) || []), row]);
+  }
+  const colors = ['#7c3aed','#0284c7','#059669','#d97706','#db2777','#4f46e5'];
+  const subjects = [...new Set(rows.map(row => String(row.subject || 'Class')))];
+  return <div className="academic-table erp-timetable-grid-wrap"><table className="erp-timetable-grid" aria-label="Weekly class timetable">
+    <thead><tr><th scope="col">Time</th>{days.map(day => <th key={day} scope="col">{day}</th>)}</tr></thead>
+    <tbody>{slots.map(slot => <tr key={slot.key}>
+      <th scope="row"><span className="erp-timetable-time-range">{display('starts_at',slot.start)}<br/><span>– {display('ends_at',slot.end)}</span></span></th>
+      {days.map((day,index) => <td key={day}>{(byCell.get(`${index}|${slot.key}`) || []).map((row,rowIndex) => {
+        const color = colors[subjects.indexOf(String(row.subject || 'Class')) % colors.length];
+        return <button key={rowIndex} className="erp-timetable-class" style={{'--class-color':color} as CSSProperties} onClick={()=>open(row)} aria-label={`Open ${row.subject || 'class'}, ${day}, ${display('starts_at',slot.start)} to ${display('ends_at',slot.end)}`}>
+          <strong>{row.subject || 'Class'}</strong>
+          {row.faculty && <small>{row.faculty}</small>}
+          {row.room && <small>Room {row.room}</small>}
+          <span className="erp-timetable-class-detail">View details <ArrowRight size={12} aria-hidden="true"/></span>
+        </button>;
+      })}</td>)}
+    </tr>)}</tbody>
   </table></div>;
 }
