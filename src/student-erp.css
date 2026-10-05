@@ -6,7 +6,6 @@
 .student-erp .student-erp-service h2 { font-size:18px; line-height:1.3; margin:0 0 6px; }
 .student-erp .student-erp-service p { font-size:13px; line-height:1.5; margin:0 0 12px; flex:1; }
 .student-erp .student-erp-service .button { width:100%; justify-content:space-between; font-size:12px; padding:8px 12px; min-height:36px; }
-.student-erp-service:hover { border-color:color-mix(in srgb,var(--primary) 30%,var(--border)); }
 .student-erp-navigation { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; }
 .student-erp-readonly,.student-erp-count { font-size:12px; font-weight:600; color:var(--muted); background:var(--background); border:1px solid var(--border); border-radius:99px; padding:7px 12px; white-space:nowrap; }
 .student-erp .student-erp-toolbar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:16px; padding:18px 22px; }
@@ -79,3 +78,20 @@
 @media(max-width:600px) { .student-erp-records-heading { flex-direction:column; } .student-erp-record-actions { width:100%; justify-content:space-between; } }
 
 .student-erp-service-icon svg { width:18px; height:18px; }
+
+/* A distinct service colour, keeping the compact cards and button-only navigation. */
+.student-erp .student-erp-service { --service-accent:#2563eb; --service-ink:var(--service-accent); border-color:color-mix(in srgb,var(--service-accent) 24%,var(--border)); border-top:3px solid var(--service-accent); background:linear-gradient(135deg,color-mix(in srgb,var(--service-accent) 9%,var(--card)),var(--card) 70%); }
+.student-erp .student-erp-service:nth-child(2) { --service-accent:#0f766e; }
+.student-erp .student-erp-service:nth-child(3) { --service-accent:#7c3aed; }
+.student-erp .student-erp-service:nth-child(4) { --service-accent:#4f46e5; }
+.student-erp .student-erp-service:nth-child(5) { --service-accent:#047857; }
+.student-erp .student-erp-service:nth-child(6) { --service-accent:#c2410c; }
+.student-erp .student-erp-service:nth-child(7) { --service-accent:#be185d; }
+.student-erp .student-erp-service:nth-child(8) { --service-accent:#be123c; }
+.student-erp .student-erp-service:nth-child(9) { --service-accent:#0e7490; }
+.student-erp .student-erp-service:nth-child(10) { --service-accent:#6d28d9; }
+.student-erp .student-erp-service:nth-child(11) { --service-accent:#a16207; }
+.student-erp .student-erp-service-icon { background:var(--service-accent); color:#fff; box-shadow:0 3px 8px color-mix(in srgb,var(--service-accent) 20%,transparent); }
+.student-erp .student-erp-service .button { color:var(--service-ink); background:color-mix(in srgb,var(--service-accent) 9%,var(--card)); border-color:color-mix(in srgb,var(--service-accent) 28%,var(--border)); }
+.student-erp .student-erp-service .button:hover { background:color-mix(in srgb,var(--service-accent) 17%,var(--card)); border-color:var(--service-accent); }
+:root.dark .student-erp .student-erp-service { --service-ink:color-mix(in srgb,var(--service-accent) 50%,white); }
