@@ -1988,6 +1988,12 @@ dialog.modal::backdrop {
 .interview-field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .interview-fields>.button{width:100%;margin-top:2px}
 .interview-inline-note{margin:0;color:var(--muted);font-size:12px}
+.practice-jd-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:-4px}
+.practice-jd-tools>.muted{font-size:11px}
+.practice-jd-sources{color:var(--muted);font-size:11px;line-height:1.5}
+.practice-jd-sources ul{display:flex;flex-wrap:wrap;gap:6px 16px;margin:4px 0 0;padding-left:18px}
+.practice-jd-sources a{color:var(--accent,#7048df)}
+.interview-inline-error{margin:0;color:#b42332;font-size:12px}
 .interview-panel-card{background:#fff}
 .interview-panel-card>.eyebrow{display:block}
 .interview-panel-card>h2{margin:8px 0;font-size:21px;line-height:1.25}

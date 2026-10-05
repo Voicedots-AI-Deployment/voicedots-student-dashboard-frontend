@@ -350,6 +350,31 @@ test("upload polls a durable operation across refresh and opens the existing ses
   await expect(page).toHaveURL(/interview.html\?id=sub-1&session_id=session-1/);
 });
 
+test("practice generates a current role JD with sources and does not replace manual text on error", async ({ page }) => {
+  await mockStudent(page);
+  await mockActiveResume(page);
+  await page.route("**/api/student/practice/job-description", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    expect(route.request().postDataJSON()).toEqual({ role_title: "AI Engineer" });
+    return route.fulfill({ json: { role_title: "AI Engineer", job_description: "Responsibilities\\nBuild and evaluate AI systems.\\n\\nQualifications\\nPython and machine learning experience.", sources: [{ title: "Recent AI Engineer listing", url: "https://jobs.example.org/ai-engineer" }] } });
+  });
+  await page.goto("/practice");
+  const generate = page.getByRole("button", { name: "Generate latest JD" });
+  await expect(generate).toBeDisabled();
+  await page.getByLabel("Target role", { exact: true }).fill("AI Engineer");
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  await expect(page.getByLabel("Job description")).toContainText("Build and evaluate AI systems");
+  await expect(page.getByRole("link", { name: "Recent AI Engineer listing" })).toHaveAttribute("href", "https://jobs.example.org/ai-engineer");
+  await expect(page.getByText(/not an employer’s official posting/)).toBeVisible();
+  await page.getByLabel("Job description").fill("My manually edited description");
+  await expect(page.getByRole("link", { name: "Recent AI Engineer listing" })).toHaveCount(0);
+  await page.route("**/api/student/practice/job-description", route => route.fulfill({ status: 502, json: { detail: "Current listings are temporarily unavailable. Your form has not changed; please retry." } }));
+  await generate.click();
+  await expect(page.getByRole("alert")).toContainText("Current listings are temporarily unavailable");
+  await expect(page.getByLabel("Job description")).toHaveValue("My manually edited description");
+});
+
 test("resume clarification is saved before continuing preparation", async ({
   page,
 }) => {
