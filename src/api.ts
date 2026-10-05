@@ -104,6 +104,14 @@ export type Drive = {
   agent_selection?: unknown[];
   round_configuration?: unknown[];
 };
+export type ConfiguredInterviewAgent = {
+  order: number;
+  track: string;
+  name: string;
+  role: string;
+  persona: string;
+  description: string;
+};
 export type DriveContext = {
   drive_id: string;
   company_name: string;
@@ -154,6 +162,7 @@ export type DriveContext = {
   can_resume?: boolean;
   main_resume_required?: boolean;
   main_resume_available?: boolean;
+  interview_panel?: ConfiguredInterviewAgent[];
 };
 export type Readiness = {
   overall_score: number | null;

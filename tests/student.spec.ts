@@ -331,7 +331,7 @@ test("upload polls a durable operation across refresh and opens the existing ses
   await page
     .getByLabel("Target role", { exact: true })
     .fill("Software engineer");
-  await page.getByRole("button", { name: "Prepare my interview" }).click();
+  await page.getByRole("button", { name: "Start practice interview" }).click();
   await expect(
     page.getByRole("heading", {
       name: "Preparing your personalized questions",
@@ -384,7 +384,7 @@ test("resume clarification is saved before continuing preparation", async ({
   await page
     .getByLabel("Target role", { exact: true })
     .fill("Software engineer");
-  await page.getByRole("button", { name: "Prepare my interview" }).click();
+  await page.getByRole("button", { name: "Start practice interview" }).click();
   await page
     .getByLabel("What was your personal contribution?")
     .fill("I built the API and wrote integration tests.");
@@ -733,7 +733,7 @@ test("retrying an ambiguous upload reuses its idempotency key", async ({
   await page
     .getByLabel("Target role", { exact: true })
     .fill("Software engineer");
-  await page.getByRole("button", { name: "Prepare my interview" }).click();
+  await page.getByRole("button", { name: "Start practice interview" }).click();
   await expect(
     page.getByRole("heading", { name: "Your panel is ready." }),
   ).toBeVisible();
@@ -741,42 +741,38 @@ test("retrying an ambiguous upload reuses its idempotency key", async ({
   expect(keys[0]).toBe(keys[1]);
 });
 
-test("placement preparation uses the frozen role, JD, and duration", async ({
-  page,
-}) => {
+test("placement interview setup is read-only and comes from the selected drive", async ({ page }) => {
   await mockStudent(page);
-  await page.route("**/api/student/drives/d1/interview-context", (route) =>
-    route.fulfill({
-      json: {
-        drive_id: "d1",
-        role_title: "Graduate engineer",
-        job_description: "Frozen campaign job description.",
-        duration_minutes: 15,
-        action: "start",
-        interview_window: "open",
-      },
-    }),
-  );
+  await mockActiveResume(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [{
+    id: "d1", company_name: "Example Company", role_title: "Graduate engineer", status: "active",
+    eligibility_status: "eligible", main_resume_available: true, interview_action: "start",
+    interview_status: "open", interview_duration_minutes: 45, interview_max_attempts: 2,
+  }] }));
+  await page.route("**/api/student/drives/d1/interview-context", route => route.fulfill({ json: {
+    drive_id: "d1", company_name: "Example Company", role_title: "Graduate engineer",
+    job_description: "Frozen campaign job description.", duration_minutes: 45,
+    action: "start", can_start: true, can_resume: false, interview_window: "open",
+    interview_window_start_at: "2026-10-05T10:00:00+05:30", interview_window_end_at: "2026-10-08T18:00:00+05:30",
+    attempt_number: 1, max_attempts: 2, attempts_used: 0, attempts_remaining: 2,
+    main_resume_required: true, main_resume_available: true,
+    interview_panel: [{ order: 1, track: "hr", name: "Priya Sharma", role: "People Partner", persona: "warm", description: "Welcome." }],
+  } }));
   await page.goto("/practice?drive=d1");
-  await expect(page.getByLabel("Target role", { exact: true })).toHaveValue(
-    "Graduate engineer",
-  );
-  await expect(page.getByLabel("Target role", { exact: true })).toHaveAttribute(
-    "readonly",
-    "",
-  );
-  await expect(page.getByLabel("Interview duration")).toHaveValue("15");
-  await expect(page.getByLabel("Interview duration")).toBeDisabled();
-  await expect(page.getByLabel("Job description")).toHaveValue(
-    "Frozen campaign job description.",
-  );
-  await page
-    .getByRole("link", { name: "Interview practice", exact: true })
-    .click();
-  await expect(
-    page.getByLabel("Target role", { exact: true }),
-  ).not.toHaveAttribute("readonly", "");
+  await expect(page.getByRole("tab", { name: "Placement Interview" })).toHaveAttribute("aria-selected", "true");
+  await page.locator(".placement-jd-details summary").click();
+  await expect(page.getByText("Frozen campaign job description.")).toBeVisible();
+  await expect(page.getByLabel("Select placement opportunity")).toHaveValue("d1");
+  await expect(page.getByLabel("Target role", { exact: true })).toHaveCount(0);
+  await expect(page.getByLabel("Interview duration")).toHaveCount(0);
+  await expect(page.getByLabel("Job description")).toHaveCount(0);
+  await expect(page.locator(".placement-panel-person")).toHaveCount(1);
+  await expect(page.getByText("People Partner")).toBeVisible();
+  await expect(page.locator(".interview-active-resume")).toHaveCount(1);
+  await page.getByRole("tab", { name: "Practice Interview" }).click();
+  await expect(page.getByLabel("Target role", { exact: true })).toBeEditable();
   await expect(page.getByLabel("Interview duration")).toBeEnabled();
+  await expect(page.locator(".panel-person")).toHaveCount(4);
 });
 
 test("the real interview runtime restores a new-tab identity and loads device checks", async ({
