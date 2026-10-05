@@ -8,6 +8,8 @@ import {
   CalendarDays,
   Camera,
   ChevronRight,
+  Clock3,
+  ExternalLink,
   Download,
   FileText,
   MapPin,
@@ -17,6 +19,7 @@ import {
   Target,
   TrendingUp,
   Upload,
+  X,
 } from "lucide-react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
 import {
@@ -341,7 +344,6 @@ export function Overview() {
   );
 }
 
-const decisionLabel = (value?: string) => { const key = (value || "undecided").toLowerCase().replace(/[-\s]+/g, "_"); return key.includes("shortlist") ? "Shortlisted" : key.includes("reject") ? "Rejected" : key.includes("hold") ? "On Hold" : "Undecided"; };
 const interviewTrackLabels: Record<string, string> = { hr: "Talent Acquisition Specialist", domain: "Senior Domain Specialist", industry: "Practical Interviewer", manager: "Hiring Manager" };
 function configuredRoundLabels(drive: Drive) {
   const rounds = drive.agent_selection?.length ? drive.agent_selection : drive.round_configuration || [];
@@ -350,6 +352,83 @@ function configuredRoundLabels(drive: Drive) {
     const track = String((round as { track: unknown }).track);
     return interviewTrackLabels[track] || humanize(track);
   }).filter(Boolean);
+}
+
+type StudentAttemptState = {
+  maximum: number;
+  used: number;
+  completed: number;
+  current: number | null;
+  next: number | null;
+  remaining: number;
+};
+
+function boundedCount(value: unknown, fallback: number, maximum: number) {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.min(maximum, Math.floor(parsed))) : fallback;
+}
+
+function studentAttemptState(value: Drive | DriveContext): StudentAttemptState {
+  const isContext = "drive_id" in value;
+  const maximum = Math.max(1, Math.floor(Number(
+    isContext ? value.max_attempts : value.interview_max_attempts ?? value.max_attempts ?? 1
+  ) || 1));
+  const rawUsed = isContext ? value.attempts_used : value.interview_attempts_used;
+  const used = boundedCount(rawUsed, 0, maximum);
+  const action = isContext ? value.action : value.interview_action || "";
+  const status = isContext ? value.assignment_status || "" : value.interview_assignment_status || "";
+  const rawAttempt = isContext ? value.attempt_number : value.interview_attempt_number;
+  const attempt = Math.max(1, Math.min(maximum, Math.floor(Number(rawAttempt) || 1)));
+  const rawCurrent = isContext ? value.current_attempt_number : value.interview_current_attempt_number;
+  const current = rawCurrent != null
+    ? Math.max(1, Math.min(maximum, Math.floor(Number(rawCurrent) || attempt)))
+    : action === "resume" || status === "in_progress" ? attempt : null;
+  const rawCompleted = isContext ? value.completed_attempts : value.interview_completed_attempts;
+  const completed = boundedCount(rawCompleted, Math.max(0, used - (current ? 1 : 0)), maximum);
+  const rawNext = isContext ? value.next_attempt_number : value.interview_next_attempt_number;
+  let next = rawNext == null ? null : Math.max(1, Math.min(maximum, Math.floor(Number(rawNext) || 1)));
+  if (next == null) {
+    if (current != null) next = current;
+    else if (["start", "retry_preparation"].includes(action))
+      next = Math.min(maximum, status === "completed" ? used + 1 : attempt);
+    else if (status === "completed" && maximum > used) next = Math.min(maximum, used + 1);
+    else if (action === "not_assigned") next = attempt;
+  }
+  return { maximum, used, completed, current, next, remaining: Math.max(0, maximum - used) };
+}
+
+function placementGroup(drive: Drive) {
+  const status = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
+  const action = drive.interview_action || "";
+  if (status === "closed" || status === "completed" || drive.status === "closed") return "closed";
+  if (["resume", "start", "retry_preparation"].includes(action) && status !== "upcoming") return "active";
+  if (["upcoming", "awaiting_assignment"].includes(status) || drive.status === "scheduled") return "upcoming";
+  return "closed";
+}
+
+function safeExternalUrl(value?: string) {
+  if (!value) return null;
+  try {
+    const parsed = new URL(value);
+    return parsed.protocol === "https:" || parsed.protocol === "http:" ? parsed.href : null;
+  } catch {
+    return null;
+  }
+}
+
+function attemptSummaryText(state: StudentAttemptState, action: string, status: string) {
+  const completedText = state.completed === 0
+    ? "No completed attempts"
+    : `${state.completed} attempt${state.completed === 1 ? "" : "s"} completed`;
+  if (action === "resume" || status === "in_progress") return `Attempt ${state.current ?? state.next ?? 1} in progress`;
+  if (action === "not_assigned") return `${state.maximum} attempt${state.maximum === 1 ? "" : "s"} allowed · Awaiting assignment`;
+  if (state.next != null && state.remaining > 0 && ["start", "retry_preparation"].includes(action)) {
+    if (state.completed > 0) return `${completedText} · Attempt ${state.next} ready · ${state.remaining} remaining`;
+    return `Attempt ${state.next} of ${state.maximum} · Ready to start`;
+  }
+  if (state.used > 0 && state.remaining === 0) return `No attempts remaining · ${completedText}`;
+  if (state.used > 0 && state.remaining > 0) return `${completedText} · Next attempt is not available yet`;
+  return `Attempt ${state.next ?? 1} of ${state.maximum}`;
 }
 
 function compensationLabel(drive: Drive) {
@@ -427,12 +506,78 @@ export function Placements() {
       return matchesSearch && matchesStatus;
     })
     .sort((left, right) => {
+      const groupOrder = { active: 0, upcoming: 1, closed: 2 };
+      const groupDifference = groupOrder[placementGroup(left)] - groupOrder[placementGroup(right)];
+      if (groupDifference) return groupDifference;
+      const actionRank = (drive: Drive) => drive.interview_action === "resume" ? 0 : ["start", "retry_preparation"].includes(drive.interview_action || "") ? 1 : 2;
+      const actionDifference = actionRank(left) - actionRank(right);
+      if (actionDifference) return actionDifference;
       if (sortOrder === "company") return left.company_name.localeCompare(right.company_name);
       const leftDate = new Date(left.window_start_at || left.drive_date || "9999-12-31").getTime();
       const rightDate = new Date(right.window_start_at || right.drive_date || "9999-12-31").getTime();
       return leftDate - rightDate;
     });
   const hasFilters = Boolean(search.trim()) || statusFilter !== "all";
+  const groups = [
+    { key: "active", title: "Active now", description: "Interviews you can resume or start while the window is open." },
+    { key: "upcoming", title: "Scheduled & upcoming", description: "Eligible opportunities that are not ready to start yet." },
+    { key: "closed", title: "Closed & past", description: "Completed, closed, or otherwise no longer actionable." },
+  ].map((group) => ({ ...group, drives: items.filter((drive) => placementGroup(drive) === group.key) }));
+  const attemptState = context ? studentAttemptState(context) : null;
+  const companyWebsite = safeExternalUrl(context?.company_website || selected?.company_website);
+  const companyLinkedIn = safeExternalUrl(context?.company_linkedin || selected?.company_linkedin);
+  const eligibilityDetails = selected ? [
+    selected.criteria_min_cgpa != null ? `Minimum CGPA ${selected.criteria_min_cgpa}` : null,
+    selected.criteria_department_codes?.length ? `Departments: ${selected.criteria_department_codes.join(", ")}` : null,
+    selected.criteria_graduation_years?.length ? `Graduation years: ${selected.criteria_graduation_years.join(", ")}` : null,
+    selected.criteria_required_skills?.length
+      ? `Skills considered: ${selected.criteria_required_skills.join(", ")}${selected.criteria_min_skill_matches ? ` · Match at least ${selected.criteria_min_skill_matches}` : ""}`
+      : null,
+    selected.criteria_require_resume === true ? "Resume required" : selected.criteria_require_resume === false ? "Resume not required" : null,
+  ].filter((item): item is string => Boolean(item)) : [];
+  const interviewWindow = context?.interview_window || "";
+  const canResume = Boolean(context && interviewWindow === "open" && (context.can_resume ?? context.action === "resume"));
+  const canStart = Boolean(context && interviewWindow === "open" && !context.coach_gate_locked && (
+    context.can_start ?? (["start", "retry_preparation"].includes(context.action) || Boolean(context.can_start_next_attempt))
+  ));
+  const startInterview = () => context && navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
+  const resumeInterview = () => {
+    if (!context) return;
+    if (context.session_id) openInterview(context.submission_id, context.session_id);
+    else navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
+  };
+  const statusText = context
+    ? canResume ? "In progress"
+      : interviewWindow === "closed" ? "Closed"
+      : interviewWindow === "not_open" ? "Scheduled"
+      : context.assignment_status === "expired" ? "Expired"
+      : context.action === "not_assigned" ? "Awaiting assignment"
+      : context.action === "completed" ? "Completed"
+      : context.action === "blocked" ? "Action required"
+      : canStart ? "Open now" : humanize(context.action)
+    : "Checking status";
+  let nextStep = "Your placement interview details are being checked.";
+  if (context && attemptState) {
+    if (interviewWindow === "closed" || selected?.status === "closed")
+      nextStep = attemptState.remaining === 0 ? "You have completed all available attempts." : "This opportunity is closed, so no further interview action is available.";
+    else if (context.action === "not_assigned")
+      nextStep = interviewWindow === "not_open" && context.interview_window_start_at
+        ? `This interview opens on ${dateTime(context.interview_window_start_at)}.`
+        : "You are eligible. Your placement cell will assign an interview attempt before you can begin.";
+    else if (interviewWindow === "not_open")
+      nextStep = context.interview_window_start_at ? `This interview opens on ${dateTime(context.interview_window_start_at)}.` : "This interview has been scheduled and is not open yet.";
+    else if (context.coach_gate_locked)
+      nextStep = "Complete the required AI Coach preparation to unlock your next attempt.";
+    else if (canResume) nextStep = "Your interview is in progress. Continue from where you left off.";
+    else if (attemptState.next != null && attemptState.remaining > 0 && canStart)
+      nextStep = attemptState.completed > 0
+        ? `You completed Attempt ${attemptState.completed}. Review any released result, then start Attempt ${attemptState.next} while the interview window is open.`
+        : `Your interview is open. Start Attempt ${attemptState.next} before the interview window closes.`;
+    else if (attemptState.remaining === 0) nextStep = "You have completed all available attempts.";
+    else if (context.publication_status === "scheduled") nextStep = "Your interview is complete. The result will be available after the placement team releases it.";
+    else if (context.publication_status === "hidden") nextStep = "Your interview is complete. The placement team has not released the result yet.";
+    else nextStep = "Your placement team will update this interview assignment. Refresh to check for changes.";
+  }
   return (
     <>
       <PageHeading
@@ -455,7 +600,7 @@ export function Placements() {
           </label>
           <label><span>Interview status</span>
             <select value={statusFilter} onChange={(e) => setStatusFilter(e.target.value)}>
-              <option value="all">All statuses</option><option value="awaiting_assignment">Awaiting assignment</option><option value="open">Open now</option><option value="upcoming">Upcoming</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="closed">Closed</option>
+            <option value="all">All statuses</option><option value="awaiting_assignment">Awaiting assignment</option><option value="open">Open now</option><option value="upcoming">Upcoming</option><option value="in_progress">In progress</option><option value="completed">Completed</option><option value="expired">Expired</option><option value="closed">Closed</option>
             </select>
           </label>
           <label><span>Sort by</span>
@@ -468,25 +613,19 @@ export function Placements() {
       </section>
       <ResourceState resource={resource}>
         {items.length ? (
-          <div className="drive-grid">
-            {items.map((drive) => (
+          <div className="placement-groups">
+          {groups.filter((group) => group.drives.length > 0).map((group) => <section className="placement-group" key={group.key} aria-labelledby={`placement-group-${group.key}`}>
+            <div className="placement-group-heading"><div><h2 id={`placement-group-${group.key}`}>{group.title}</h2><p>{group.description}</p></div><span>{group.drives.length}</span></div>
+            <div className="drive-grid">
+            {group.drives.map((drive) => (
               <article className="panel drive-card" key={drive.id}>
                 {(() => {
                   const interviewStatus = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
-                  const statusLabel = interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Interview open" : interviewStatus === "upcoming" ? "Upcoming" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : "Closed";
-                  const attemptNumber = drive.interview_attempt_number || 1;
-                  const maximumAttempts = drive.interview_max_attempts || drive.max_attempts || 1;
+                  const statusLabel = interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
+                  const state = studentAttemptState(drive);
                   const attemptProgress = interviewStatus === "closed"
                     ? "Interview closed"
-                    : drive.interview_action === "not_assigned"
-                    ? `${maximumAttempts} attempt${maximumAttempts === 1 ? "" : "s"} allowed · Not assigned yet`
-                    : drive.interview_action === "resume" || drive.interview_assignment_status === "in_progress"
-                      ? `Attempt ${attemptNumber} of ${maximumAttempts} · In progress`
-                      : drive.interview_action === "start" || drive.interview_action === "retry_preparation"
-                        ? `Attempt ${attemptNumber} of ${maximumAttempts} · Ready to start`
-                      : drive.interview_assignment_status === "completed"
-                        ? `${drive.interview_attempts_used ?? attemptNumber} of ${maximumAttempts} attempts used · ${drive.interview_attempts_remaining ?? 0} remaining`
-                        : `Attempt ${attemptNumber} of ${maximumAttempts} · ${drive.interview_attempts_remaining ?? maximumAttempts} remaining`;
+                    : attemptSummaryText(state, drive.interview_action || "", drive.interview_assignment_status || "");
                   return <>
                 <div className="drive-card-top">
                   <span className="company-avatar">
@@ -517,6 +656,8 @@ export function Placements() {
                 })()}
               </article>
             ))}
+            </div>
+          </section>)}
           </div>
         ) : (
           <Empty
@@ -532,84 +673,71 @@ export function Placements() {
           </Empty>
         )}
       </ResourceState>
-      {selected && (
-        <Dialog labelledBy="drive-title" close={() => setSelected(null)}>
-          <span className="eyebrow">{selected.company_name}</span>
-          <h2 id="drive-title">{selected.role_title}</h2>{context?.decision && <div className={`placement-decision placement-decision-${decisionTone(context.decision)}`}><span>Placement decision</span><strong>{decisionLabel(context.decision)}</strong></div>}
-          {(selected.company_description || context?.company_description) && <section className="opportunity-company"><div className="company-avatar">{selected.company_name.slice(0,2).toUpperCase()}</div><div><h3>About {selected.company_name}</h3><p>{context?.company_description || selected.company_description}</p></div></section>}
-          {busy && <p role="status">Checking your interview assignment…</p>}
-          {error && <ErrorMessage message={error} />}
-          <div className="detail-chips"><span className="pill placement-eligible-badge">Eligible</span><span className="pill">{context?.interview_window === "open" ? "Interview window open" : context?.interview_window === "not_open" ? "Interview window upcoming" : context?.interview_window === "closed" ? "Interview window closed" : humanize(selected.status)}</span></div>
-          {context && <div className="attempt-count-summary" aria-label="Interview attempt summary">
-            <div><span>Attempts allowed</span><strong>{context.max_attempts}</strong></div>
-            <div><span>Attempts used</span><strong>{context.attempts_used ?? 0}</strong></div>
-            <div><span>Current attempt</span><strong>{context.action === "not_assigned" ? "Not assigned" : `${context.attempt_number} of ${context.max_attempts}`}</strong></div>
-            <div><span>Attempts remaining</span><strong>{context.action === "not_assigned" ? `${context.max_attempts} once assigned` : context.attempts_remaining ?? 0}</strong></div>
-          </div>}
-          <div className="opportunity-details">
-            <div><span>Interview window</span><strong>{selected.window_start_at ? `${dateTime(selected.window_start_at)} → ${selected.window_end_at ? dateTime(selected.window_end_at) : "To be announced"}` : date(selected.drive_date)}</strong></div>
-            <div><span>Location</span><strong>{context?.location || selected.location || "To be announced"}</strong></div>
-            <div><span>Role type</span><strong>{humanize(selected.job_type || "Not specified")}</strong></div>
-            <div><span>Compensation</span><strong>{compensationLabel(selected)}</strong></div>
-            <div><span>Interview setup</span><strong>{context?.duration_minutes || selected.interview_duration_minutes || "—"} min · {humanize(context?.difficulty_tier || selected.difficulty_tier || "Not set")} · {context?.round_count || selected.agent_selection?.length || selected.round_configuration?.length || "—"} rounds</strong></div>
-            {configuredRoundLabels(selected).length > 0 && <div className="opportunity-rounds"><span>Interview rounds</span><ol>{configuredRoundLabels(selected).map((round, index) => <li key={`${round}-${index}`}>{round}</li>)}</ol></div>}
-            {selected.application_deadline && <div><span>Apply by</span><strong>{dateTime(selected.application_deadline)}</strong></div>}
+      {selected && <Dialog labelledBy="drive-title" close={() => setSelected(null)} className="opportunity-dialog">
+        <div className="opportunity-shell">
+          <header className="opportunity-header">
+            <div className="opportunity-identity">
+              <span className="company-avatar" aria-hidden="true">{(selected.company_name || "C").slice(0, 2).toUpperCase()}</span>
+              <div className="opportunity-title"><span className="eyebrow">PLACEMENT OPPORTUNITY</span><h2 id="drive-title">{selected.company_name}</h2><p>{selected.role_title}</p>
+                <div className="opportunity-badges"><span className="pill placement-eligible-badge">Eligible</span><span className="pill">{statusText}</span></div>
+              </div>
+            </div>
+            <div className="opportunity-header-actions">
+              {canResume && <button className="button primary" onClick={resumeInterview}>Resume interview <ArrowRight size={16}/></button>}
+              {canStart && <button className="button primary" onClick={startInterview}>{attemptState?.completed ? `Start Attempt ${attemptState.next}` : "Start interview"} <ArrowRight size={16}/></button>}
+              <button className="opportunity-close" aria-label="Close opportunity details" onClick={() => setSelected(null)}><X size={19}/></button>
+            </div>
+            <div className="opportunity-header-metadata">
+              <span><MapPin size={15}/>{context?.location || selected.location || "Location not specified"}</span>
+              <span><BriefcaseBusiness size={15}/>{humanize(selected.job_type || "Job type not specified")}</span>
+              <span><Target size={15}/>{compensationLabel(selected)}</span>
+              <span><CalendarDays size={15}/>{context?.interview_window_start_at ? dateTime(context.interview_window_start_at) : selected.window_start_at ? dateTime(selected.window_start_at) : date(selected.drive_date)}</span>
+            </div>
+          </header>
+          {busy && <p className="opportunity-loading" role="status">Checking your interview assignment…</p>}
+          {error && <div className="opportunity-error"><ErrorMessage message={error}/></div>}
+          <div className="opportunity-layout">
+            <main className="opportunity-main">
+              {(context?.company_description || selected.company_description || companyWebsite || companyLinkedIn) && <section className="opportunity-section" aria-labelledby="company-about-heading">
+                <div className="opportunity-section-heading"><span className="company-avatar" aria-hidden="true">{(selected.company_name || "C").slice(0, 2).toUpperCase()}</span><div><span className="eyebrow">COMPANY</span><h3 id="company-about-heading">About {selected.company_name}</h3></div></div>
+                {(context?.company_description || selected.company_description) && <p className="opportunity-prose">{context?.company_description || selected.company_description}</p>}
+                {(companyWebsite || companyLinkedIn) && <div className="opportunity-links">
+                  {companyWebsite && <a href={companyWebsite} target="_blank" rel="noopener noreferrer">Visit company website <ExternalLink size={15}/></a>}
+                  {companyLinkedIn && <a href={companyLinkedIn} target="_blank" rel="noopener noreferrer">Company on LinkedIn <ExternalLink size={15}/></a>}
+                </div>}
+              </section>}
+              {(context?.job_description || selected.job_description) && <section className="opportunity-section" aria-labelledby="role-description-heading"><span className="eyebrow">THE ROLE</span><h3 id="role-description-heading">Job description</h3><p className="opportunity-prose opportunity-jd">{context?.job_description || selected.job_description}</p></section>}
+              {eligibilityDetails.length > 0 && <section className="opportunity-section" aria-labelledby="eligibility-criteria-heading"><span className="eyebrow">PLACEMENT CRITERIA</span><h3 id="eligibility-criteria-heading">Eligibility criteria</h3><ul className="opportunity-round-list">{eligibilityDetails.map((detail) => <li key={detail}><span aria-hidden="true">✓</span><strong>{detail}</strong></li>)}</ul></section>}
+              <section className="opportunity-section" aria-labelledby="interview-process-heading">
+                <span className="eyebrow">WHAT TO EXPECT</span><h3 id="interview-process-heading">Interview process</h3>
+                <div className="opportunity-process-meta"><span><Clock3 size={16}/>{context?.duration_minutes || selected.interview_duration_minutes || "—"} minutes</span><span><Target size={16}/>{humanize(context?.difficulty_tier || selected.difficulty_tier || "Difficulty not set")}</span><span><BriefcaseBusiness size={16}/>{context?.round_count ?? configuredRoundLabels(selected).length} rounds</span></div>
+                {configuredRoundLabels(selected).length > 0 ? <ol className="opportunity-round-list">{configuredRoundLabels(selected).map((round, index) => <li key={`${round}-${index}`}><span>{index + 1}</span><strong>{round}</strong></li>)}</ol> : <p className="opportunity-muted">Round details have not been provided yet.</p>}
+              </section>
+              {context && <section className="opportunity-section" aria-labelledby="attempts-heading">
+                <span className="eyebrow">YOUR INTERVIEW PROGRESS</span><h3 id="attempts-heading">Attempts</h3>
+                {attemptState && <p className="attempt-summary-line">{context.action === "not_assigned" ? "You are eligible; an attempt is not assigned yet." : attemptSummaryText(attemptState, context.action, context.assignment_status || "")}</p>}
+                {context.action !== "not_assigned" && <ol className="attempt-timeline">
+                  {(context.attempt_history || []).filter((attempt, index, rows) => rows.findIndex((item) => Number(item.attempt_number) === Number(attempt.attempt_number)) === index).sort((a, b) => a.attempt_number - b.attempt_number).map((attempt) => {
+                    const number = safeAttemptNumber(attempt.attempt_number, 1, attemptState?.maximum);
+                    const resultReady = Boolean(attempt.completed_at && attempt.submission_id && attempt.result_available);
+                    return <li key={`attempt-${number}`} className="attempt-timeline-item completed"><div className="attempt-timeline-number">{number}</div><div className="attempt-timeline-content"><strong>Attempt {number}</strong><span>{attempt.completed_at ? `Completed${attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}` : "Completed"}</span>{attempt.completed_at && !resultReady && <small>{attempt.evaluation_status === "held_for_review" ? "Result under review" : "Result processing"}</small>}</div>{resultReady && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id!)}`}>View result</Link>}</li>;
+                  })}
+                  {attemptState?.current != null && !(context.attempt_history || []).some((attempt) => Number(attempt.attempt_number) === attemptState.current) && <li className="attempt-timeline-item current"><div className="attempt-timeline-number">{attemptState.current}</div><div className="attempt-timeline-content"><strong>Attempt {attemptState.current}</strong><span>In progress</span></div>{canResume && <button className="button secondary" onClick={resumeInterview}>Resume interview</button>}</li>}
+                  {attemptState?.next != null && attemptState.remaining > 0 && <li className="attempt-timeline-item next"><div className="attempt-timeline-number">{attemptState.next}</div><div className="attempt-timeline-content"><strong>Attempt {attemptState.next}</strong><span>{canStart ? "Ready to start" : context.coach_gate_locked ? "Locked · preparation required" : interviewWindow === "not_open" ? "Scheduled" : context.action === "not_assigned" ? "Awaiting assignment" : "Not available yet"}</span></div></li>}
+                  {attemptState?.next != null && attemptState.maximum > attemptState.next && <li className="attempt-timeline-item locked"><div className="attempt-timeline-number">···</div><div className="attempt-timeline-content"><strong>{attemptState.maximum - attemptState.next} more attempt{attemptState.maximum - attemptState.next === 1 ? "" : "s"}</strong><span>Unlock one at a time after the preceding attempt.</span></div></li>}
+                  {!attemptState?.current && attemptState?.remaining === 0 && (context.attempt_history || []).length === 0 && <li className="attempt-timeline-item completed"><div className="attempt-timeline-number">✓</div><div className="attempt-timeline-content"><strong>No attempts remaining</strong><span>This assignment has reached its attempt limit.</span></div></li>}
+                </ol>}
+                {context.coach_gate_locked && <div className="opportunity-coach-gate"><strong>Complete the required AI Coach preparation</strong><p>Your next attempt unlocks when the required preparation and validation are complete.</p><Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Continue with AI Coach <ArrowRight size={16}/></Link></div>}
+                <div className="opportunity-next-step"><span className="eyebrow">YOUR NEXT STEP</span><p>{nextStep}</p></div>
+              </section>}
+            </main>
+            <aside className="opportunity-snapshot" aria-label="Opportunity snapshot"><span className="eyebrow">OPPORTUNITY SNAPSHOT</span><h3>{selected.role_title}</h3><dl>
+              <div><dt>Company</dt><dd>{selected.company_name}</dd></div><div><dt>Role</dt><dd>{selected.role_title}</dd></div><div><dt>Location</dt><dd>{context?.location || selected.location || "Not specified"}</dd></div><div><dt>Job type</dt><dd>{humanize(selected.job_type || "Not specified")}</dd></div><div><dt>Compensation</dt><dd>{compensationLabel(selected)}</dd></div><div><dt>Interview window</dt><dd>{selected.window_start_at ? `${dateTime(selected.window_start_at)}${selected.window_end_at ? ` – ${dateTime(selected.window_end_at)}` : ""}` : date(selected.drive_date)}</dd></div><div><dt>Status</dt><dd>{statusText}</dd></div><div><dt>Eligibility</dt><dd>{context?.eligibility?.status === "eligible" || selected.eligibility_status === "eligible" ? "Eligible" : humanize(context?.eligibility?.status || "Eligible")}</dd></div>
+            </dl>{selected.application_deadline && <p className="opportunity-deadline"><strong>Application deadline</strong><span>{dateTime(selected.application_deadline)}</span></p>}</aside>
           </div>
-          {(context?.job_description || selected.job_description) && <details className="job-description"><summary>View role description</summary><p>{context?.job_description || selected.job_description}</p></details>}
-          {context && (
-            <>
-              {context.action === "not_assigned" && <p className="placement-assignment-pending">{context.interview_window === "closed" ? "This placement drive is closed. You can review its details, but no interview attempt can be started." : "You’re eligible. Your placement cell hasn’t assigned an interview attempt yet, so there’s nothing to start or resume."}</p>}
-              {context.action !== "not_assigned" && <section className="attempt-progress"><h3>Attempt progress</h3>{(context.attempt_history || []).map((attempt) => <div className="attempt-row" key={safeAttemptNumber(attempt.attempt_number)}><div><strong>Attempt {safeAttemptNumber(attempt.attempt_number, 1, context.max_attempts)}</strong><span>Completed{attempt.completed_at ? ` · ${dateTime(attempt.completed_at)}` : ""}</span></div>{attempt.submission_id && <Link className="button secondary" to={`/reports?submission=${encodeURIComponent(attempt.submission_id)}`}>View result</Link>}</div>)}{context.interview_window !== "closed" && (context.attempts_remaining || 0) > 0 && context.action !== "resume" && <div className="attempt-row available"><div><strong>Attempt {safeAttemptNumber(context.attempt_number, 1, context.max_attempts)}</strong><span>Available to start</span></div></div>}</section>}
-              {context.coach_gate_locked && <section className="gentle-note" role="status"><div><strong>Complete AI Coach preparation to unlock your next attempt</strong><p>Your placement score requires AI Coach teaching, the linked focused practice interview, and independent validation. Opening AI Coach alone will not unlock the attempt.</p><Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Continue with AI Coach <ArrowRight size={16}/></Link></div></section>}
-              {context.publication_status === "released" && context.decision && decisionTone(context.decision) !== "shortlisted" && (
-                <p className="placement-decision-note">Placement decision: <strong>{humanize(context.decision)}</strong></p>
-              )}
-              {context.interview_window !== "closed" && context.action === "resume" && (
-                <button
-                  className="button primary"
-                  onClick={() => {
-                    if (context.session_id) {
-                      openInterview(context.submission_id, context.session_id);
-                    } else {
-                      navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
-                    }
-                  }}
-                >
-                  {context.session_id ? "Resume interview" : `Resume attempt ${context.attempt_number}`}
-                </button>
-              )}
-              {context.interview_window !== "closed" && (["start", "retry_preparation"].includes(context.action) || context.can_start_next_attempt || (context.action === "completed" && Number(context.attempt_number) < Number(context.max_attempts))) && (
-                  <button
-                    className="button primary"
-                    onClick={() =>
-                      navigate(
-                        `/practice?drive=${encodeURIComponent(context.drive_id)}`,
-                      )
-                    }
-                  >
-                  {context.attempts_used ? `Start attempt ${context.attempt_number}` : "Start interview"} <ArrowRight size={16} />
-                  </button>
-                )}
-              {context.attempt_number > 1 && <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Prepare with your AI Coach</Link>}
-              {!context.coach_gate_locked && !["start", "resume", "retry_preparation"].includes(
-                context.action,
-              ) && !(context.action === "completed" && context.attempt_number < context.max_attempts) && (
-                <p>
-                  Your assignment is {humanize(context.action).toLowerCase()}.
-                  Refresh to check for updates.
-                </p>
-              )}
-            </>
-          )}
-          <button
-            autoFocus
-            className="button secondary"
-            onClick={() => setSelected(null)}
-          >
-            Close
-          </button>
-        </Dialog>
-      )}
+          <footer className="opportunity-footer"><span>Your placement information is provided by your placement cell.</span><button className="button secondary" onClick={() => setSelected(null)}>Close details</button></footer>
+        </div>
+      </Dialog>}
     </>
   );
 }

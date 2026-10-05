@@ -60,6 +60,8 @@ export type Drive = {
   id: string;
   company_name: string;
   company_description?: string;
+  company_website?: string;
+  company_linkedin?: string;
   job_description?: string;
   role_title: string;
   job_type?: string;
@@ -70,6 +72,12 @@ export type Drive = {
   application_deadline?: string;
   status: string;
   eligibility_status?: "eligible" | "ineligible";
+  criteria_min_cgpa?: number | null;
+  criteria_department_codes?: string[];
+  criteria_graduation_years?: number[];
+  criteria_required_skills?: string[];
+  criteria_min_skill_matches?: number | null;
+  criteria_require_resume?: boolean;
   interview_action?: string;
   interview_assignment_status?: string | null;
   interview_status?: string;
@@ -77,6 +85,9 @@ export type Drive = {
   interview_max_attempts?: number;
   interview_attempts_used?: number;
   interview_attempts_remaining?: number;
+  interview_completed_attempts?: number;
+  interview_current_attempt_number?: number | null;
+  interview_next_attempt_number?: number | null;
   max_attempts?: number;
   salary_type?: string;
   salary_min_amount?: number | null;
@@ -95,6 +106,8 @@ export type DriveContext = {
   drive_id: string;
   company_name: string;
   company_description: string;
+  company_website?: string;
+  company_linkedin?: string;
   role_title: string;
   job_description: string;
   duration_minutes: number | null;
@@ -119,12 +132,16 @@ export type DriveContext = {
   eligibility?: { status: string; reason?: string | null };
   attempts_used?: number;
   attempts_remaining?: number;
+  completed_attempts?: number;
+  current_attempt_number?: number | null;
+  next_attempt_number?: number | null;
   assignment_status?: string;
   attempt_history?: Array<{
     attempt_number: number;
     submission_id?: string;
     session_id?: string;
     evaluation_status?: string;
+    result_available?: boolean;
     overall_score?: number | null;
     started_at?: string;
     completed_at?: string;

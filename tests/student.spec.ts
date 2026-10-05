@@ -542,13 +542,13 @@ test("overview never offers interview actions for a closed drive", async ({ page
   await expect(latest.getByRole("link", { name: /^AI Coach/ })).toHaveCount(0);
 });
 
-test("placement opportunity details show compensation, deadlines and interview setup", async ({ page }) => {
+test("placement opportunity shows full details and a truthful unassigned attempt state", async ({ page }) => {
   await mockStudent(page);
   await page.route("**/api/student/drives", route => route.fulfill({ json: [
-    { id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", location: "Chennai", job_type: "full_time", window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30", application_deadline: "2026-09-30T17:00:00+05:30", interview_duration_minutes: 30, difficulty_tier: "intermediate", agent_selection: [{ track: "hr", agent_id: "private-persona-id" }, { track: "domain", agent_id: "private-persona-id-2" }], salary_type: "range", salary_min_amount: 500000, salary_max_amount: 700000, salary_currency: "INR", salary_period: "annual" },
+    { id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", criteria_min_cgpa: 7.5, criteria_department_codes: ["CSE"], criteria_graduation_years: [2027], criteria_required_skills: ["SQL", "Python"], criteria_min_skill_matches: 1, criteria_require_resume: true, location: "Chennai", job_type: "full_time", window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30", application_deadline: "2026-09-30T17:00:00+05:30", interview_duration_minutes: 30, difficulty_tier: "intermediate", agent_selection: [{ track: "hr", agent_id: "private-persona-id" }, { track: "domain", agent_id: "private-persona-id-2" }], salary_type: "range", salary_min_amount: 500000, salary_max_amount: 700000, salary_currency: "INR", salary_period: "annual" },
   ] }));
   await page.route("**/api/student/drives/zoho/interview-context", route => route.fulfill({ json: {
-    drive_id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst",
+    drive_id: "zoho", company_name: "Zoho", company_description: "A product company", company_website: "https://zoho.example", company_linkedin: "https://linkedin.com/company/zoho", role_title: "Data Analyst",
     job_description: "Analyze data", duration_minutes: null, attempt_number: 1, max_attempts: 1,
     action: "not_assigned", assignment_status: "not_assigned", attempts_used: 0, attempts_remaining: 1,
     attempt_history: [], current_attempt: null, eligibility: { status: "eligible" }, difficulty_tier: "intermediate",
@@ -558,16 +558,45 @@ test("placement opportunity details show compensation, deadlines and interview s
   await page.goto("/placements");
   await page.getByRole("button", { name: "View opportunity" }).click();
   const opportunityDialog = page.getByRole("dialog");
-  await expect(opportunityDialog.getByText(/₹5,00,000/)).toBeVisible();
-  await expect(opportunityDialog.getByText("Interview setup")).toBeVisible();
-  await expect(opportunityDialog.getByText("Apply by")).toBeVisible();
+  await expect(opportunityDialog.getByText(/₹5,00,000/).first()).toBeVisible();
+  await expect(opportunityDialog.getByText("Interview process")).toBeVisible();
+  await expect(opportunityDialog.getByText("Application deadline")).toBeVisible();
   await expect(opportunityDialog.getByText("Talent Acquisition Specialist")).toBeVisible();
   await expect(opportunityDialog.getByText("Senior Domain Specialist")).toBeVisible();
   await expect(opportunityDialog.getByText("private-persona-id", { exact: true })).toHaveCount(0);
-  await expect(page.getByText(/hasn’t assigned an interview attempt yet/)).toBeVisible();
-  await expect(opportunityDialog.getByText("Attempts remaining")).toBeVisible();
-  await expect(opportunityDialog.getByText("1 once assigned")).toBeVisible();
+  await expect(opportunityDialog.getByText("You are eligible; an attempt is not assigned yet.")).toBeVisible();
+  await expect(opportunityDialog.getByRole("link", { name: /Visit company website/ })).toHaveAttribute("href", "https://zoho.example/");
+  await expect(opportunityDialog.getByRole("link", { name: /Company on LinkedIn/ })).toHaveAttribute("href", "https://linkedin.com/company/zoho");
+  await expect(opportunityDialog.getByText("OPPORTUNITY SNAPSHOT")).toBeVisible();
+  await expect(opportunityDialog.getByText("Eligibility criteria")).toBeVisible();
+  await expect(opportunityDialog.getByText("Skills considered: SQL, Python · Match at least 1")).toBeVisible();
+  await expect(opportunityDialog).toHaveCSS("width", /\d+px/);
+  await expect(opportunityDialog.getByText("Attempts remaining")).toHaveCount(0);
   await expect(opportunityDialog.getByRole("button", { name: "Resume interview" })).toHaveCount(0);
+});
+
+test("completed placement attempt unlocks only the next attempt and released results", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [
+    { id: "zoho", company_name: "Zoho", role_title: "Data Analyst", status: "active", interview_status: "open", interview_action: "start", interview_assignment_status: "completed", eligibility_status: "eligible", interview_attempt_number: 1, interview_max_attempts: 3, interview_attempts_used: 1, interview_attempts_remaining: 2, interview_completed_attempts: 1, interview_next_attempt_number: 2, window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30" },
+  ] }));
+  await page.route("**/api/student/drives/zoho/interview-context", route => route.fulfill({ json: {
+    drive_id: "zoho", company_name: "Zoho", company_description: "", role_title: "Data Analyst", job_description: "Analyze data",
+    duration_minutes: 30, attempt_number: 1, max_attempts: 3, action: "start", assignment_status: "completed",
+    attempts_used: 1, attempts_remaining: 2, completed_attempts: 1, current_attempt_number: null, next_attempt_number: 2,
+    attempt_history: [{ attempt_number: 1, submission_id: "released-submission", completed_at: "2026-10-02T10:00:00Z", evaluation_status: "released", result_available: true }],
+    current_attempt: null, eligibility: { status: "eligible" }, difficulty_tier: "intermediate", round_count: 1,
+    can_start: true, can_resume: false, publication_status: "released", decision: "undecided", interview_window: "open",
+  } }));
+  await page.goto("/placements");
+  await expect(page.getByText("Active now")).toBeVisible();
+  await page.getByRole("button", { name: "View opportunity" }).click();
+  const dialog = page.getByRole("dialog");
+  await expect(dialog.getByText("1 attempt completed · Attempt 2 ready · 2 remaining")).toBeVisible();
+  await expect(dialog.getByRole("link", { name: "View result" })).toHaveAttribute("href", "/reports?submission=released-submission");
+  await expect(dialog.getByText("1 more attempt")).toBeVisible();
+  await expect(dialog.getByRole("button", { name: "Start Attempt 2" })).toHaveCount(1);
+  await expect(dialog.getByText("Attempt 3", { exact: true })).toHaveCount(0);
 });
 
 test("placement search and filters share aligned labels and controls on desktop and tablet", async ({ page }) => {

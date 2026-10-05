@@ -169,10 +169,12 @@ export function Dialog({
   children,
   close,
   labelledBy,
+  className,
 }: {
   children: ReactNode;
   close: () => void;
   labelledBy: string;
+  className?: string;
 }) {
   const ref = useRef<HTMLDialogElement>(null);
   useEffect(() => {
@@ -183,7 +185,7 @@ export function Dialog({
   return (
     <dialog
       ref={ref}
-      className="modal panel"
+      className={`modal panel${className ? ` ${className}` : ""}`}
       aria-labelledby={labelledBy}
       onCancel={close}
     >
