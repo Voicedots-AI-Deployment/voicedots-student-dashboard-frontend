@@ -252,6 +252,7 @@ export function Overview() {
                 ))}
             </section>
             <AcademicOverview />
+            <section className="panel"><div className="section-heading"><div><span className="eyebrow">YOUR INSTITUTION RECORDS</span><h2>My ERP</h2><p>View your timetable, marks, fees, homework and campus attendance.</p></div><Link className="button secondary" to="/erp">Open My ERP <ArrowRight size={15}/></Link></div></section>
             <div className="overview-columns">
               <section className="panel" data-testid="overview-feedback">
                 <div className="section-heading">

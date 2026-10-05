@@ -34,6 +34,7 @@ import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Loading } from "./ui";
 import { Overview, Placements, Growth, Profile, Reports } from "./pages";
 import { Academics } from "./academics";
+import { StudentErp } from "./student-erp";
 import { Calendar } from "./calendar";
 import { Coach } from "./coach";
 import { CoachSkills } from "./coach-skills";
@@ -278,6 +279,7 @@ const nav = [
   { to: "/resume-studio", label: "Resume Studio", icon: FileText },
   { to: "/career", label: "Career coach", icon: Compass },
   { to: "/academics", label: "Marks and attendance", icon: BookOpen },
+  { to: "/erp", label: "My ERP", icon: BookOpen },
   { to: "/reports", label: "My reports", icon: FileText },
   { to: "/growth", label: "My growth", icon: ChartNoAxesCombined },
   { to: "/profile", label: "My profile", icon: UserRound },
@@ -341,7 +343,7 @@ export function App() {
   if (!auth.identity) return <Login />;
   const student = auth.identity.student;
   const current =
-    nav.find((item) => item.to === location.pathname)?.label ||
+    nav.find((item) => item.to === location.pathname || (item.to === '/erp' && location.pathname.startsWith('/erp/')))?.label ||
     "Student dashboard";
   async function logout() {
     setLoggingOut(true);
@@ -464,6 +466,8 @@ export function App() {
             <Route path="/reports" element={<Reports />} />
             <Route path="/growth" element={<Growth />} />
             <Route path="/academics" element={<Academics />} />
+            <Route path="/erp" element={<StudentErp />} />
+            <Route path="/erp/:service" element={<StudentErp />} />
             <Route path="/coach" element={<Coach />} />
             <Route path="/coach/skills" element={<CoachSkills />} />
             <Route path="/resume-studio" element={<ResumeStudio />} />

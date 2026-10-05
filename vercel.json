@@ -44,6 +44,14 @@
     {
       "source": "/career",
       "destination": "/index.html"
+    },
+    {
+      "source": "/erp",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/erp/:path*",
+      "destination": "/index.html"
     }
   ],
   "headers": [
