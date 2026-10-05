@@ -416,19 +416,8 @@ function safeExternalUrl(value?: string) {
   }
 }
 
-function attemptSummaryText(state: StudentAttemptState, action: string, status: string) {
-  const completedText = state.completed === 0
-    ? "No completed attempts"
-    : `${state.completed} attempt${state.completed === 1 ? "" : "s"} completed`;
-  if (action === "resume" || status === "in_progress") return `Attempt ${state.current ?? state.next ?? 1} in progress`;
-  if (action === "not_assigned") return `${state.maximum} attempt${state.maximum === 1 ? "" : "s"} allowed · Awaiting assignment`;
-  if (state.next != null && state.remaining > 0 && ["start", "retry_preparation"].includes(action)) {
-    if (state.completed > 0) return `${completedText} · Attempt ${state.next} ready · ${state.remaining} remaining`;
-    return `Attempt ${state.next} of ${state.maximum} · Ready to start`;
-  }
-  if (state.used > 0 && state.remaining === 0) return `No attempts remaining · ${completedText}`;
-  if (state.used > 0 && state.remaining > 0) return `${completedText} · Next attempt is not available yet`;
-  return `Attempt ${state.next ?? 1} of ${state.maximum}`;
+function attemptSummaryText(state: StudentAttemptState) {
+  return `${state.completed} completed · ${state.remaining} remaining`;
 }
 
 function compensationLabel(drive: Drive) {
@@ -533,11 +522,12 @@ export function Placements() {
     selected.criteria_required_skills?.length
       ? `Skills considered: ${selected.criteria_required_skills.join(", ")}${selected.criteria_min_skill_matches ? ` · Match at least ${selected.criteria_min_skill_matches}` : ""}`
       : null,
-    selected.criteria_require_resume === true ? "Resume required" : selected.criteria_require_resume === false ? "Resume not required" : null,
+    "Main Resume required",
   ].filter((item): item is string => Boolean(item)) : [];
   const interviewWindow = context?.interview_window || "";
-  const canResume = Boolean(context && interviewWindow === "open" && (context.can_resume ?? context.action === "resume"));
-  const canStart = Boolean(context && interviewWindow === "open" && !context.coach_gate_locked && (
+  const mainResumeAvailable = context?.main_resume_available === true;
+  const canResume = Boolean(context && mainResumeAvailable && interviewWindow === "open" && (context.can_resume ?? context.action === "resume"));
+  const canStart = Boolean(context && mainResumeAvailable && interviewWindow === "open" && !context.coach_gate_locked && (
     context.can_start ?? (["start", "retry_preparation"].includes(context.action) || Boolean(context.can_start_next_attempt))
   ));
   const startInterview = () => context && navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
@@ -548,6 +538,7 @@ export function Placements() {
   };
   const statusText = context
     ? canResume ? "In progress"
+      : context.main_resume_available === false ? "Main Resume required"
       : interviewWindow === "closed" ? "Closed"
       : interviewWindow === "not_open" ? "Scheduled"
       : context.assignment_status === "expired" ? "Expired"
@@ -558,7 +549,9 @@ export function Placements() {
     : "Checking status";
   let nextStep = "Your placement interview details are being checked.";
   if (context && attemptState) {
-    if (interviewWindow === "closed" || selected?.status === "closed")
+    if (context.main_resume_available === false)
+      nextStep = "Upload or select your Main Resume in My Profile before starting or resuming this placement interview.";
+    else if (interviewWindow === "closed" || selected?.status === "closed")
       nextStep = attemptState.remaining === 0 ? "You have completed all available attempts." : "This opportunity is closed, so no further interview action is available.";
     else if (context.action === "not_assigned")
       nextStep = interviewWindow === "not_open" && context.interview_window_start_at
@@ -609,7 +602,7 @@ export function Placements() {
             </select>
           </label>
         </div>
-        <span className="placement-result-count">{items.length} eligible {items.length === 1 ? "opportunity" : "opportunities"}</span>
+        <span className="placement-result-count">{items.length} {items.length === 1 ? "opportunity" : "opportunities"}</span>
       </section>
       <ResourceState resource={resource}>
         {items.length ? (
@@ -625,13 +618,13 @@ export function Placements() {
                   const state = studentAttemptState(drive);
                   const attemptProgress = interviewStatus === "closed"
                     ? "Interview closed"
-                    : attemptSummaryText(state, drive.interview_action || "", drive.interview_assignment_status || "");
+                    : attemptSummaryText(state);
                   return <>
                 <div className="drive-card-top">
                   <span className="company-avatar">
                     {(drive.company_name || "C").slice(0, 2).toUpperCase()}
                   </span>
-                  <span className="pill placement-eligible-badge">Eligible</span>
+                  <span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span>
                 </div>
                 <span className="eyebrow">{drive.company_name}</span>
                 <h2>{drive.role_title}</h2>
@@ -646,6 +639,7 @@ export function Placements() {
                 <p className="drive-attempt-summary">{statusLabel} · {attemptProgress}</p>
                 <p className="drive-interview-summary">{drive.interview_duration_minutes || "—"} minutes · {humanize(drive.difficulty_tier || "Difficulty not set")} · {drive.agent_selection?.length || drive.round_configuration?.length || "—"} rounds</p>
                 <div className="drive-card-meta"><span>{humanize(drive.job_type || "Job type not set")}</span><span>{compensationLabel(drive)}</span></div>
+                {drive.main_resume_available === false && <p className="drive-resume-prompt">Upload your Main Resume in <Link to="/profile">My Profile</Link> before starting an interview.</p>}
                 <button
                   className="button secondary"
                   onClick={() => void select(drive)}
@@ -685,6 +679,7 @@ export function Placements() {
             <div className="opportunity-header-actions">
               {canResume && <button className="button primary" onClick={resumeInterview}>Resume interview <ArrowRight size={16}/></button>}
               {canStart && <button className="button primary" onClick={startInterview}>{attemptState?.completed ? `Start Attempt ${attemptState.next}` : "Start interview"} <ArrowRight size={16}/></button>}
+              {context && context.main_resume_available === false && <Link className="button primary" to="/profile">Upload Main Resume <ArrowRight size={16}/></Link>}
               <button className="opportunity-close" aria-label="Close opportunity details" onClick={() => setSelected(null)}><X size={19}/></button>
             </div>
             <div className="opportunity-header-metadata">
@@ -696,6 +691,7 @@ export function Placements() {
           </header>
           {busy && <p className="opportunity-loading" role="status">Checking your interview assignment…</p>}
           {error && <div className="opportunity-error"><ErrorMessage message={error}/></div>}
+          {context?.main_resume_available === false && <div className="placement-resume-callout" role="status"><strong>A Main Resume is required for every placement interview.</strong><span>Upload or select your Main Resume in My Profile. You can return here afterward and continue with the same resume.</span><Link className="button secondary" to="/profile">Go to My Profile</Link></div>}
           <div className="opportunity-layout">
             <main className="opportunity-main">
               {(context?.company_description || selected.company_description || companyWebsite || companyLinkedIn) && <section className="opportunity-section" aria-labelledby="company-about-heading">
@@ -715,7 +711,7 @@ export function Placements() {
               </section>
               {context && <section className="opportunity-section" aria-labelledby="attempts-heading">
                 <span className="eyebrow">YOUR INTERVIEW PROGRESS</span><h3 id="attempts-heading">Attempts</h3>
-                {attemptState && <p className="attempt-summary-line">{context.action === "not_assigned" ? "You are eligible; an attempt is not assigned yet." : attemptSummaryText(attemptState, context.action, context.assignment_status || "")}</p>}
+                {attemptState && <p className="attempt-summary-line">{attemptSummaryText(attemptState)}{context.action === "not_assigned" ? " · Awaiting assignment" : ""}</p>}
                 {context.action !== "not_assigned" && <ol className="attempt-timeline">
                   {(context.attempt_history || []).filter((attempt, index, rows) => rows.findIndex((item) => Number(item.attempt_number) === Number(attempt.attempt_number)) === index).sort((a, b) => a.attempt_number - b.attempt_number).map((attempt) => {
                     const number = safeAttemptNumber(attempt.attempt_number, 1, attemptState?.maximum);

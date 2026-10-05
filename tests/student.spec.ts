@@ -417,7 +417,7 @@ test("eligibility without assignment is explained and does not enable interview 
   await page.route("**/api/student/drives/d1/interview-context", route => route.fulfill({ json: {
     drive_id: "d1", attempt_number: 1, max_attempts: 5, attempts_used: 0, attempts_remaining: 5,
     action: "not_assigned", assignment_status: "not_assigned", current_attempt: null, attempt_history: [],
-    can_start: false, can_resume: false, eligibility: { status: "eligible" }, interview_window: "open",
+    can_start: false, can_resume: false, eligibility: { status: "eligible" }, interview_window: "open", main_resume_required: true, main_resume_available: true,
   } }));
   await page.goto("/placements");
   await page.getByRole("button", { name: "View opportunity" }).click();
@@ -440,12 +440,13 @@ test("Coach-required score rule keeps the next placement attempt locked", async 
     attempts_used: 1, attempts_remaining: 1, attempt_history: [{ attempt_number: 1, submission_id: "sub-1" }],
     coach_gate_required: true, coach_gate_complete: false, coach_gate_locked: true,
     lock_reason: "ai_coach_required", eligibility: { status: "eligible" }, interview_window: "open",
+    main_resume_required: true, main_resume_available: true,
     can_start: false, can_resume: false,
   } }));
   await page.goto("/placements");
   await page.getByRole("button", { name: "View opportunity" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("Complete AI Coach preparation to unlock your next attempt")).toBeVisible();
+  await expect(dialog.getByText("Complete the required AI Coach preparation to unlock your next attempt")).toBeVisible();
   await expect(dialog.getByRole("link", { name: "Continue with AI Coach" })).toHaveAttribute("href", "/coach?drive=drive-coach");
   await expect(dialog.getByRole("button", { name: /Start attempt/ })).toHaveCount(0);
   await expect(dialog.getByText(/Your assignment is blocked/)).toHaveCount(0);
@@ -497,7 +498,7 @@ test("campus placements show eligible drives only and filter by interview window
   await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Software Engineer" })).toHaveCount(0);
-  await expect(page.getByText("2 eligible opportunities")).toBeVisible();
+  await expect(page.getByText("2 opportunities")).toBeVisible();
   await page.getByLabel("Interview status").selectOption("open");
   await expect(page.getByRole("heading", { name: "Data Analyst" })).toBeVisible();
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toHaveCount(0);
@@ -515,7 +516,7 @@ test("closed eligible drives remain viewable without offering an interview start
   await page.route("**/api/student/drives/closed-drive/interview-context", route => route.fulfill({ json: {
     drive_id: "closed-drive", company_name: "VoiceDot", role_title: "Software Engineer", action: "not_assigned",
     attempt_number: 1, max_attempts: 2, attempts_used: 0, attempts_remaining: 2, attempt_history: [],
-    eligibility: { status: "eligible" }, interview_window: "closed", can_start: false, can_resume: false,
+    eligibility: { status: "eligible" }, interview_window: "closed", can_start: false, can_resume: false, main_resume_required: true, main_resume_available: true,
   } }));
   await page.goto("/placements");
   await expect(page.getByRole("heading", { name: "Software Engineer" })).toBeVisible();
@@ -553,7 +554,7 @@ test("placement opportunity shows full details and a truthful unassigned attempt
     action: "not_assigned", assignment_status: "not_assigned", attempts_used: 0, attempts_remaining: 1,
     attempt_history: [], current_attempt: null, eligibility: { status: "eligible" }, difficulty_tier: "intermediate",
     round_count: 2, can_start: false, can_resume: false, publication_status: "unavailable", decision: "undecided",
-    interview_window: "open", location: "Chennai",
+    interview_window: "open", location: "Chennai", main_resume_required: true, main_resume_available: true,
   } }));
   await page.goto("/placements");
   await page.getByRole("button", { name: "View opportunity" }).click();
@@ -564,7 +565,7 @@ test("placement opportunity shows full details and a truthful unassigned attempt
   await expect(opportunityDialog.getByText("Talent Acquisition Specialist")).toBeVisible();
   await expect(opportunityDialog.getByText("Senior Domain Specialist")).toBeVisible();
   await expect(opportunityDialog.getByText("private-persona-id", { exact: true })).toHaveCount(0);
-  await expect(opportunityDialog.getByText("You are eligible; an attempt is not assigned yet.")).toBeVisible();
+  await expect(opportunityDialog.getByText(/0 completed · 1 remaining · Awaiting assignment/)).toBeVisible();
   await expect(opportunityDialog.getByRole("link", { name: /Visit company website/ })).toHaveAttribute("href", "https://zoho.example/");
   await expect(opportunityDialog.getByRole("link", { name: /Company on LinkedIn/ })).toHaveAttribute("href", "https://linkedin.com/company/zoho");
   await expect(opportunityDialog.getByText("OPPORTUNITY SNAPSHOT")).toBeVisible();
@@ -586,13 +587,13 @@ test("completed placement attempt unlocks only the next attempt and released res
     attempts_used: 1, attempts_remaining: 2, completed_attempts: 1, current_attempt_number: null, next_attempt_number: 2,
     attempt_history: [{ attempt_number: 1, submission_id: "released-submission", completed_at: "2026-10-02T10:00:00Z", evaluation_status: "released", result_available: true }],
     current_attempt: null, eligibility: { status: "eligible" }, difficulty_tier: "intermediate", round_count: 1,
-    can_start: true, can_resume: false, publication_status: "released", decision: "undecided", interview_window: "open",
+    can_start: true, can_resume: false, publication_status: "released", decision: "undecided", interview_window: "open", main_resume_required: true, main_resume_available: true,
   } }));
   await page.goto("/placements");
   await expect(page.getByText("Active now")).toBeVisible();
   await page.getByRole("button", { name: "View opportunity" }).click();
   const dialog = page.getByRole("dialog");
-  await expect(dialog.getByText("1 attempt completed · Attempt 2 ready · 2 remaining")).toBeVisible();
+  await expect(dialog.getByText("1 completed · 2 remaining")).toBeVisible();
   await expect(dialog.getByRole("link", { name: "View result" })).toHaveAttribute("href", "/reports?submission=released-submission");
   await expect(dialog.getByText("1 more attempt")).toBeVisible();
   await expect(dialog.getByRole("button", { name: "Start Attempt 2" })).toHaveCount(1);
@@ -638,8 +639,8 @@ test("placement filters align on phone and interview status filters persisted st
   await expect(page.getByText("Location", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Eligibility", { exact: true })).toHaveCount(0);
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
-  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "Backend Developer" }) })).toContainText("Attempt 2 of 5 · In progress");
-  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "QA Engineer" }) })).toContainText("2 of 3 attempts used · 1 remaining");
+  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "Backend Developer" }) })).toContainText("1 completed · 3 remaining");
+  await expect(page.locator(".drive-card").filter({ has: page.getByRole("heading", { name: "QA Engineer" }) })).toContainText("2 completed · 1 remaining");
   expect(contextRequests).toBe(0);
   await page.getByLabel("Interview status").selectOption("in_progress");
   await expect(page.getByRole("heading", { name: "Backend Developer" })).toBeVisible();
@@ -649,6 +650,36 @@ test("placement filters align on phone and interview status filters persisted st
     const box = label.getBoundingClientRect(); return { left: box.left, right: box.right, width: box.width };
   }));
   expect(filterBounds.every(bounds => bounds.width > 0 && bounds.left >= 0 && bounds.right <= 390)).toBe(true);
+});
+
+test("placement cards align their opportunity buttons and missing Main Resume routes to My Profile", async ({ page }) => {
+  await page.setViewportSize({ width: 1365, height: 900 });
+  await mockStudent(page);
+  await page.route("**/api/student/drives", route => route.fulfill({ json: [
+    { id: "resume-required", company_name: "Razorpay", role_title: "Project Manager", status: "active", eligibility_status: "resume_required", main_resume_required: true, main_resume_available: false, interview_status: "open", interview_action: "start", interview_max_attempts: 5, interview_attempts_remaining: 5, interview_completed_attempts: 0, criteria_require_resume: false },
+    { id: "second", company_name: "Example", role_title: "Senior Software Engineer with a longer role title", status: "active", eligibility_status: "eligible", main_resume_required: true, main_resume_available: true, interview_status: "open", interview_action: "start", interview_max_attempts: 3, interview_attempts_remaining: 3, interview_completed_attempts: 0 },
+    { id: "third", company_name: "Acme", role_title: "Analyst", status: "active", eligibility_status: "eligible", main_resume_required: true, main_resume_available: true, interview_status: "open", interview_action: "start", interview_max_attempts: 2, interview_attempts_remaining: 2, interview_completed_attempts: 0 },
+  ] }));
+  await page.route("**/api/student/drives/resume-required/interview-context", route => route.fulfill({ json: {
+    drive_id: "resume-required", company_name: "Razorpay", role_title: "Project Manager", job_description: "", duration_minutes: 30,
+    action: "start", interview_window: "open", can_start: true, can_resume: false, main_resume_required: true, main_resume_available: false,
+    attempt_number: 1, max_attempts: 5, attempts_used: 0, completed_attempts: 0, attempts_remaining: 5,
+    attempt_history: [], assignment_status: "assigned", publication_status: "unavailable", decision: "undecided",
+  } }));
+
+  await page.goto("/placements");
+  const cards = page.locator(".drive-card");
+  await expect(cards).toHaveCount(3);
+  const buttonTops = await cards.locator(":scope > .button").evaluateAll(buttons => buttons.map(button => button.getBoundingClientRect().top));
+  expect(Math.max(...buttonTops) - Math.min(...buttonTops)).toBeLessThanOrEqual(1);
+  await expect(cards.first()).toContainText("Main Resume required");
+  await expect(cards.first().getByRole("link", { name: "My Profile" })).toHaveAttribute("href", "/profile");
+
+  await cards.first().getByRole("button", { name: /View opportunity/ }).click();
+  await expect(page.getByText("A Main Resume is required for every placement interview.")).toBeVisible();
+  await expect(page.getByRole("link", { name: "Go to My Profile" })).toHaveAttribute("href", "/profile");
+  await expect(page.getByRole("button", { name: /Start interview/ })).toHaveCount(0);
+  await expect(page.getByText("Resume not required", { exact: true })).toHaveCount(0);
 });
 
 test("replacing an active login requires selecting the replacement checkbox", async ({

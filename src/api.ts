@@ -78,6 +78,7 @@ export type Drive = {
   criteria_required_skills?: string[];
   criteria_min_skill_matches?: number | null;
   criteria_require_resume?: boolean;
+  main_resume_available?: boolean;
   interview_action?: string;
   interview_assignment_status?: string | null;
   interview_status?: string;
@@ -150,6 +151,8 @@ export type DriveContext = {
   current_attempt?: { attempt_number: number; status: string; started_at?: string; completed_at?: string } | null;
   can_start?: boolean;
   can_resume?: boolean;
+  main_resume_required?: boolean;
+  main_resume_available?: boolean;
 };
 export type Readiness = {
   overall_score: number | null;
