@@ -61,6 +61,23 @@ test("Practice mode uses editable setup, one Main Resume and the standard four-p
   await expect(page.getByLabel("Interview duration")).toBeEnabled();
   await expect(page.getByLabel("Interview difficulty")).toBeEnabled();
   await expect(page.getByLabel("Job description")).toBeEditable();
+  const fieldSpacing = await page.evaluate(() => {
+    const role = document.querySelector('.interview-fields label');
+    const nextRow = document.querySelector('.interview-field-row');
+    if (!role || !nextRow) return Number.POSITIVE_INFINITY;
+    return Math.round(nextRow.getBoundingClientRect().top - role.getBoundingClientRect().bottom);
+  });
+  expect(fieldSpacing).toBeLessThanOrEqual(12);
+  const practiceCardGaps = await page.evaluate(() => {
+    const setup = document.querySelector('.interview-setup-grid');
+    const cards = document.querySelectorAll('.interview-resume-card');
+    if (!setup || cards.length < 2) return [Number.POSITIVE_INFINITY];
+    return [
+      Math.round(cards[0].getBoundingClientRect().top - setup.getBoundingClientRect().bottom),
+      Math.round(cards[1].getBoundingClientRect().top - cards[0].getBoundingClientRect().bottom),
+    ];
+  });
+  expect(practiceCardGaps.every((gap) => gap <= 13)).toBe(true);
   await expect(page.locator(".interview-active-resume")).toHaveCount(1);
   await expect(page.getByText("Quant_Engineer_Sample_Resume.pdf")).toBeVisible();
   await expect(page.getByRole("button", { name: /upload resume|change resume/i })).toHaveCount(0);
@@ -100,6 +117,13 @@ test("Placement mode filters unavailable drives and renders only its configured 
   await expect(page.locator(".placement-panel-person").nth(0)).toContainText("Technical Interviewer");
   await expect(page.locator(".placement-panel-person").nth(1)).toContainText("Manager Round");
   await expect(page.getByText("HR interviewer", { exact: true })).toHaveCount(0);
+  const placementCardGap = await page.evaluate(() => {
+    const setup = document.querySelector('.interview-setup-grid');
+    const resume = document.querySelector('.interview-resume-card');
+    if (!setup || !resume) return Number.POSITIVE_INFINITY;
+    return Math.round(resume.getBoundingClientRect().top - setup.getBoundingClientRect().bottom);
+  });
+  expect(placementCardGap).toBeLessThanOrEqual(13);
   await page.locator(".placement-jd-details summary").click();
   await expect(page.getByText("Build reliable services and APIs.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Start attempt 2" })).toBeEnabled();
