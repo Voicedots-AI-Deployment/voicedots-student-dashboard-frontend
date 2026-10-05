@@ -65,6 +65,11 @@ test.describe("Student Calendar", () => {
     await page.goto("/calendar");
     await page.screenshot({ path: testInfo.outputPath("calendar-desktop.png"), fullPage: true });
     await expect(page.getByRole("heading", { name: "Events", exact: true })).toBeVisible();
+    const searchBox = await page.locator(".calendar-search").boundingBox();
+    const searchInput = await page.getByRole("searchbox", { name: "Search events" }).boundingBox();
+    expect(searchBox && searchInput).toBeTruthy();
+    expect(Math.abs((searchInput!.y + searchInput!.height / 2) - (searchBox!.y + searchBox!.height / 2))).toBeLessThanOrEqual(1);
+    await expect(page.locator(".calendar-search > svg")).toBeVisible();
     const agenda = await page.locator(".calendar-agenda").boundingBox();
     const calendar = await page.locator(".calendar-month").boundingBox();
     expect(agenda && calendar).toBeTruthy();
