@@ -51,6 +51,7 @@ async function mockStudent(page: Page, options: { signedIn?: boolean } = {}) {
       "/api/student/readiness": readiness,
       "/api/student/drives": [],
       "/api/student/reports": { reports: [] },
+      "/api/student/calendar/personal-events": { events: [] },
       "/api/student/resume-library": { resumes: [] },
       "/api/student/practice/resumable": { attempts: [] },
       "/api/student/coach/latest-recommendation": { available: false, weak_skills: [], message: "Complete a placement interview to receive focused coaching recommendations." },
@@ -1107,7 +1108,8 @@ test("Calendar opens the exact persisted AI Coach session from its event", async
   } }));
 
   await page.goto("/calendar");
-  await page.locator(".calendar-upcoming-event").filter({ hasText: "Database indexes" }).click();
+  await page.getByRole("button", { name: "View Database indexes" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Open session" }).click();
   await expect(page).toHaveURL(new RegExp(`/coach\\?plan=${plan.id}&session=${sessionId}&stage=coach`));
   await expect(page.locator(".coach-lesson-identity").getByRole("heading", { name: "Database indexes" })).toBeVisible();
   await expect(page.getByText("Explain index tradeoffs", {exact:true}).first()).toBeVisible();
@@ -1131,9 +1133,10 @@ test("Calendar opens the selected placement and displays Coach time in IST", asy
     status: "scheduled", duration_minutes: 30,
   }] } }));
   await page.goto("/calendar");
-  await expect(page.locator(".calendar-upcoming-event").filter({ hasText: "SQL lesson" })).toContainText("6:30 pm");
-  await expect(page.locator(".calendar-upcoming-event").filter({ hasText: "SQL lesson" })).toContainText("30 minutes");
-  await page.locator(".calendar-upcoming-event").filter({ has: page.locator(".calendar-kind.placement") }).click();
+  await expect(page.locator(".calendar-event-card").filter({ hasText: "SQL lesson" })).toContainText("6:30 pm");
+  await expect(page.locator(".calendar-event-card").filter({ hasText: "SQL lesson" })).toContainText("30 min");
+  await page.getByRole("button", { name: "View Data Analyst" }).click();
+  await page.getByRole("button", { name: "View opportunity" }).last().click();
   await expect(page).toHaveURL(/\/placements\?drive=drive-calendar/);
   await expect(page.getByRole("dialog")).toContainText("Example Company");
 });
@@ -1148,7 +1151,7 @@ test("Calendar orders mixed events by timestamp and labels date-only drives", as
     id: "midday-coach", date: "2027-01-01", time: "2027-01-01T12:00:00+05:30", title: "Midday lesson", subtitle: "Example Co", kind: "coach", status: "scheduled", duration_minutes: 30,
   }]}}));
   await page.goto("/calendar");
-  const cards = page.locator(".calendar-upcoming-event");
+  const cards = page.locator(".calendar-event-card");
   await expect(cards).toHaveCount(3);
   await expect(cards.nth(0)).toContainText("Time pending");
   await expect(cards.nth(0)).toContainText("Time to be confirmed (IST)");
@@ -1166,7 +1169,8 @@ test("Calendar opens focused Coach interview events in their linked practice cyc
   }] } }));
 
   await page.goto("/calendar");
-  await page.locator(".calendar-upcoming-event").filter({ hasText: "Focused AI interview" }).click();
+  await page.getByRole("button", { name: "View Focused AI interview" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Open session" }).click();
   await expect(page).toHaveURL(/\/practice\?coach_cycle=cycle-7/);
 });
 
@@ -1180,7 +1184,8 @@ test("Calendar opens a scheduled Coach call using its persisted cycle ID", async
   }] } }));
 
   await page.goto("/calendar");
-  await page.locator(".calendar-upcoming-event").filter({ hasText: "AI Coach teaching session" }).click();
+  await page.getByRole("button", { name: "View AI Coach teaching session" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Open session" }).click();
   await expect(page).toHaveURL(/\/coach\/session\?plan=plan-7&cycle=cycle-9/);
 });
 
@@ -1193,8 +1198,9 @@ test("Calendar explains when a legacy Coach event has no safe session link", asy
   }] } }));
 
   await page.goto("/calendar");
-  await page.locator(".calendar-upcoming-event").filter({ hasText: "Older Coach session" }).click();
-  await expect(page.getByRole("alert")).toContainText("not linked to one specific session");
+  await page.getByRole("button", { name: "View Older Coach session" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Open session" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "not linked to a specific session" })).toBeVisible();
   await expect(page).toHaveURL(/\/calendar$/);
 });
 

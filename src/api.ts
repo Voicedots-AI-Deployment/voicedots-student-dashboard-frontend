@@ -87,6 +87,7 @@ export type Drive = {
   interview_attempts_used?: number;
   interview_attempts_remaining?: number;
   interview_completed_attempts?: number;
+  interview_result_available?: boolean;
   interview_current_attempt_number?: number | null;
   interview_next_attempt_number?: number | null;
   max_attempts?: number;
