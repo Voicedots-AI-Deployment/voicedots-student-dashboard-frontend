@@ -124,7 +124,7 @@ function WeeklyTimetable({ rows, open }: { rows: Row[]; open: (row: Row) => void
   return <div className="academic-table erp-timetable-grid-wrap"><table className="erp-timetable-grid" aria-label="Weekly class timetable">
     <thead><tr><th scope="col">Time</th>{days.map(day => <th key={day} scope="col">{day}</th>)}</tr></thead>
     <tbody>{slots.map(slot => <tr key={slot.key}>
-      <th scope="row"><span className="erp-timetable-time-range">{display('starts_at',slot.start)}<br/><span>– {display('ends_at',slot.end)}</span></span></th>
+      <th scope="row"><span className="erp-timetable-time-range">{display('starts_at',slot.start)} – {display('ends_at',slot.end)}</span></th>
       {days.map((day,index) => <td key={day}>{(byCell.get(`${index}|${slot.key}`) || []).map((row,rowIndex) => {
         const color = colors[subjects.indexOf(String(row.subject || 'Class')) % colors.length];
         return <button key={rowIndex} className="erp-timetable-class" style={{'--class-color':color} as CSSProperties} onClick={()=>open(row)} aria-label={`Open ${row.subject || 'class'}, ${day}, ${display('starts_at',slot.start)} to ${display('ends_at',slot.end)}`}>

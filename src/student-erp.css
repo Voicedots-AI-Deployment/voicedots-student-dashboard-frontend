@@ -48,10 +48,9 @@
 .student-erp .erp-timetable-grid { border-collapse:collapse; min-width:1080px; width:100%; table-layout:fixed; text-align:center; }
 .student-erp .erp-timetable-grid th,.student-erp .erp-timetable-grid td { border:1px solid var(--border); padding:10px; vertical-align:top; }
 .student-erp .erp-timetable-grid thead th { background:var(--background); font-size:13px; padding:16px 8px; }
-.student-erp .erp-timetable-grid thead th:first-child,.student-erp .erp-timetable-grid tbody th { width:132px; min-width:132px; max-width:132px; }
+.student-erp .erp-timetable-grid thead th:first-child,.student-erp .erp-timetable-grid tbody th { width:190px; min-width:190px; max-width:190px; }
 .student-erp .erp-timetable-grid tbody th { background:color-mix(in srgb,#38bdf8 12%,var(--card)); font-size:12px; line-height:1.6; text-align:center; padding:18px 8px; }
 .erp-timetable-time-range { display:block; white-space:nowrap; }
-.erp-timetable-time-range > span { font-weight:500; }
 .student-erp .erp-timetable-grid td { height:112px; background:color-mix(in srgb,var(--background) 40%,var(--card)); }
 .student-erp .erp-timetable-class { display:flex; flex-direction:column; gap:7px; width:100%; padding:12px; margin-bottom:8px; border:1px solid color-mix(in srgb,var(--class-color) 45%,var(--border)); border-left:4px solid var(--class-color); border-radius:9px; background:color-mix(in srgb,var(--class-color) 10%,var(--card)); color:var(--text); text-align:left; cursor:pointer; }
 .student-erp .erp-timetable-class:last-child { margin-bottom:0; }

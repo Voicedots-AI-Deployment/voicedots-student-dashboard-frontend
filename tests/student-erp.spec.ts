@@ -82,7 +82,7 @@ test('ERP cards align their actions and timetable reuses the client grid structu
   expect(new Set(buttons).size).toBe(1);
   await page.screenshot({path:'test-results/my-erp-cards-polished.png',fullPage:true});
   await page.goto('/erp/timetable');await expect(page.locator('.erp-timetable-grid')).toBeVisible();
-  expect(await page.locator('.erp-timetable-grid tbody th').first().evaluate(node=>Math.round(node.getBoundingClientRect().width))).toBe(132);
+  expect(await page.locator('.erp-timetable-grid tbody th').first().evaluate(node=>Math.round(node.getBoundingClientRect().width))).toBe(190);
   expect(await page.locator('.erp-timetable-class').first().evaluate(node=>getComputedStyle(node).borderLeftWidth)).toBe('4px');
   expect(await page.locator('.erp-timetable-grid td').first().evaluate(node=>getComputedStyle(node).borderTopWidth)).toBe('1px');
   await page.screenshot({path:'test-results/my-erp-timetable-polished.png',fullPage:true});
