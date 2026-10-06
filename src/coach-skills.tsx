@@ -13,9 +13,12 @@ type Skill = {
   objectives?:{task_id:string;format?:string;question?:string;answer?:string;status:string;feedback?:{feedback?:string;strengths?:string[];gaps?:string[]}}[];
   training_stage: string;
   session_id?: string;
+  strong_evidence_count?: number;
+  independent_context_count?: number;
+  drive_ready?: boolean;
 };
 
-const stateLabel=(state:string)=>({unassessed:'Needs evaluation',strong_evidence:'Demonstrated in diagnostic',some_evidence:'Partly demonstrated',weak_evidence:'Needs improvement',validated:'Validated',stale_evidence:'Needs review',demonstrated:'Demonstrated',needs_improvement:'Needs improvement'} as Record<string,string>)[state]||state.replaceAll('_',' ');
+const stateLabel=(state:string)=>({unassessed:'Needs evaluation',strong_evidence:'Demonstrated in diagnostic',some_evidence:'Partly demonstrated',weak_evidence:'Needs improvement',validated:'Validated',drive_ready:'Drive Ready',learning:'Learning',practicing:'Practicing',stale_evidence:'Needs review',demonstrated:'Demonstrated',needs_improvement:'Needs improvement'} as Record<string,string>)[state]||state.replaceAll('_',' ');
 
 type SkillsResponse = {
   company_name: string;
@@ -39,10 +42,10 @@ export function CoachSkills() {
       <div className="coach-skills-grid">{resource.data.skills.map(item => <article className="panel" key={item.skill}>
         <div className="section-heading"><h3>{item.skill}</h3><span className="pill">{stateLabel(item.state)}</span></div>
         <p className="coach-skill-source"><strong>{item.importance===3?'Critical':item.importance===2?'Important':'Supporting'} for this placement</strong><span>Main Resume: {item.resume_evidence==='none'?'No evidence found':'Declared evidence'}</span></p>
-        <p>{item.evidence_note}</p><small>Source: {item.source.replaceAll('_', ' ')} · Training: {item.training_stage.replaceAll('_', ' ')}</small>
+        <p>{item.evidence_note}</p>{item.drive_ready&&<p className="coach-drive-ready" role="status">Drive Ready ✓ · {item.strong_evidence_count} independent evaluations across {item.independent_context_count} question contexts</p>}<small>Source: {item.source.replaceAll('_', ' ')} · Training: {item.training_stage.replaceAll('_', ' ')}</small>
         {item.last_assessed_at&&<small>Last assessed: {new Date(item.last_assessed_at).toLocaleDateString('en-IN',{day:'2-digit',month:'short',year:'numeric'})}</small>}
         {!!item.objectives?.length&&<details className="coach-skill-objectives"><summary>Assessment details · {item.objectives.length} tasks</summary>{item.objectives.map(objective=><div key={objective.task_id}><strong>{objective.question||objective.format||'Assessment task'}</strong><span>{stateLabel(objective.status)}</span><p>{objective.answer||'Not answered yet.'}</p>{objective.feedback?.feedback&&<p>{objective.feedback.feedback}</p>}{objective.feedback?.gaps?.map(gap=><small key={gap}>Needs work: {gap}</small>)}</div>)}</details>}
-        <p className="coach-skill-next">Next: {item.next_action==='assess'?'Assess this skill':item.next_action==='review'?'Review evidence':item.next_action==='continue_lesson'?'Continue the lesson':'Start a focused lesson'}</p>
+        <p className="coach-skill-next">Next: {item.next_action==='assess'?'Assess this skill':item.next_action==='skip'?'Quick revalidation only':item.next_action==='review'?'Review evidence':item.next_action==='continue_lesson'?'Continue the lesson':'Start a focused lesson'}</p>
         {item.session_id && <Link className="button secondary small" to={`/coach?plan=${encodeURIComponent(planId!)}&session=${encodeURIComponent(item.session_id)}`}>Continue lesson</Link>}
       </article>)}</div>
       {!resource.data.skills.length && <section className="panel"><p>No placement skills have been identified from this plan yet. Review its official job description with your placement team.</p></section>}

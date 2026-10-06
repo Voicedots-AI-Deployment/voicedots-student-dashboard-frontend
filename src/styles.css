@@ -1886,6 +1886,7 @@ dialog.modal::backdrop {
 /* Compact resume library */
 .saved-resumes-panel{max-width:900px;padding:24px;gap:14px}.saved-resumes-heading{align-items:center;padding-bottom:2px}.saved-resumes-heading p{margin:4px 0 0}.resume-upload{display:flex;align-items:center;justify-content:space-between;min-height:0;padding:12px 14px;border:1px solid var(--border,#e7e1f2);border-radius:10px;background:var(--surface,#fff);text-align:left;cursor:default;transform:none!important}.resume-upload::before{content:none}.resume-upload input{width:auto;max-width:none;font-size:12px}.resume-upload input::file-selector-button{margin-right:8px;padding:7px 11px;border-radius:7px;font-size:12px}.saved-resumes-panel>.record-list{border-top:1px solid var(--border,#e7e1f2)}.saved-resume-row{padding:14px 0}.saved-resume-row .career-actions{gap:8px}.saved-resume-row .button{padding:8px 12px;font-size:12px}.saved-resumes-panel>a{font-size:13px}
 @media(max-width:640px){.saved-resumes-panel{padding:18px 14px}.saved-resumes-heading{align-items:flex-start}.resume-upload{display:grid;gap:8px}.resume-upload input{width:100%}}
+.resume-empty-state{display:grid;gap:5px;padding:14px 0}.resume-empty-state p{margin:0}
 .calendar-page{display:grid;gap:24px}.calendar-events{max-width:980px}.calendar-events-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:14px}.calendar-events-header h2{margin:5px 0 0}.calendar-event{display:grid;grid-template-columns:220px 1fr;gap:24px;padding:20px 0;border-top:1px solid var(--border,#e7e1f2)}.calendar-event-date,.calendar-event-meta{display:flex;align-items:center;gap:7px;color:var(--muted);font-size:12px}.calendar-event-main{display:grid;gap:5px}.calendar-event-main strong{font-size:16px}.calendar-event-main>span{color:var(--muted);font-size:13px}.calendar-event-meta{gap:16px;margin-top:5px}.calendar-event-meta span{display:flex;align-items:center;gap:5px}@media(max-width:640px){.calendar-event{grid-template-columns:1fr;gap:8px}.calendar-event-date{font-size:11px}}
 .calendar-layout{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:20px}.calendar-month{padding:22px}.calendar-toolbar{display:flex;align-items:center;justify-content:center;gap:18px;margin-bottom:20px}.calendar-toolbar h2{min-width:180px;text-align:center;margin:0}.calendar-weekdays,.calendar-grid{display:grid;grid-template-columns:repeat(7,minmax(0,1fr))}.calendar-weekdays{color:var(--muted);font-size:11px;font-weight:700;text-align:center;margin-bottom:6px}.calendar-day{min-height:94px;border-top:1px solid var(--border,#e7e1f2);border-left:1px solid var(--border,#e7e1f2);padding:7px;overflow:hidden}.calendar-day:nth-child(7n){border-right:1px solid var(--border,#e7e1f2)}.calendar-day:nth-last-child(-n+7){border-bottom:1px solid var(--border,#e7e1f2)}.calendar-day.outside{background:#faf9fc;color:#b8b2c4}.calendar-day.today .calendar-day-number{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:#7048df;color:#fff}.calendar-day-number{display:block;width:24px;height:24px;padding-top:4px;text-align:center;font-size:12px;font-weight:700}.calendar-chip{display:grid;gap:2px;margin-top:4px;padding:5px 6px;border-radius:6px;font-size:10px;overflow:hidden}.calendar-chip b,.calendar-chip small{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.calendar-chip small{font-size:9px}.calendar-chip.placement{background:#eee9ff;color:#5434a7}.calendar-chip.coach{background:#e5f7f1;color:#18725b}.calendar-upcoming{padding:22px}.calendar-upcoming-event{display:grid;gap:5px;padding:14px 0;border-top:1px solid var(--border,#e7e1f2)}.calendar-upcoming-event strong{font-size:14px}.calendar-upcoming-event small,.calendar-upcoming-event span:not(.calendar-kind){display:flex;align-items:center;gap:5px;color:var(--muted);font-size:11px}.calendar-kind{width:max-content;padding:3px 7px;border-radius:999px;font-size:10px;font-weight:700}.calendar-kind.placement{background:#eee9ff;color:#5434a7}.calendar-kind.coach{background:#e5f7f1;color:#18725b}@media(max-width:900px){.calendar-layout{grid-template-columns:1fr}.calendar-upcoming{order:-1}}@media(max-width:640px){.calendar-month{padding:12px}.calendar-day{min-height:72px;padding:4px}.calendar-chip{padding:4px;font-size:8px}.calendar-chip small{display:none}.calendar-weekdays{font-size:9px}}
 .calendar-chip[role="button"],.calendar-upcoming-event[role="button"]{cursor:pointer}.calendar-chip[role="button"]:focus-visible,.calendar-upcoming-event[role="button"]:focus-visible{outline:2px solid #7048df;outline-offset:2px}.calendar-open-label{display:flex;align-items:center;justify-content:space-between;color:#6841d4!important;font-weight:700}
@@ -1968,29 +1969,39 @@ dialog.modal::backdrop {
 @media(max-width:640px){.practice-active-resume{align-items:flex-start;flex-wrap:wrap}.practice-active-resume>a{margin-left:32px}}
 
 /* Interview Practice: compact shared shell with distinct practice/placement panels. */
-.interview-practice-page{display:grid;gap:14px;max-width:1380px;margin:0 auto}
+.interview-practice-page{display:grid;gap:12px;max-width:1380px;margin:0 auto}
 .interview-practice-page>.page-heading{margin:0}
 .interview-practice-page>.page-heading p{margin-top:5px}
+.interview-practice-page .panel{margin-bottom:0}
 .interview-mode-switch{display:inline-flex;width:max-content;max-width:100%;gap:5px;padding:4px;border:1px solid var(--border);border-radius:13px;background:#f3f0f8}
 .interview-mode-switch button{min-height:38px;padding:8px 16px;border:0;border-radius:10px;background:transparent;color:var(--muted);font:inherit;font-size:13px;font-weight:600;cursor:pointer}
 .interview-mode-switch button.selected{background:#fff;color:var(--primary);box-shadow:0 2px 7px #25104c12}
-.interview-setup-grid{grid-template-columns:minmax(0,1.85fr) minmax(280px,1fr);align-items:start;gap:16px}
-.interview-setup-card,.interview-panel-card{padding:20px}
-.interview-section-heading{align-items:flex-start;margin:0 0 15px}
+.interview-setup-grid{grid-template-columns:minmax(0,1.85fr) minmax(280px,1fr);align-items:start;gap:12px}
+.interview-setup-card,.interview-panel-card{padding:18px}
+.interview-practice-page>.interview-resume-card{padding:18px 20px}
+.interview-section-heading{align-items:flex-start;margin:0 0 12px}
 .interview-section-heading h2,.interview-card-heading h2{margin:5px 0 3px;font-size:20px}
 .interview-section-heading p,.interview-card-heading p{margin:0;color:var(--muted);font-size:12px;line-height:1.45}
-.interview-fields{display:grid;gap:12px}
-.interview-fields label,.placement-select-label{display:grid;gap:5px;font-size:12px;font-weight:600}
+.interview-setup-card .interview-fields{display:grid;gap:8px}
+.interview-fields label,.placement-select-label{display:grid;gap:5px;margin:0;font-size:12px;font-weight:600}
 .interview-fields :is(input,select,.field,textarea),.placement-select-label select{min-height:40px;padding:9px 11px;font-size:13px}
 .interview-fields textarea{min-height:82px;resize:vertical}
 .interview-field-row{display:grid;grid-template-columns:1fr 1fr;gap:12px}
 .interview-fields>.button{width:100%;margin-top:2px}
 .interview-inline-note{margin:0;color:var(--muted);font-size:12px}
+.practice-jd-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:-4px}
+.practice-jd-tools>.muted{font-size:11px}
+.practice-jd-label-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}.practice-jd-label-row>label{display:flex;align-items:baseline;gap:7px}.practice-jd-label-row .button{flex:0 0 auto}.practice-jd-label-row .optional{color:var(--muted);font-size:11px;font-weight:400}
+.overview-growth>.section-heading{margin:0 0 12px;padding:0 0 12px;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}.overview-growth .growth-grid{margin-top:12px}
+.practice-jd-sources{color:var(--muted);font-size:11px;line-height:1.5}
+.practice-jd-sources ul{display:flex;flex-wrap:wrap;gap:6px 16px;margin:4px 0 0;padding-left:18px}
+.practice-jd-sources a{color:var(--accent,#7048df)}
+.interview-inline-error{margin:0;color:#b42332;font-size:12px}
 .interview-panel-card{background:#fff}
 .interview-panel-card>.eyebrow{display:block}
 .interview-panel-card>h2{margin:8px 0;font-size:21px;line-height:1.25}
 .interview-panel-card>p{margin:0 0 10px;color:var(--muted);font-size:12px;line-height:1.45}
-.interview-panel-card .panel-person{gap:10px;margin:12px 0;padding:0 0 12px;border-bottom:1px solid var(--border)}
+.interview-panel-card .panel-person{gap:10px;margin:8px 0;padding:0 0 8px;border-bottom:1px solid var(--border)}
 .interview-panel-card .panel-person:last-of-type{border-bottom:0;margin-bottom:0;padding-bottom:0}
 .interview-panel-card .panel-person>span{width:31px;height:31px;border-radius:9px;background:#f5f0ff;color:var(--primary)}
 .interview-panel-card .panel-person strong{font-size:13px;font-weight:650}
@@ -2013,7 +2024,7 @@ dialog.modal::backdrop {
 .interview-empty-state{padding:15px;border:1px dashed #ddd5ee;border-radius:11px;background:#fcfbfe}
 .interview-empty-state strong{font-size:13px}
 .interview-empty-state p{margin:4px 0 0;color:var(--muted);font-size:12px;line-height:1.45}
-.interview-card-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:14px}
+.interview-card-heading{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:10px}
 .interview-active-resume,.interview-no-resume,.interview-session-row{display:flex;align-items:center;gap:12px;min-width:0;padding:12px;border:1px solid var(--border);border-radius:12px;background:#fff}
 .interview-active-resume>svg{flex:none;color:var(--primary)}
 .interview-active-resume>div,.interview-no-resume>div,.interview-session-row>div{display:grid;gap:3px;min-width:0;flex:1}
@@ -2094,9 +2105,9 @@ dialog.modal.opportunity-dialog{width:min(94vw,1500px);max-width:94vw;height:min
 .calendar-filter-row button,.calendar-view-switcher button{min-height:32px;padding:6px 11px;border:1px solid transparent;border-radius:9px;background:var(--surface-alt,#f7f4fc);color:var(--muted,#716b7d);font-size:12px;font-weight:650;cursor:pointer;transition:background .15s,color .15s,border-color .15s}
 .calendar-filter-row button:hover,.calendar-view-switcher button:hover{border-color:var(--border,#e7e1f2);color:var(--text,#272238)}
 .calendar-filter-row button.selected,.calendar-view-switcher button.selected{border-color:#dfd3ff;background:#f1ebff;color:var(--primary,#7048df)}
-.calendar-search{display:flex;align-items:center;gap:9px;height:40px;padding:0 11px;border:1px solid var(--border,#e7e1f2);border-radius:10px;background:var(--surface,#fff);color:var(--muted,#716b7d)}
+.calendar-search{display:flex;flex-direction:row;align-items:center;gap:9px;height:40px;margin:0;padding:0 11px;border:1px solid var(--border,#e7e1f2);border-radius:10px;background:var(--surface,#fff);color:var(--muted,#716b7d)}
 .calendar-search:focus-within{border-color:#bba5f8;box-shadow:0 0 0 3px rgba(112,72,223,.09)}
-.calendar-search input{width:100%;min-width:0;border:0;outline:0;background:transparent;color:var(--text,#272238);font:inherit;font-size:13px}
+.calendar-search input{flex:1;width:auto;height:28px;min-width:0;min-height:0;margin:0;padding:0 2px;border:0;outline:0;background:transparent;color:var(--text,#272238);font:inherit;font-size:13px;line-height:1.2}
 .calendar-search input::placeholder{color:#9b95a7}
 .calendar-search>button{display:grid;place-items:center;width:26px;height:26px;border:0;border-radius:7px;background:transparent;color:var(--muted,#716b7d);cursor:pointer}
 .calendar-date-filter{display:flex;align-items:center;justify-content:space-between;gap:8px;margin-top:11px;padding:9px 11px;border-radius:9px;background:#f5f1ff;color:var(--text,#272238);font-size:12px}
@@ -2182,3 +2193,17 @@ dialog.modal.calendar-dialog::backdrop{background:rgba(24,18,35,.38);backdrop-fi
 .dark .calendar-day.outside{background:#1c1923}.dark .calendar-day:hover,.dark .calendar-agenda-date:hover{background:#2a2435}
 @media(max-width:1120px){.calendar-layout{grid-template-columns:minmax(0,1fr)}.calendar-month{order:-1}.calendar-agenda{order:0}.calendar-day{min-height:82px}}
 @media(max-width:640px){.calendar-page{gap:13px}.calendar-page>.page-heading{align-items:flex-start}.calendar-page .calendar-create-button{min-height:38px;padding:8px 10px;font-size:12px}.calendar-agenda,.calendar-month{padding:13px;border-radius:15px}.calendar-agenda-heading h2{font-size:19px}.calendar-filter-row{gap:4px}.calendar-filter-row button{min-height:31px;padding:5px 9px;font-size:11px}.calendar-toolbar{align-items:flex-start;flex-direction:column;gap:9px}.calendar-period-controls{width:100%}.calendar-period-controls h2{flex:1;min-width:0;font-size:15px}.calendar-view-switcher{width:100%;justify-content:space-between}.calendar-view-switcher button{flex:1}.calendar-weekdays{font-size:9px}.calendar-day{min-height:49px;padding:3px}.calendar-day-number{width:20px;height:20px;font-size:10px}.calendar-chip{display:block;width:8px;height:8px;padding:0;border-radius:50%;font-size:0}.calendar-chip small,.calendar-chip b{display:none}.calendar-day-events{display:flex;flex-wrap:wrap;gap:3px;margin-top:3px}.calendar-more-events{font-size:8px}.calendar-grid.day .calendar-day{min-height:140px}.calendar-grid.day .calendar-chip{display:grid;width:auto;height:auto;padding:5px 6px;border-radius:6px;font-size:10px}.calendar-grid.day .calendar-chip small,.calendar-grid.day .calendar-chip b{display:block}.calendar-grid.day .calendar-chip small{font-size:9px}.calendar-event-card{padding:10px 8px}.calendar-card-actions{align-items:flex-end;flex-wrap:wrap}.calendar-card-action{max-width:110px;white-space:normal;text-align:center}.calendar-card-action svg{flex:none}.calendar-dialog form{grid-template-columns:minmax(0,1fr);gap:11px}.calendar-dialog form>*{grid-column:1!important}.calendar-detail-list{grid-template-columns:minmax(0,1fr)}.calendar-detail-list>.description{grid-column:1}.calendar-agenda-list{gap:17px;margin-top:16px}dialog.modal.calendar-dialog{width:calc(100vw - 20px);max-width:calc(100vw - 20px);max-height:calc(100dvh - 20px);padding:18px;border-radius:15px}.calendar-dialog-header h2{font-size:19px}}
+
+.resume-preview-backdrop{position:fixed;inset:0;z-index:1200;display:grid;place-items:center;padding:20px;background:rgba(24,18,35,.56);backdrop-filter:blur(3px)}
+.resume-preview-dialog{display:grid;grid-template-rows:auto minmax(0,1fr);width:min(960px,96vw);height:min(900px,92vh);overflow:hidden;border:1px solid var(--border,#e7e1f2);border-radius:16px;background:var(--surface,#fff);box-shadow:0 24px 80px rgba(19,13,31,.3)}
+.resume-preview-header{display:flex;align-items:center;justify-content:space-between;gap:16px;padding:14px 18px;border-bottom:1px solid var(--border,#e7e1f2)}
+.resume-preview-header h2{max-width:75vw;margin:3px 0 0;overflow:hidden;font-size:16px;text-overflow:ellipsis;white-space:nowrap}
+.resume-preview-dialog iframe{width:100%;height:100%;border:0;background:#f1eff5}
+.resume-preview-docx{display:grid;align-content:center;justify-items:center;gap:14px;padding:30px;text-align:center;color:var(--muted,#716b7d)}
+.resume-delete-dialog{width:min(480px,96vw);padding:24px;border:1px solid var(--border,#e7e1f2);border-radius:16px;background:var(--surface,#fff);box-shadow:0 24px 80px rgba(19,13,31,.3)}
+.resume-delete-dialog h2{margin:6px 0;font-size:20px}.resume-delete-dialog p{color:var(--muted,#716b7d);font-size:13px;line-height:1.55}
+.resume-delete-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:18px}
+.danger-button{display:inline-flex;align-items:center;justify-content:center;gap:7px;border:1px solid #efc1c4!important;background:#fff7f7!important;color:#a52430!important}
+.profile-resume-studio-link{display:flex;align-items:center;justify-content:space-between;gap:16px;padding-top:12px;border-top:1px solid var(--border,#e7e1f2);color:var(--muted,#716b7d);font-size:13px}
+.interview-active-resume .button{flex:none}
+@media(max-width:640px){.resume-preview-backdrop{padding:8px}.resume-preview-dialog{width:100%;height:calc(100dvh - 16px);border-radius:12px}.resume-preview-header{padding:12px}.resume-delete-dialog{padding:20px}.profile-resume-studio-link{align-items:flex-start;flex-direction:column}.resume-delete-actions{flex-wrap:wrap}.interview-active-resume .button{margin-left:30px}}

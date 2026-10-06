@@ -60,11 +60,17 @@ test.describe("Student Calendar", () => {
   test.use({ timezoneId: "Asia/Kolkata" });
 
   test("agenda is prominent on desktop and search/category filters affect both views", async ({ page }, testInfo) => {
+    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page);
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/calendar");
     await page.screenshot({ path: testInfo.outputPath("calendar-desktop.png"), fullPage: true });
     await expect(page.getByRole("heading", { name: "Events", exact: true })).toBeVisible();
+    const searchBox = await page.locator(".calendar-search").boundingBox();
+    const searchInput = await page.getByRole("searchbox", { name: "Search events" }).boundingBox();
+    expect(searchBox && searchInput).toBeTruthy();
+    expect(Math.abs((searchInput!.y + searchInput!.height / 2) - (searchBox!.y + searchBox!.height / 2))).toBeLessThanOrEqual(1);
+    await expect(page.locator(".calendar-search > svg")).toBeVisible();
     const agenda = await page.locator(".calendar-agenda").boundingBox();
     const calendar = await page.locator(".calendar-month").boundingBox();
     expect(agenda && calendar).toBeTruthy();
@@ -83,6 +89,7 @@ test.describe("Student Calendar", () => {
   });
 
   test("date selection filters agenda and month navigation/view switching works", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page);
     await page.goto("/calendar");
     const sixth = page.locator('.calendar-day[aria-label="Tue, 6 Oct 2026, 2 events"] .calendar-day-number');

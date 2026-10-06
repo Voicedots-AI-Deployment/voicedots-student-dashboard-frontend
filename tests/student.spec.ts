@@ -72,6 +72,34 @@ async function mockActiveResume(page: Page) {
   await page.route("**/api/student/resume-library/resume-main-file/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 active profile resume" }));
 }
 
+test("AI Coach opens traceable previous questions for the selected placement and filters by round", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/coach/overview", route => route.fulfill({ json: {
+    upcoming_drives: [{ drive_id: "drive-q", company_name: "Example Co", role_title: "Backend Engineer", window_start_at: "2026-10-20T10:00:00Z" }],
+    completed_placements: [], plans: [], main_resume: { submission_id: "resume-q", label: "Main Resume" },
+  } }));
+  await page.route("**/api/student/coach/drives/drive-q/context", route => route.fulfill({ json: {
+    drive_id: "drive-q", company_name: "Example Co", role_title: "Backend Engineer", job_description: "Build APIs with PostgreSQL.", preparation_mode: "upcoming_placement",
+  } }));
+  await page.route("**/api/student/coach/drives/drive-q/previous-questions**", route => {
+    const round = new URL(route.request().url()).searchParams.get("round_type");
+    const questions = round && round !== "Technical" ? [] : [{ id: "question-1", question_text: "Explain REST APIs.", round_type: "Technical", canonical_skill: "REST APIs", difficulty: "Intermediate", report_count: 3, last_reported_at: "2026-02-01T00:00:00Z" }];
+    return route.fulfill({ json: { company_name: "Example Co", role_name: "Backend Engineer", count: questions.length, questions } });
+  });
+  await page.goto("/coach?drive=drive-q");
+  const stepToolbar = page.locator(".coach-step-session-toolbar");
+  await expect(stepToolbar).toContainText("STEP 1 OF 5");
+  await expect(stepToolbar.getByRole("button", { name: /Previous Interview Questions/ })).toBeVisible();
+  const open = page.getByRole("button", { name: /Previous Interview Questions/ });
+  await expect(open).toBeVisible();
+  await open.click();
+  await expect(page.getByText("Example Co · Backend Engineer")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Explain REST APIs." })).toBeVisible();
+  await expect(page.getByText("3 interviews")).toBeVisible();
+  await page.getByRole("button", { name: "System Design" }).click();
+  await expect(page.getByText("No traceable previous interview questions are available for this placement yet.")).toBeVisible();
+});
+
 test("sign in uses student auth and restores the requested page", async ({
   page,
 }) => {
@@ -126,7 +154,7 @@ test("overview is honest about missing data and is responsive", async ({
   await expect(
     page.getByRole("heading", { name: "Hello, Asha." }),
   ).toBeVisible();
-  await expect(page.getByText("Not assessed", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("overview-kpis").getByText("Not assessed", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "Your first insight is one interview away",
@@ -350,6 +378,80 @@ test("upload polls a durable operation across refresh and opens the existing ses
   await expect(page).toHaveURL(/interview.html\?id=sub-1&session_id=session-1/);
 });
 
+test("practice generates a clean role JD without references and preserves manual text on error", async ({ page }) => {
+  await mockStudent(page);
+  await mockActiveResume(page);
+  await page.route("**/api/student/practice/job-description", async route => {
+    if (route.request().method() !== "POST") return route.fallback();
+    expect(route.request().postDataJSON()).toEqual({ role_title: "AI Engineer" });
+    return route.fulfill({ json: { role_title: "AI Engineer", job_description: "AI Engineer\n\nResponsibilities\nBuild and evaluate AI systems.\n\nRequired qualifications\nPython and machine learning experience." } });
+  });
+  await page.goto("/practice");
+  const jdLabelRow = page.locator(".practice-jd-label-row");
+  await expect(jdLabelRow.getByText("Job description")).toBeVisible();
+  const generate = page.getByRole("button", { name: "Generate latest JD" });
+  await expect(jdLabelRow.getByRole("button", { name: "Generate latest JD" })).toBeVisible();
+  await expect(generate).toBeDisabled();
+  await page.getByLabel("Target role", { exact: true }).fill("AI Engineer");
+  await expect(generate).toBeEnabled();
+  await generate.click();
+  await expect(page.getByLabel("Job description")).toContainText("Build and evaluate AI systems");
+  await expect(page.getByLabel("Job description")).toContainText("Required qualifications");
+  await expect(page.getByRole("link", { name: "Recent AI Engineer listing" })).toHaveCount(0);
+  await expect(page.getByText(/not an employer’s official posting/)).toHaveCount(0);
+  await page.getByLabel("Job description").fill("My manually edited description");
+  await expect(page.getByRole("link", { name: "Recent AI Engineer listing" })).toHaveCount(0);
+  await page.route("**/api/student/practice/job-description", route => route.fulfill({ status: 502, json: { detail: "Current listings are temporarily unavailable. Your form has not changed; please retry." } }));
+  await generate.click();
+  await expect(page.getByRole("alert")).toContainText("Current listings are temporarily unavailable");
+  await expect(page.getByLabel("Job description")).toHaveValue("My manually edited description");
+});
+
+test("practice clearly labels a saved JD used when current listings cannot be refreshed", async ({ page }) => {
+  await mockStudent(page);
+  await mockActiveResume(page);
+  await page.route("**/api/student/practice/job-description", route => route.fulfill({ json: {
+    role_title: "Data Analyst",
+    job_description: "Saved role JD",
+    cache_status: "stale_fallback",
+    generated_at: "2026-09-28T12:00:00+00:00",
+  } }));
+  await page.goto("/practice");
+  await page.getByLabel("Target role", { exact: true }).fill("Data Analyst");
+  await page.getByRole("button", { name: "Generate latest JD" }).click();
+  await expect(page.getByLabel("Job description")).toHaveValue("Saved role JD");
+  await expect(page.getByRole("status")).toContainText("Current listings could not be refreshed");
+  await expect(page.getByRole("status")).toContainText("9/28/2026");
+});
+
+test("My growth readiness appears on Overview, not in sidebar or a separate page", async ({ page }) => {
+  await mockStudent(page);
+  let readiness: Record<string, unknown> = { overall_score: 72, axis_scores: { interview_readiness: 68, resume_readiness: 76 } };
+  await page.route("**/api/student/readiness", route => route.fulfill({ json: readiness }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "My growth" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "My growth" })).toHaveCount(0);
+  await page.goto("/growth");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "My growth" })).toBeVisible();
+  readiness = {};
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "My growth" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
+});
+
+test("practice View resume opens an in-page preview of the active PDF", async ({ page }) => {
+  await mockStudent(page);
+  await mockActiveResume(page);
+  await page.goto("/practice");
+  await page.getByRole("button", { name: "View resume" }).click();
+  const dialog = page.getByRole("dialog", { name: /active-resume\.pdf/i });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("iframe")).toHaveAttribute("title", "Resume preview: active-resume.pdf");
+  await dialog.getByRole("button", { name: "Close resume preview" }).click();
+  await expect(dialog).toHaveCount(0);
+});
+
 test("resume clarification is saved before continuing preparation", async ({
   page,
 }) => {
@@ -524,7 +626,7 @@ test("closed eligible drives remain viewable without offering an interview start
   await page.getByLabel("Interview status").selectOption("closed");
   await expect(page.getByText("Interview closed")).toBeVisible();
   await page.getByRole("button", { name: "View opportunity" }).click();
-  await expect(page.getByText("This placement drive is closed.")).toBeVisible();
+  await expect(page.getByText("This placement drive is closed. No further interview action is available.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Start interview" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resume interview" })).toHaveCount(0);
 });
@@ -1002,6 +1104,42 @@ test('completed placements keep unreleased feedback private until the placement 
   await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toHaveCount(0);
 });
 
+test('completed placement can contribute confirmed voice questions without showing student identity', async ({page}) => {
+  await mockStudent(page);
+  await page.addInitScript(() => {
+    class Recognition {
+      continuous = false; interimResults = false; lang = ''; onresult: any = null; onerror: any = null; onend: any = null;
+      start() { setTimeout(() => { this.onresult?.({ resultIndex: 0, results: Object.assign([{ isFinal: true, 0: { transcript: 'What is REST? How do retries work?' } }], { length: 1 }) }); this.onend?.(); }, 0); }
+      stop() {}
+    }
+    (window as any).SpeechRecognition = Recognition;
+  });
+  await page.route('**/api/student/coach/overview', route => route.fulfill({json:{upcoming_drives:[],completed_placements:[{drive_id:'closed-drive',company_name:'Example Co',role_title:'Analyst',feedback_status:'awaiting_release',completed_at:'2026-09-20T10:00:00Z'}],plans:[],main_resume:{submission_id:'resume-1',label:'Main Resume'}}}));
+  await page.route('**/api/student/coach/drives/closed-drive/context', route => route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',preparation_mode:'completed_placement'}}));
+  await page.route('**/api/student/coach/drives/closed-drive/question-contribution/extract', route => route.fulfill({json:{candidates:[{question_text:'What is REST?',round_type:'Technical'},{question_text:'How do retries work?',round_type:'Technical'}]}}));
+  let contribution: any;
+  await page.route('**/api/student/coach/drives/closed-drive/question-contribution', async route => {
+    if (route.request().method() === 'POST') { contribution = route.request().postDataJSON(); return route.fulfill({json:{count:2,questions:[]}}); }
+    return route.fulfill({json:{has_contributed:false}});
+  });
+  await page.goto('/coach');
+  await page.getByRole('button', {name:'Help future students prepare'}).click();
+  await expect(page.getByRole('dialog')).toContainText('What questions were you asked?');
+  await page.getByRole('button', {name:'Speak questions'}).click();
+  await expect(page.getByText('Review and edit before confirming')).toBeVisible();
+  const firstQuestion = page.getByLabel('Question 1');
+  await firstQuestion.fill('What is REST in a web API?');
+  const submit = page.getByRole('button', {name:'Confirm and submit'});
+  await expect(submit).toBeDisabled();
+  await page.getByRole('checkbox', {name:/I confirm these are questions/}).check();
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByRole('status').filter({hasText:'2 questions added'})).toBeVisible();
+  expect(contribution.confirmed).toBe(true);
+  expect(contribution.questions[0].question_text).toBe('What is REST in a web API?');
+  expect(JSON.stringify(contribution)).not.toContain('student-1');
+});
+
 test('Coach schedule confirms the complete plan once and supports rescheduling and cancellation', async ({page}) => {
   await mockStudent(page);
   const first:Record<string,unknown> = {day:1,session_id:'plan-booking:day:1',title:'SQL joins',focus:'Combine tables',activities:['Practice joins'],success_check:'Explain a join'};
@@ -1061,22 +1199,20 @@ test('My Placement Skills distinguishes resume evidence from unassessed requirem
   await expect(page.getByRole('link', {name: 'Continue lesson'})).toHaveAttribute('href', '/coach?plan=plan-skills&session=sql-session');
 });
 
-test('Placement diagnostic saves one-question drafts and restores them after returning to the diagnostic', async ({page}) => {
-  await mockStudent(page);
-  const diagnostic:any = {id:'diagnostic-1',status:'in_progress',tasks_json:[{task_id:'sql-1',sub_skill:'SQL',format:'solve',question:'Write a join.'},{task_id:'sql-2',sub_skill:'SQL',format:'debug',question:'Fix a join.'}],answers_json:{},result_json:{skills:[]}};
-  let started=false;
-  const plan={id:'plan-diagnostic',drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',target_date:'2027-01-01',plan:{summary:'Practice SQL',goal:'Explain SQL joins',daily_roadmap:[{day:1,session_id:'plan-diagnostic:day:1',title:'SQL joins',focus:'Combine tables',activities:['Practice a join'],success_check:'Explain a join'}, {day:2,title:'Communication',focus:'Explain findings',activities:[],success_check:'Describe a result'}],discussion_starters:[]}};
-  await page.route('**/api/student/coach/overview', route=>route.fulfill({json:{upcoming_drives:[{drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30'}],plans:[],main_resume:{submission_id:'resume-1',label:'Main Resume'},completed_placements:[]}}));
-  await page.route('**/api/student/coach/drives/drive-1/context',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30',preparation_mode:'upcoming_placement'}}));
-  await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',resume_label:'Main Resume',groups:{resume_match:['SQL'],related_evidence:[],no_resume_evidence:['Dashboards']},language_options:[],language_is_alternative:false}}));
-  await page.route('**/api/student/coach/drives/drive-1/diagnostic**', route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/answers')){Object.assign(diagnostic.answers_json,route.request().postDataJSON().answers);return route.fulfill({json:diagnostic})}if(path.endsWith('/complete')){diagnostic.status='completed';diagnostic.result_json.skills=[{skill:'SQL',state:'some_evidence',assessed_tasks:1,demonstrated_tasks:1}];return route.fulfill({json:diagnostic})}if(route.request().method()==='POST')started=true;return route.fulfill({json:started?diagnostic:{detail:'Not started'},status:started?200:404})});
-  await page.route('**/api/student/coach/plans**',route=>{if(route.request().method()==='POST')return route.fulfill({json:plan});return route.fulfill({json:plan})});
-  await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
-  await expect(page.getByText('Question 1 of 2')).toBeVisible();await expect(page.getByText('Fix a join.')).toHaveCount(0);
-  await page.getByLabel('Your answer').fill('SELECT * FROM a JOIN b ON a.id = b.id');await expect.poll(()=>diagnostic.answers_json['sql-1']).toContain('SELECT *');
-  await page.reload();await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
-  await expect(page.getByLabel('Your answer')).toHaveValue('SELECT * FROM a JOIN b ON a.id = b.id');await page.getByRole('button',{name:'Next question'}).click();await expect(page.getByText('Question 2 of 2')).toBeVisible();await page.getByRole('button',{name:'Previous'}).click();await expect(page.getByLabel('Your answer')).toHaveValue('SELECT * FROM a JOIN b ON a.id = b.id');
-  await page.getByRole('button',{name:'Next question'}).click();await page.getByRole('button',{name:'Finish diagnostic'}).click();await expect(page.getByText('Your diagnostic is saved. These results guide your plan')).toBeVisible();await expect(page.getByText('Day 1 of 2')).toBeVisible();
+test('AI Coach diagnostic streams mic audio, shows transcripts, and finalizes once', async ({page})=>{
+ await mockStudent(page);
+ const diagnostic:any={id:'diagnostic-voice',status:'in_progress',tasks_json:[{task_id:'sql-voice',sub_skill:'SQL',format:'scenario',question:'Explain how a join combines rows.',question_source_type:'PREVIOUS_INTERVIEW_QUESTION',source_question_id:'q-1'}],answers_json:{},result_json:{skills:[]}};
+ let started=false, audioChunks=0, finalized=0;
+ const plan={id:'plan-diagnostic',drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',target_date:'2027-01-01',plan:{summary:'Practice SQL',goal:'Explain SQL joins',daily_roadmap:[{day:1,session_id:'plan-diagnostic:day:1',title:'SQL joins',focus:'Combine tables',activities:['Practice a join'],success_check:'Explain a join'}],discussion_starters:[]}};
+ await page.route('**/api/student/coach/overview',route=>route.fulfill({json:{upcoming_drives:[{drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30'}],plans:[],main_resume:{submission_id:'resume-1',label:'Main Resume'},completed_placements:[]}}));
+ await page.route('**/api/student/coach/drives/drive-1/context',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30',preparation_mode:'upcoming_placement'}}));
+ await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',resume_label:'Main Resume',groups:{resume_match:['SQL'],related_evidence:[],no_resume_evidence:[]},language_options:[],language_is_alternative:false}}));
+ await page.route('**/api/student/coach/drives/drive-1/diagnostic**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/answers')){Object.assign(diagnostic.answers_json,route.request().postDataJSON().answers);return route.fulfill({json:diagnostic})}if(path.endsWith('/complete')){diagnostic.status='completed';diagnostic.result_json.skills=[{skill:'SQL',state:'some_evidence',assessed_tasks:1,demonstrated_tasks:1}];return route.fulfill({json:diagnostic})}if(route.request().method()==='POST')started=true;return route.fulfill({json:started?diagnostic:{detail:'Not started'},status:started?200:404})});
+ await page.route('**/api/student/coach/plans**',route=>route.fulfill({json:plan}));
+ await page.addInitScript(()=>{(window as any).diagnosticMicReleased=false;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);track.stop=()=>{(window as any).diagnosticMicReleased=true;stop();void ctx.close()};return destination.stream}});(window as any).AudioWorkletNode=class extends AudioWorkletNode{constructor(context:BaseAudioContext,name:string,options?:AudioWorkletNodeOptions){super(context,name,options);setTimeout(()=>this.port.onmessage?.({data:new Float32Array(480).fill(.15)} as MessageEvent),120)}}});
+ await page.routeWebSocket('**/ws/coach-diagnostic/**',ws=>{ws.onMessage(message=>{if(message instanceof Buffer){audioChunks++;return}const data=JSON.parse(String(message));if(data.type==='start_answer')ws.send(JSON.stringify({type:'listening_started',task_id:'sql-voice'}));if(data.type==='stop_answer'){finalized++;ws.send(JSON.stringify({type:'final_transcript',text:'A join combines matching rows from two tables.'}));ws.send(JSON.stringify({type:'processing'}));ws.send(JSON.stringify({type:'diagnostic_answer_complete',task_id:'sql-voice',transcript:'A join combines matching rows from two tables.',evaluation:{demonstrated:true,confidence:.9},skipped:false,accepted:true}))}});ws.send(JSON.stringify({type:'diagnostic_started',task_id:'sql-voice',question:'Explain how a join combines rows.',question_source_type:'PREVIOUS_INTERVIEW_QUESTION'}));});
+ await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
+ await expect(page.locator('.coach-diagnostic-persona small')).toContainText('Previous interview question');await expect(page.getByRole('textbox',{name:'Diagnostic transcript'})).toBeVisible();await expect(page.getByRole('button',{name:'Start voice question'})).toBeVisible();await page.getByRole('button',{name:'Start voice question'}).click();await expect(page.getByRole('button',{name:'Stop answer'})).toBeEnabled();await expect.poll(()=>audioChunks).toBeGreaterThan(0);await page.getByRole('button',{name:'Stop answer'}).click();await expect(page.getByRole('textbox',{name:'Diagnostic transcript'})).toHaveValue('A join combines matching rows from two tables.');await expect(page.getByText('Your baseline is ready to evaluate.')).toBeVisible();expect(finalized).toBe(1);await expect.poll(()=>page.evaluate(()=>(window as any).diagnosticMicReleased)).toBe(true);
 });
 
 test("Calendar opens the exact persisted AI Coach session from its event", async ({ page }) => {
@@ -1305,13 +1441,84 @@ test("profile upload becomes the single active resume and enables replacement", 
   let profileSyncBody = "";
   await page.route("**/api/student/resume-studio/resumes/import", async route => { profileSyncBody = route.request().postData() || ""; return route.fulfill({ status: 201, json: { id: "studio-profile-1", import_report: { warnings: [] } } }); });
   await page.goto("/profile");
-  await page.getByLabel("Upload active resume").setInputFiles({ name: "profile-resume.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 profile resume") });
+  await page.getByLabel("Add resume").setInputFiles({ name: "profile-resume.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 profile resume") });
   await expect(page.getByRole("status")).toContainText("ready to use across AI Coach, placement interviews, self-practice, and Career Coach");
   await expect(page.getByText("profile-resume", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Replace active resume")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Edit this resume in Resume Studio →" })).toHaveAttribute("href", "/resume-studio?resume=studio-profile-1");
+  await expect(page.getByRole("link", { name: "Edit in Resume Studio" })).toHaveAttribute("href", "/resume-studio?resume=studio-profile-1");
   expect(profileSyncBody).toContain('name="profile_resume_id"');
   expect(profileSyncBody).toContain("profile-file-1");
+});
+
+test("profile supports viewing, downloading and confirmed deletion of the active resume", async ({ page }) => {
+  await mockStudent(page);
+  const active = { resume_id: "profile-main", submission_id: "profile-submission", label: "Main resume", original_filename: "main-resume.pdf", is_primary: true, uploaded_at: "2026-10-01T00:00:00Z" };
+  let exists = true;
+  let deletedId = "";
+  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: exists ? [active] : [] } }));
+  await page.route("**/api/student/resume-library/profile-main/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 test resume" }));
+  await page.route("**/api/student/resume-library/profile-main", async route => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    deletedId = "profile-main";
+    exists = false;
+    return route.fulfill({ json: { status: "deleted", resume_id: deletedId } });
+  });
+  await page.route("**/api/student/resume-studio/resumes", route => route.fulfill({ json: [{ id: "studio-main", linked_resume_id: "profile-main" }] }));
+  await page.goto("/profile");
+  await page.getByRole("button", { name: "View resume" }).click();
+  await expect(page.getByRole("dialog", { name: /main-resume\.pdf/i }).locator("iframe")).toBeVisible();
+  await page.getByRole("button", { name: "Close resume preview" }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  expect((await download).suggestedFilename()).toBe("main-resume.pdf");
+  await expect(page.locator(".saved-resumes-panel")).not.toContainText(/https?:\/\//);
+  await expect(page.getByRole("link", { name: "Edit in Resume Studio" })).toHaveAttribute("href", "/resume-studio?resume=studio-main");
+  await page.getByRole("button", { name: "Delete" }).click();
+  const confirm = page.getByRole("dialog", { name: "Delete this active resume?" });
+  await expect(confirm).toContainText("separate Resume Studio project");
+  await confirm.getByRole("button", { name: "Delete resume" }).click();
+  await expect(page.getByText(/The active resume was deleted from your profile/)).toBeVisible();
+  await expect(page.getByText("No active resume", { exact: true })).toBeVisible();
+  expect(deletedId).toBe("profile-main");
+  await expect(page.getByRole("link", { name: "Open Resume Studio" })).toHaveAttribute("href", "/resume-studio");
+  await expect(page.getByText("No active resume", { exact: true })).toBeVisible();
+  await expect(page.getByText("Add a resume to use it across Interview Practice, Placements, AI Coach and Career Coach.")).toBeVisible();
+  await expect(page.getByLabel("Add resume")).toBeVisible();
+});
+
+test("profile rejects unsupported and oversized resume files with a clear message", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
+  await page.goto("/profile");
+  const input = page.getByLabel("Add resume");
+  await input.setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("not a resume") });
+  await expect(page.getByText("Choose a non-empty PDF or DOCX up to 5 MB.")).toBeVisible();
+  await input.setInputFiles({ name: "large.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(5 * 1024 * 1024 + 1, 65) });
+  await expect(page.getByText("Choose a non-empty PDF or DOCX up to 5 MB.")).toBeVisible();
+});
+
+test("replacing the active resume with identical content remains the single persisted Main Resume", async ({ page }) => {
+  await mockStudent(page);
+  const active = { resume_id: "same-resume", submission_id: "same-submission", label: "Main resume", original_filename: "same.pdf", is_primary: true, uploaded_at: "2026-10-01T00:00:00Z" };
+  let replacementUploaded = false;
+  await page.route("**/api/auth/student-me", route => route.fulfill({ json: { student: { ...identity.student, current_resume_submission_id: active.submission_id } } }));
+  await page.route("**/api/student/resume-library", async route => {
+    if (route.request().method() === "POST") {
+      replacementUploaded = true;
+      return route.fulfill({ json: { analysis_status: "ready", resume_id: active.resume_id, submission_id: active.submission_id } });
+    }
+    return route.fulfill({ json: { resumes: [active] } });
+  });
+  await page.route("**/api/student/resume-studio/resumes", route => route.fulfill({ json: [] }));
+  await page.route("**/api/student/resume-library/same-resume/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 same" }));
+  await page.goto("/profile");
+  await page.getByLabel("Replace active resume").setInputFiles({ name: "same.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 same") });
+  await expect(page.getByRole("status")).toContainText("ready to use across");
+  await expect(page.getByText("Main Resume · active across coaching and interviews")).toBeVisible();
+  expect(replacementUploaded).toBe(true);
+  await page.reload();
+  await expect(page.getByText("Main Resume · active across coaching and interviews")).toBeVisible();
+  await expect(page.locator(".saved-resume-row")).toHaveCount(1);
 });
 
 test("Career Coach labels an evidence fallback and remains readable on mobile with limited evidence", async ({ page }) => {
