@@ -544,13 +544,13 @@ export function Practice() {
                     </select>
                   </label>
                 </div>
-                <label>Job description <span className="optional">Optional</span></label>
-                <div className="practice-jd-tools">
+                <div className="practice-jd-label-row">
+                  <label htmlFor="practice-job-description">Job description <span className="optional">Optional</span></label>
                   <button type="button" className="button secondary small" disabled={!role.trim() || jdBusy} onClick={() => void generateJobDescription()}>
                     {jdBusy ? <><LoaderCircle className="spin" size={15}/> Searching current listings…</> : "Generate latest JD"}
                   </button>
                 </div>
-                <textarea aria-label="Job description" value={jd} onChange={(e) => setJd(e.target.value)} maxLength={8000} rows={6} placeholder="Add a job description for more focused practice…"/>
+                <textarea id="practice-job-description" aria-label="Job description" value={jd} onChange={(e) => setJd(e.target.value)} maxLength={8000} rows={6} placeholder="Add a job description for more focused practice…"/>
                 {jdError && <p role="alert" className="interview-inline-error">{jdError}</p>}
                 <button className="button primary" type="submit" disabled={!activeResume || !file || resumeBusy || busy || !role.trim()}>
                   {busy ? <><LoaderCircle className="spin" size={17}/> Preparing your interview…</> : <>Start practice interview <ArrowRight size={17}/></>}

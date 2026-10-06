@@ -251,6 +251,7 @@ export function Overview() {
                 </article>
                 ))}
             </section>
+            <Growth />
             <AcademicOverview />
             <section className="panel"><div className="section-heading"><div><span className="eyebrow">YOUR INSTITUTION RECORDS</span><h2>My ERP</h2><p>View your timetable, marks, fees, homework and campus attendance.</p></div><Link className="button secondary" to="/erp">Open My ERP <ArrowRight size={15}/></Link></div></section>
             <div className="overview-columns">
@@ -775,26 +776,18 @@ export function Reports() {
 export function Growth() {
   const resource = useResource<Readiness>("/api/student/readiness");
   return (
-    <>
-      <PageHeading
-        eyebrow="PROGRESS WITH PURPOSE"
-        title="Your growth, in focus"
-        action={
-          <button className="button secondary" onClick={resource.reload}>
-            <RefreshCw size={16} />
-            Refresh
-          </button>
-        }
-      >
-        Understand your placement readiness and decide where to focus next.
-      </PageHeading>
+    <section className="overview-growth">
+      <div className="section-heading panel">
+        <div><span className="eyebrow">PROGRESS WITH PURPOSE</span><h2>My growth</h2><p>Understand your placement readiness and decide where to focus next.</p></div>
+        <button className="button secondary small" onClick={resource.reload}><RefreshCw size={15} /> Refresh</button>
+      </div>
       <ResourceState resource={resource}>
         {resource.data && (
           <div className="growth-grid">
             <section className="panel readiness-card">
               <span className="eyebrow">PLACEMENT READINESS</span>
               <div className="readiness-ring">
-                <strong>{score(resource.data.overall_score)}</strong>
+                <strong>{score(resource.data.overall_score ?? null)}</strong>
               </div>
               <h2>
                 {resource.data.overall_score == null
@@ -815,7 +808,7 @@ export function Growth() {
                 <h2>Your readiness areas</h2>
               </div>
               {["interview_readiness", "resume_readiness"].map((axis) => {
-                const value = resource.data!.axis_scores[axis];
+                const value = resource.data!.axis_scores?.[axis] ?? null;
                 return (
                   <div className="readiness-axis" key={axis}>
                     <div>
@@ -852,7 +845,7 @@ export function Growth() {
           </div>
         )}
       </ResourceState>
-    </>
+    </section>
   );
 }
 

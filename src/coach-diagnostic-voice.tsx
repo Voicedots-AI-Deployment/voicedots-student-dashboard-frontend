@@ -81,7 +81,7 @@ export function CoachDiagnosticVoice({ driveId, language, task, questionNumber, 
       for (const event of queuedEvents.splice(0)) handleMessage(event);
       ws.onerror = () => fail('Could not connect to the voice diagnostic. Check microphone access and retry.');
       ws.onclose = event => { if (token === generation.current && !completed.current && event.code !== 1000) fail(event.code === 4409 ? 'This answer is already saved. Continue to the next question.' : 'Voice connection ended. Retry this question.'); };
-      connectingTimer = setTimeout(() => { if (token === generation.current && ws?.readyState !== WebSocket.OPEN) setError('Waiting for the voice service…'); }, 8000);
+      connectingTimer = setTimeout(() => { if (token === generation.current && ws?.readyState !== WebSocket.OPEN) fail('Voice connection timed out. Check your connection and microphone access, then retry.'); }, 12000);
     } catch (reason) { fail((reason as Error).message || 'Microphone access is required for a voice diagnostic.'); }
   }
 

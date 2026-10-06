@@ -1991,6 +1991,8 @@ dialog.modal::backdrop {
 .interview-inline-note{margin:0;color:var(--muted);font-size:12px}
 .practice-jd-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:-4px}
 .practice-jd-tools>.muted{font-size:11px}
+.practice-jd-label-row{display:flex;align-items:center;justify-content:space-between;gap:12px;min-width:0}.practice-jd-label-row>label{display:flex;align-items:baseline;gap:7px}.practice-jd-label-row .button{flex:0 0 auto}.practice-jd-label-row .optional{color:var(--muted);font-size:11px;font-weight:400}
+.overview-growth>.section-heading{margin:0 0 12px;padding:0 0 12px;border:0;border-bottom:1px solid var(--border);border-radius:0;background:transparent}.overview-growth .growth-grid{margin-top:12px}
 .practice-jd-sources{color:var(--muted);font-size:11px;line-height:1.5}
 .practice-jd-sources ul{display:flex;flex-wrap:wrap;gap:6px 16px;margin:4px 0 0;padding-left:18px}
 .practice-jd-sources a{color:var(--accent,#7048df)}

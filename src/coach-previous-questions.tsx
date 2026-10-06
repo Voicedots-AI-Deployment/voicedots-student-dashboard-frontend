@@ -23,8 +23,8 @@ function lastSeen(year?: number | null, value?: string | null) {
   return Number.isNaN(date.getTime()) ? 'Date unavailable' : new Intl.DateTimeFormat('en', { year: 'numeric', month: 'short' }).format(date);
 }
 
-export function CoachPreviousQuestions({ driveId, company, role, onPractice }: {
-  driveId: string; company: string; role: string; onPractice: (question: PreviousQuestion) => void;
+export function CoachPreviousQuestions({ driveId, company, role, onPractice, compact = false }: {
+  driveId: string; company: string; role: string; onPractice: (question: PreviousQuestion) => void; compact?: boolean;
 }) {
   const [open, setOpen] = useState(false), [round, setRound] = useState('All');
   const [result, setResult] = useState<QuestionList | null>(null), [loading, setLoading] = useState(false), [error, setError] = useState('');
@@ -40,7 +40,7 @@ export function CoachPreviousQuestions({ driveId, company, role, onPractice }: {
     return () => { alive = false; };
   }, [driveId, open, round]);
 
-  return <section className="coach-previous-questions">
+  return <section className={`coach-previous-questions${compact ? ' compact' : ''}`}>
     <button type="button" className="coach-secondary" aria-expanded={open} onClick={() => setOpen(value => !value)}>
       <MessageSquareText size={16} /> Previous Interview Questions
     </button>

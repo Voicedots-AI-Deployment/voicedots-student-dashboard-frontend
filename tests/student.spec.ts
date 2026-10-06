@@ -87,6 +87,9 @@ test("AI Coach opens traceable previous questions for the selected placement and
     return route.fulfill({ json: { company_name: "Example Co", role_name: "Backend Engineer", count: questions.length, questions } });
   });
   await page.goto("/coach?drive=drive-q");
+  const stepToolbar = page.locator(".coach-step-session-toolbar");
+  await expect(stepToolbar).toContainText("STEP 1 OF 5");
+  await expect(stepToolbar.getByRole("button", { name: /Previous Interview Questions/ })).toBeVisible();
   const open = page.getByRole("button", { name: /Previous Interview Questions/ });
   await expect(open).toBeVisible();
   await open.click();
@@ -151,7 +154,7 @@ test("overview is honest about missing data and is responsive", async ({
   await expect(
     page.getByRole("heading", { name: "Hello, Asha." }),
   ).toBeVisible();
-  await expect(page.getByText("Not assessed", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("overview-kpis").getByText("Not assessed", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "Your first insight is one interview away",
@@ -384,7 +387,10 @@ test("practice generates a clean role JD without references and preserves manual
     return route.fulfill({ json: { role_title: "AI Engineer", job_description: "AI Engineer\n\nResponsibilities\nBuild and evaluate AI systems.\n\nRequired qualifications\nPython and machine learning experience." } });
   });
   await page.goto("/practice");
+  const jdLabelRow = page.locator(".practice-jd-label-row");
+  await expect(jdLabelRow.getByText("Job description")).toBeVisible();
   const generate = page.getByRole("button", { name: "Generate latest JD" });
+  await expect(jdLabelRow.getByRole("button", { name: "Generate latest JD" })).toBeVisible();
   await expect(generate).toBeDisabled();
   await page.getByLabel("Target role", { exact: true }).fill("AI Engineer");
   await expect(generate).toBeEnabled();
@@ -399,6 +405,22 @@ test("practice generates a clean role JD without references and preserves manual
   await generate.click();
   await expect(page.getByRole("alert")).toContainText("Current listings are temporarily unavailable");
   await expect(page.getByLabel("Job description")).toHaveValue("My manually edited description");
+});
+
+test("My growth readiness appears on Overview, not in sidebar or a separate page", async ({ page }) => {
+  await mockStudent(page);
+  let readiness: Record<string, unknown> = { overall_score: 72, axis_scores: { interview_readiness: 68, resume_readiness: 76 } };
+  await page.route("**/api/student/readiness", route => route.fulfill({ json: readiness }));
+  await page.goto("/");
+  await expect(page.getByRole("heading", { name: "My growth" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "My growth" })).toHaveCount(0);
+  await page.goto("/growth");
+  await expect(page).toHaveURL(/\/$/);
+  await expect(page.getByRole("heading", { name: "My growth" })).toBeVisible();
+  readiness = {};
+  await page.reload();
+  await expect(page.getByRole("heading", { name: "My growth" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Something went wrong" })).toHaveCount(0);
 });
 
 test("practice View resume opens an in-page preview of the active PDF", async ({ page }) => {

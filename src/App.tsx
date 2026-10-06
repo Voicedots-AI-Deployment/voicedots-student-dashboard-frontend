@@ -8,7 +8,6 @@ import {
   LockKeyhole,
   BookOpen,
   BriefcaseBusiness,
-  ChartNoAxesCombined,
   CalendarDays,
   Compass,
   FileText,
@@ -32,7 +31,7 @@ import {
 import { api, ApiError, json } from "./api";
 import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Loading } from "./ui";
-import { Overview, Placements, Growth, Profile, Reports } from "./pages";
+import { Overview, Placements, Profile, Reports } from "./pages";
 import { Academics } from "./academics";
 import { StudentErp } from "./student-erp";
 import { Calendar } from "./calendar";
@@ -281,7 +280,6 @@ const nav = [
   { to: "/academics", label: "Marks and attendance", icon: BookOpen },
   { to: "/erp", label: "My ERP", icon: BookOpen },
   { to: "/reports", label: "My reports", icon: FileText },
-  { to: "/growth", label: "My growth", icon: ChartNoAxesCombined },
   { to: "/profile", label: "My profile", icon: UserRound },
 ];
 
@@ -464,7 +462,7 @@ export function App() {
             <Route path="/placements" element={<Placements />} />
             <Route path="/calendar" element={<Calendar />} />
             <Route path="/reports" element={<Reports />} />
-            <Route path="/growth" element={<Growth />} />
+            <Route path="/growth" element={<Navigate to="/" replace />} />
             <Route path="/academics" element={<Academics />} />
             <Route path="/erp" element={<StudentErp />} />
             <Route path="/erp/:service" element={<StudentErp />} />
