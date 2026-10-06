@@ -1,3 +1,4 @@
+import { useTimetableWeek, TimetableWeekToolbar, dateLabel as weekDateLabel, istDay, isLive, appliesOn } from "./TimetableWeek";
 import { useState, type FormEvent, type CSSProperties } from 'react';
 import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, FileText, GraduationCap, Library, Megaphone, RefreshCw, Utensils, Wallet, Building2, type LucideIcon } from 'lucide-react';
 import './student-erp.css';
@@ -108,6 +109,7 @@ function ServiceView({service}:{service:Service}) {
 }
 
 function WeeklyTimetable({ rows, open }: { rows: Row[]; open: (row: Row) => void }) {
+  const calendar = useTimetableWeek();
   const days = ['Monday','Tuesday','Wednesday','Thursday','Friday','Saturday','Sunday'];
   const slots = [...new Map(rows.map(row => {
     const start = String(row.starts_at || '').slice(0,5);
@@ -121,19 +123,19 @@ function WeeklyTimetable({ rows, open }: { rows: Row[]; open: (row: Row) => void
   }
   const colors = ['#7c3aed','#0284c7','#059669','#d97706','#db2777','#4f46e5'];
   const subjects = [...new Set(rows.map(row => String(row.subject || 'Class')))];
-  return <div className="academic-table erp-timetable-grid-wrap"><table className="erp-timetable-grid" aria-label="Weekly class timetable">
-    <thead><tr><th scope="col">Time</th>{days.map(day => <th key={day} scope="col">{day}</th>)}</tr></thead>
+  return <><TimetableWeekToolbar calendar={calendar}/><div className="academic-table erp-timetable-grid-wrap"><table className="erp-timetable-grid" aria-label="Weekly class timetable">
+    <thead><tr><th scope="col">Time</th>{days.map((day,index) => <th key={day} scope="col" className={calendar.days[index]===istDay(calendar.now)?"erp-week-today":undefined}>{day}<small className="erp-week-date">{weekDateLabel(calendar.days[index])}</small></th>)}</tr></thead>
     <tbody>{slots.map(slot => <tr key={slot.key}>
       <th scope="row"><span className="erp-timetable-time-range">{display('starts_at',slot.start)} – {display('ends_at',slot.end)}</span></th>
-      {days.map((day,index) => <td key={day}>{(byCell.get(`${index}|${slot.key}`) || []).map((row,rowIndex) => {
+      {days.map((day,index) => <td key={day} className={calendar.days[index]===istDay(calendar.now)?"erp-week-today":undefined}>{(byCell.get(`${index}|${slot.key}`) || []).filter(row=>appliesOn(row,calendar.days[index])).map((row,rowIndex) => {
         const color = colors[subjects.indexOf(String(row.subject || 'Class')) % colors.length];
-        return <button key={rowIndex} className="erp-timetable-class" style={{'--class-color':color} as CSSProperties} onClick={()=>open(row)} aria-label={`Open ${row.subject || 'class'}, ${day}, ${display('starts_at',slot.start)} to ${display('ends_at',slot.end)}`}>
-          <strong>{row.subject || 'Class'}</strong>
+        return <button key={rowIndex} className={`erp-timetable-class${isLive(calendar.now,calendar.days[index],slot.start,slot.end)?" erp-week-live":""}`} style={{'--class-color':color} as CSSProperties} onClick={()=>open(row)} aria-label={`Open ${row.subject || 'class'}, ${day}, ${display('starts_at',slot.start)} to ${display('ends_at',slot.end)}`}>
+          {isLive(calendar.now,calendar.days[index],slot.start,slot.end)&&<span className="erp-week-live-label">In progress</span>}<strong>{row.subject || 'Class'}</strong>
           {row.faculty && <small>{row.faculty}</small>}
           {row.room && <small>Room {row.room}</small>}
           <span className="erp-timetable-class-detail">View details <ArrowRight size={12} aria-hidden="true"/></span>
         </button>;
       })}</td>)}
     </tr>)}</tbody>
-  </table></div>;
+  </table></div></>;
 }

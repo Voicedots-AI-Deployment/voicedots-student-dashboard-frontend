@@ -90,3 +90,58 @@ test('ERP cards align their actions and timetable reuses the client grid structu
   await expect(page.locator('html')).toHaveClass('dark');
   await page.screenshot({path:'test-results/my-erp-timetable-dark.png',fullPage:true});
 });
+
+test('timetable dates, navigation and live class use IST independently of browser timezone',async({page})=>{
+  await page.clock.install({time:new Date('2026-10-05T03:30:00Z')});
+  await setup(page);await page.goto('/erp/timetable');
+  await expect(page.locator('.erp-week-toolbar')).toContainText('5 Oct – 11 Oct 2026');
+  await expect(page.locator('thead .erp-week-today')).toContainText('Monday');
+  await expect(page.locator('.erp-week-live')).toContainText('Engineering Chemistry');
+  await expect(page.getByRole('rowheader').first()).toHaveText('9:00 AM – 9:50 AM');
+  await page.getByRole('button',{name:'Next week',exact:true}).click();
+  await expect(page.locator('.erp-week-toolbar')).toContainText('12 Oct – 18 Oct 2026');
+  await expect(page.locator('.erp-week-live')).toHaveCount(0);
+  await expect(page.locator('thead .erp-week-today')).toHaveCount(0);
+  await page.getByRole('button',{name:'Previous week',exact:true}).click();
+  await page.getByRole('button',{name:'Previous week',exact:true}).click();
+  await expect(page.locator('.erp-week-toolbar')).toContainText('28 Sept – 4 Oct 2026');
+  await page.getByRole('button',{name:'Today',exact:true}).click();
+  await expect(page.locator('.erp-week-live')).toHaveCount(1);
+  await page.clock.fastForward(50*60000);
+  await expect(page.locator('.erp-week-live')).toHaveCount(0);
+});
+test('timetable rolls over Monday midnight IST while manual week stays selected',async({page})=>{
+  await page.clock.install({time:new Date('2026-10-11T18:29:58Z')});
+  await page.clock.pauseAt(new Date('2026-10-11T18:29:58Z'));
+  await setup(page);await page.goto('/erp/timetable');
+  await expect(page.locator('.erp-week-toolbar')).toContainText('5 Oct – 11 Oct 2026');
+  await page.clock.fastForward(3000);
+  await expect(page.locator('.erp-week-toolbar')).toContainText('12 Oct – 18 Oct 2026');
+  await expect(page.locator('thead .erp-week-today')).toContainText('Monday');
+  await page.getByRole('button',{name:'Previous week',exact:true}).click();
+  await page.clock.fastForward(7*86400000);
+  await expect(page.locator('.erp-week-toolbar')).toContainText('5 Oct – 11 Oct 2026');
+  await page.getByRole('button',{name:'Today',exact:true}).click();
+  await expect(page.locator('.erp-week-toolbar')).toContainText('19 Oct – 25 Oct 2026');
+});
+test('timetable week controls fit mobile and dates cross year boundary',async({page})=>{
+  await page.setViewportSize({width:390,height:844});
+  await page.clock.install({time:new Date('2027-01-01T06:30:00Z')});
+  await setup(page);await page.goto('/erp/timetable');
+  await expect(page.locator('.erp-week-toolbar')).toContainText('28 Dec – 3 Jan 2027');
+  await expect(page.locator('.erp-week-toolbar')).toContainText('12:00 PM');
+  for(const name of ['Previous week','Today','Next week']) await expect(page.getByRole('button',{name,exact:true})).toBeVisible();
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth)).toBe(true);
+  await page.screenshot({path:'/tmp/timetable-week-mobile.png',fullPage:true});
+});
+test('timetable only shows classes inside their inclusive effective dates',async({page})=>{
+ await page.clock.install({time:new Date('2026-10-05T03:30:00Z')});
+ await setup(page);
+ await page.route('**/api/student/erp/timetable*',route=>route.fulfill({json:{student,items:[{weekday:0,starts_at:'09:00:00',ends_at:'09:50:00',subject:'October schedule',effective_from:'2026-10-05',effective_until:'2026-10-05'}],has_more:false}}));
+ await page.goto('/erp/timetable');
+ await expect(page.locator('.erp-timetable-class')).toHaveCount(1);
+ await page.getByRole('button',{name:'Next week',exact:true}).click();
+ await expect(page.locator('.erp-timetable-class')).toHaveCount(0);
+ await page.getByRole('button',{name:'Today',exact:true}).click();
+ await expect(page.locator('.erp-timetable-class')).toHaveCount(1);
+});
