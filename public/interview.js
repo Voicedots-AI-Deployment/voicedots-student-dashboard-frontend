@@ -156,6 +156,7 @@ let recordingMicStream = null;
 let interviewRecorder = null;
 let recordingSegmentId = null;
 let recordingChunkSequence = 0;
+let recordingPersistenceQueue = Promise.resolve();
 let recordingUploadQueue = Promise.resolve();
 let recordingStartedAt = 0;
 let recordingUploadFailed = false;
@@ -167,6 +168,7 @@ let recordingCanvasStream = null;
 let recordingPartMetadata = [];
 let recordingPartNumber = 1;
 let recordingServerClockOffsetMs = 0;
+let recordingStopTask = null;
 let userMediaStream = null;
 let screenStream = null;
 let micProcessor = null;
@@ -1642,7 +1644,7 @@ function requestInterviewEnd(reason) {
   }
 }
 
-function showIncompleteInterview(reason, completed = 0, required = TOTAL_INTERVIEW_ROUNDS) {
+function showIncompleteInterview(reason, completed = 0, required = TOTAL_INTERVIEW_ROUNDS, detail = "") {
   stopInterview();
   if (callScreen) callScreen.style.display = "none";
   if (reportScreen) reportScreen.style.display = "none";
@@ -1650,9 +1652,11 @@ function showIncompleteInterview(reason, completed = 0, required = TOTAL_INTERVI
   if (liveChip) liveChip.style.display = "none";
   if (incompleteScreen) incompleteScreen.style.display = "flex";
   if (incompleteMessage) {
-    const candidateEnded = reason === "candidate_requested" || reason === "candidate_ended";
+    const candidateEnded = reason === "candidate_requested" || reason === "candidate_ended" || reason === "proctor_terminated";
     incompleteMessage.textContent = candidateEnded
-      ? `You ended this interview after ${completed} of ${required} required rounds. Your completed responses were saved, but this attempt is now closed and cannot be resumed. A full score and report may not be available.`
+      ? (detail || (reason === "proctor_terminated"
+        ? `This placement interview ended under the AI-proctor policy after ${completed} of ${required} required rounds. Your completed responses were saved. Placement staff can review the recorded event.`
+        : `You ended this interview after ${completed} of ${required} required rounds. Your completed responses were saved, but this attempt is now closed and cannot be resumed. A full score and report may not be available.`))
       : `We can't generate a report yet — you completed ${completed} of ${required} required interview rounds. Your completed answers were saved. Resume this same interview to finish the remaining rounds; a score and report are created only after all ${required} rounds are complete.`;
     if (resumeInterviewBtn) resumeInterviewBtn.style.display = candidateEnded ? "none" : "inline-block";
   }
@@ -2176,7 +2180,9 @@ async function startInterviewRecording() {
   }
   recordingSegmentId = crypto.randomUUID();
   recordingChunkSequence = 0;
+  recordingPersistenceQueue = Promise.resolve();
   recordingUploadQueue = Promise.resolve();
+  recordingStopTask = null;
   recordingUploadFailed = false;
   recordingDataDropped = false;
   recordingStartedAt = Date.now();
@@ -2218,9 +2224,15 @@ async function startInterviewRecording() {
     interviewRecorder.ondataavailable = event => {
       if (!event.data?.size || !recordingSegmentId) return;
       const sequence = recordingChunkSequence++;
+      // Persist each media slice immediately. Multipart upload stays ordered,
+      // but a slow R2 request must not hold subsequent chunks in JS memory.
+      const persisted = recordingPersistenceQueue.then(() => saveRecordingChunk(event.data, sequence));
+      recordingPersistenceQueue = persisted.catch(error => {
+        recordingDataDropped = true;
+        throw error;
+      });
       recordingUploadQueue = recordingUploadQueue.then(async () => {
-        try { await saveRecordingChunk(event.data, sequence); }
-        catch (error) { recordingDataDropped = true; throw error; }
+        await persisted;
         await retryRecordingFlush(false);
       }).catch(error => {
         recordingUploadFailed = true;
@@ -2247,41 +2259,50 @@ async function startInterviewRecording() {
   }
 }
 
-async function stopInterviewRecording(finalize = false) {
+function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}) {
+  if (recordingStopTask) return recordingStopTask;
   const recorder = interviewRecorder;
-  if (!recorder) return;
-  if (recorder.state !== "inactive") {
-    await new Promise(resolve => {
-      recorder.addEventListener("stop", resolve, { once: true });
-      try { recorder.stop(); } catch { resolve(); }
-    });
+  if (!recorder) {
+    afterCaptureStopped();
+    return Promise.resolve();
   }
-  interviewRecorder = null;
-  if (recordingCanvasTimer) { clearInterval(recordingCanvasTimer); recordingCanvasTimer = null; }
-  recordingCanvasStream?.getTracks().forEach(track => track.stop());
-  recordingCanvasStream = null;
-  await recordingUploadQueue;
-  if (!finalize) return;
-  if (recordingDataDropped) {
-    await markRecordingFailed();
-    setRecordingStatus("Interview completed, but local recording storage filled before all video data could be secured.", true);
-    return;
-  }
-  try {
-    await retryRecordingFlush(true);
-    setRecordingStatus("Interview completed · finalizing the secure recording…");
-    const response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
-      method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ duration_seconds: Math.floor((Date.now() - recordingStartedAt) / 1000), parts: recordingPartMetadata }),
-    });
-    if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording finalization failed.");
-    await clearRecordingQueue();
-    setRecordingStatus("Interview completed · securely processing the recording.");
-  } catch (error) {
-    await markRecordingFailed();
-    setRecordingStatus("Interview completed, but its recording could not be finalized. Placement staff will see it as unavailable.", true);
-    console.error("Interview recording finalization failed", error);
-  }
+  recordingStopTask = (async () => {
+    if (recorder.state !== "inactive") {
+      await new Promise(resolve => {
+        recorder.addEventListener("stop", resolve, { once: true });
+        try { recorder.stop(); } catch { resolve(); }
+      });
+    }
+    interviewRecorder = null;
+    if (recordingCanvasTimer) { clearInterval(recordingCanvasTimer); recordingCanvasTimer = null; }
+    recordingCanvasStream?.getTracks().forEach(track => track.stop());
+    recordingCanvasStream = null;
+    afterCaptureStopped();
+    await recordingPersistenceQueue.catch(() => {});
+    await recordingUploadQueue;
+    if (!finalize) return;
+    if (recordingDataDropped) {
+      await markRecordingFailed();
+      setRecordingStatus("The interview ended, but the local recording queue could not save every media chunk.", true);
+      return;
+    }
+    try {
+      await retryRecordingFlush(true);
+      setRecordingStatus("Interview ended · finalizing the secure recording…");
+      const response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ duration_seconds: Math.floor((Date.now() - recordingStartedAt) / 1000), parts: recordingPartMetadata }),
+      });
+      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording finalization failed.");
+      await clearRecordingQueue();
+      setRecordingStatus("Interview ended · securely processing the recording.");
+    } catch (error) {
+      await markRecordingFailed();
+      setRecordingStatus("The interview ended, but its recording could not be finalized. Placement staff will see it as unavailable.", true);
+      console.error("Interview recording finalization failed", error);
+    }
+  })().finally(() => { recordingStopTask = null; });
+  return recordingStopTask;
 }
 
 // ============================================================
@@ -2495,11 +2516,15 @@ function handleControlMessage(payload) {
 
     case "session_incomplete":
       clearProcessingStatus();
-      showIncompleteInterview(payload.reason, Number(payload.completed_rounds) || completedRounds.size, Number(payload.required_rounds) || requiredInterviewRounds);
+      showIncompleteInterview(payload.reason, Number(payload.completed_rounds) || completedRounds.size, Number(payload.required_rounds) || requiredInterviewRounds, payload.detail || "");
       break;
 
     case "integrity_warning_summary":
       showIntegrityNotice(payload.detail || "Integrity warnings are being recorded for placement-officer review.");
+      break;
+
+    case "integrity_termination":
+      showIntegrityNotice(payload.detail || "The placement interview ended under the AI-proctor policy set by placement staff.");
       break;
 
     case "interview_paused":
@@ -2676,10 +2701,15 @@ function stopInterview() {
     micProcessor.disconnect();
     micProcessor = null;
   }
-  if (interviewRecorder?.state !== "inactive") {
-    try { interviewRecorder?.stop(); } catch {}
-  }
-  interviewRecorder = null;
+  // Stop and finalize even an interrupted/early-ended placement recording.
+  // Do not release camera/audio tracks until MediaRecorder's final slice has
+  // been emitted; cleanup then runs while its saved chunks upload.
+  void stopInterviewRecording(true, cleanupInterviewMedia);
+  stopScreenShareCapture();
+  exitInterviewFullscreen();
+}
+
+function cleanupInterviewMedia() {
   if (audioContext) {
     audioContext.close();
     audioContext = null;
@@ -2697,8 +2727,6 @@ function stopInterview() {
     userMediaStream.getTracks().forEach(t => t.stop());
     userMediaStream = null;
   }
-  stopScreenShareCapture();
-  exitInterviewFullscreen();
 }
 
 // ============================================================

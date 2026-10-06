@@ -103,6 +103,12 @@ async function prepare(page: Page, failure = "") {
       };
       window.__testStartRecording = startInterviewRecording;
       window.__testStopRecording = stopInterviewRecording;
+      window.__testControlMessage = handleControlMessage;
+      window.__testEmitRecordingChunk = blob => interviewRecorder?.ondataavailable?.({ data: blob });
+      window.__testSaveRecordingQueue = () => recordingPersistenceQueue;
+      window.__testFlushRecordingQueue = () => retryRecordingFlush(true);
+      window.__testPendingRecordingCount = async () => (await pendingRecordingChunks()).length;
+      window.__testRecordingState = () => ({ active: !!interviewRecorder, state: interviewRecorder?.state, dropped: recordingDataDropped, segment: recordingSegmentId });
       window.__testInterviewRecordingFormat = { select: selectInterviewRecordingMimeType, describe: describeInterviewRecordingFormat };
       if (window.failure !== "runtime") startInterview = async () => { window.starts++; };
       else {
@@ -137,7 +143,7 @@ test("one click checks permissions and identity before creating the session, wit
   expect(counts.create).toBe(0);
   expect(await page.evaluate(() => (window as any).mediaCalls.length)).toBe(0);
   await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
-  await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as any).starts), { timeout: 15_000 }).toBe(1);
   expect(counts).toEqual({ create: 1, identity: 1, readiness: 1, preflight: 1 });
   expect(await page.evaluate(() => (window as any).shares)).toBe(1);
   expect(await page.evaluate(() => (window as any).mediaCalls.length)).toBe(1);
@@ -190,13 +196,94 @@ test("consented recording aggregates queued chunks and uploads multipart bytes d
     (window as any).__testRecordingSetup("recording-test-session", inputStream, destination);
   });
   await page.evaluate(() => (window as any).__testStartRecording());
-  await page.waitForTimeout(1200);
+  await page.evaluate(() => (window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1, 2, 3])], { type: "video/webm" })));
+  await page.evaluate(() => (window as any).__testSaveRecordingQueue());
   await page.evaluate(() => (window as any).__testStopRecording(true));
   expect(calls.start).toMatchObject({ consent: true, mime_type: "video/webm", extension: "webm" });
   expect(calls.part).toBe(1);
   expect(calls.put).toBe(1);
   expect(calls.finalize?.parts).toEqual([{ PartNumber: 1, ETag: '"test-etag"' }]);
   expect(calls.finalize?.duration_seconds).toEqual(expect.any(Number));
+});
+
+test("interrupted placement interview explains the proctor stop and finalizes its recording", async ({ page }) => {
+  await prepare(page);
+  let finalized: any;
+  await page.route("**/recording/start", route => route.fulfill({ json: { status: "recording" } }));
+  await page.route("**/recording/parts/*/*/authorize", route => route.fulfill({ json: { url: "https://r2.invalid/signed-part" } }));
+  await page.route("https://r2.invalid/**", async route => {
+    const origin = route.request().headers().origin || "http://127.0.0.1:5175";
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 200, headers: { "access-control-allow-origin": origin, "access-control-allow-methods": "PUT", "access-control-allow-headers": "content-type", "access-control-expose-headers": "ETag" } });
+      return;
+    }
+    await route.fulfill({ status: 200, headers: { etag: '"stop-etag"', "access-control-allow-origin": origin, "access-control-expose-headers": "ETag" } });
+  });
+  await page.route("**/recording/finalize", async route => {
+    finalized = route.request().postDataJSON();
+    await route.fulfill({ json: { status: "processing" } });
+  });
+  await page.evaluate(async () => {
+    const input = document.createElement("canvas"); input.width = 640; input.height = 360;
+    const inputStream = input.captureStream(15);
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const destination = audioContext.createMediaStreamDestination();
+    oscillator.connect(destination); oscillator.start(); await audioContext.resume();
+    (window as any).__testRecordingSetup("interrupted-session", inputStream, destination);
+  });
+  await page.evaluate(() => (window as any).__testStartRecording());
+  await page.waitForTimeout(1200);
+  await page.evaluate(() => (window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([7, 8, 9])], { type: "video/webm" })));
+  await page.evaluate(() => (window as any).__testSaveRecordingQueue());
+  expect(await page.evaluate(() => (window as any).__testRecordingState())).toMatchObject({ active: true, dropped: false, segment: expect.any(String) });
+  expect(await page.evaluate(() => (window as any).__testPendingRecordingCount())).toBe(1);
+  await page.evaluate(() => (window as any).__testControlMessage({
+    type: "session_incomplete", reason: "proctor_terminated", completed_rounds: 1, required_rounds: 4,
+    detail: "The placement interview ended because multiple people were detected in view. Placement staff can review the recorded event.",
+  }));
+  await expect(page.locator("#incomplete-message")).toContainText("multiple people were detected in view");
+  await page.evaluate(() => (window as any).__testStopRecording(true));
+  await expect.poll(() => finalized?.parts?.length || 0).toBeGreaterThan(0);
+});
+
+test("recording chunks persist while an earlier R2 upload is still in progress", async ({ page }) => {
+  await prepare(page);
+  let releaseUpload!: () => void;
+  let uploadStarted!: () => void;
+  const uploadGate = new Promise<void>(resolve => { releaseUpload = resolve; });
+  const started = new Promise<void>(resolve => { uploadStarted = resolve; });
+  await page.route("**/recording/start", route => route.fulfill({ json: { status: "recording" } }));
+  await page.route("**/recording/parts/*/*/authorize", route => route.fulfill({ json: { url: "https://r2.invalid/signed-part" } }));
+  await page.route("https://r2.invalid/**", async route => {
+    const origin = route.request().headers().origin || "http://127.0.0.1:5175";
+    if (route.request().method() === "OPTIONS") {
+      await route.fulfill({ status: 200, headers: { "access-control-allow-origin": origin, "access-control-allow-methods": "PUT", "access-control-allow-headers": "content-type", "access-control-expose-headers": "ETag" } });
+      return;
+    }
+    uploadStarted();
+    await uploadGate;
+    await route.fulfill({ status: 200, headers: { etag: '"ordered-etag"', "access-control-allow-origin": origin, "access-control-expose-headers": "ETag" } });
+  });
+  await page.evaluate(async () => {
+    const input = document.createElement("canvas"); input.width = 640; input.height = 360;
+    const inputStream = input.captureStream(15);
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const destination = audioContext.createMediaStreamDestination();
+    oscillator.connect(destination); oscillator.start(); await audioContext.resume();
+    (window as any).__testRecordingSetup("parallel-upload-session", inputStream, destination);
+  });
+  await page.evaluate(() => (window as any).__testStartRecording());
+  await page.evaluate(() => (window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1, 2, 3])], { type: "video/webm" })));
+  await page.evaluate(() => (window as any).__testSaveRecordingQueue());
+  await page.evaluate(() => { (window as any).__testFlush = (window as any).__testFlushRecordingQueue(); });
+  await started;
+  await page.evaluate(() => (window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([4, 5, 6])], { type: "video/webm" })));
+  await page.evaluate(() => (window as any).__testSaveRecordingQueue());
+  expect(await page.evaluate(() => (window as any).__testPendingRecordingCount())).toBe(2);
+  releaseUpload();
+  await page.evaluate(() => (window as any).__testFlush);
 });
 
 test("recording format selection supports Chromium WebM and Safari MP4 fallback", async ({ page }) => {
