@@ -1,12 +1,31 @@
 /* Student portal tokens, with the same timetable structure as the client ERP. */
 .student-erp { min-width:0; }
-.student-erp .student-erp-services { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:20px 0; }
-.student-erp .student-erp-service { display:flex; flex-direction:column; align-items:flex-start; padding:18px; min-width:0; margin:0; }
+.student-erp .student-erp-services { grid-template-columns:repeat(3,minmax(0,1fr)); gap:14px; margin:16px 0 0; }
+.student-erp .student-erp-service { display:flex; flex-direction:column; align-items:flex-start; padding:20px; min-width:0; margin:0; position:relative; transition:border-color .22s ease,box-shadow .22s ease,transform .22s cubic-bezier(.2,.8,.2,1); }
 .student-erp-service-icon { display:grid; place-items:center; width:34px; height:34px; border-radius:10px; background:var(--soft); color:var(--primary); margin-bottom:10px; }
-.student-erp .student-erp-service h2 { font-size:18px; line-height:1.3; margin:0 0 6px; }
+.student-erp .student-erp-service h3 { font-size:16px; line-height:1.4; margin:0 0 6px; font-weight:600; }
 .student-erp .student-erp-service p { font-size:13px; line-height:1.5; margin:0 0 12px; flex:1; }
 .student-erp .student-erp-service .button { width:100%; justify-content:space-between; font-size:12px; padding:8px 12px; min-height:36px; }
-.student-erp-service:hover { border-color:color-mix(in srgb,var(--primary) 30%,var(--border)); }
+.student-erp-service:focus-visible { border-color:color-mix(in srgb,var(--primary) 45%,var(--border)); box-shadow:0 12px 28px color-mix(in srgb,var(--primary) 14%,transparent); }
+@media(hover:hover) and (pointer:fine) {
+  .student-erp-service:hover { border-color:color-mix(in srgb,var(--primary) 45%,var(--border)); box-shadow:0 12px 28px color-mix(in srgb,var(--primary) 14%,transparent); transform:translateY(-5px) scale(1.015); z-index:1; }
+}
+.student-erp-service:focus-visible { outline:2px solid var(--primary); outline-offset:4px; }
+.student-erp-service-top { display:flex; align-items:center; justify-content:space-between; width:100%; margin-bottom:12px; }
+.student-erp-service-top .student-erp-service-icon { margin:0; width:38px; height:38px; }
+.student-erp-card-arrow { color:var(--muted); transition:color .18s ease,transform .18s ease; }
+.student-erp-service:hover .student-erp-card-arrow { color:var(--primary); transform:translateX(3px); }
+.student-erp-service-action { font-size:12px; font-weight:600; color:var(--primary); margin-top:4px; }
+.student-erp .student-erp-identity { display:flex; align-items:center; gap:14px; padding:16px 20px; margin-bottom:28px; }
+.student-erp-avatar { display:grid; place-items:center; flex-shrink:0; width:42px; height:42px; border-radius:12px; background:var(--soft); color:var(--primary); font-size:14px; font-weight:600; }
+.student-erp-identity strong { font-size:14px; }
+.student-erp-identity p { margin:4px 0 0; font-size:12px; line-height:1.5; color:var(--muted); }
+.student-erp-identity .student-erp-readonly { margin-left:auto; }
+.student-erp-group { margin-bottom:28px; }
+.student-erp-group-heading { display:flex; justify-content:space-between; align-items:center; gap:16px; }
+.student-erp-group-heading h2 { font-size:17px; font-weight:600; margin:0 0 4px; }
+.student-erp-group-heading p { margin:0; font-size:12px; line-height:1.5; color:var(--muted); }
+.student-erp-group-heading > span { color:var(--muted); font-size:11px; white-space:nowrap; }
 .student-erp-navigation { display:flex; justify-content:space-between; align-items:center; gap:12px; margin-bottom:18px; }
 .student-erp-readonly,.student-erp-count { font-size:12px; font-weight:600; color:var(--muted); background:var(--background); border:1px solid var(--border); border-radius:99px; padding:7px 12px; white-space:nowrap; }
 .student-erp .student-erp-toolbar { display:flex; flex-wrap:wrap; align-items:flex-end; gap:16px; padding:18px 22px; }
@@ -58,7 +77,6 @@
 .erp-timetable-class small { font-size:11px; color:var(--muted); line-height:1.5; }
 .erp-timetable-class-detail { display:flex; align-items:center; gap:5px; color:var(--primary); font-size:10px; margin-top:2px; }
 .erp-timetable-class:hover { box-shadow:0 2px 8px #0f172a15; filter:brightness(.98); }
-@media(min-width:1600px) { .student-erp .student-erp-services { grid-template-columns:repeat(4,minmax(0,1fr)); } }
 @media(max-width:1050px) { .student-erp .student-erp-services { grid-template-columns:repeat(2,minmax(0,1fr)); } }
 @media(max-width:600px) {
   .student-erp .student-erp-services { grid-template-columns:1fr; gap:12px; }
@@ -71,7 +89,9 @@
   .student-erp-count { font-size:11px; }
   .student-erp-details { grid-template-columns:1fr; }
   .student-erp-readonly { font-size:11px; }
+  .student-erp-identity .student-erp-readonly { display:none; }
 }
+@media(prefers-reduced-motion:reduce) { .student-erp-service,.student-erp-card-arrow { transition:none!important; } .student-erp-service:hover,.student-erp-service:hover .student-erp-card-arrow { transform:none; } }
 
 .student-erp-context { margin:0 0 18px; font-size:13px; }
 .student-erp .student-erp-summary:empty { display:none; margin:0; }

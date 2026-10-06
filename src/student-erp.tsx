@@ -23,6 +23,11 @@ const SERVICES: Service[] = [
   { id: 'mess-attendance', title: 'Mess Attendance', description: 'Your breakfast, lunch and dinner attendance.', columns: [['attendance_date','Date'],['meal','Meal'],['status','Attendance']] },
 ];
 const SERVICE_ICONS: Record<string, LucideIcon> = { timetable:CalendarDays, attendance:ClipboardCheck, 'internal-marks':FileText, 'semester-marks':GraduationCap, fees:Wallet, homework:BookOpen, circulars:Megaphone, exams:CalendarDays, opac:Library, 'hostel-attendance':Building2, 'mess-attendance':Utensils };
+const SERVICE_GROUPS = [
+  { title: 'Academics', description: 'Your classes, coursework and results.', ids: ['timetable', 'attendance', 'internal-marks', 'semester-marks', 'homework', 'exams'] },
+  { title: 'Institution services', description: 'Payments, campus notices and your library.', ids: ['fees', 'circulars', 'opac'] },
+  { title: 'Campus life', description: 'Your hostel and meal attendance.', ids: ['hostel-attendance', 'mess-attendance'] },
+];
 const SUMMARY_LABELS: Record<string,string> = { total_fee:'Total fees', amount_paid:'Paid', outstanding_balance:'Balance due', attendance_percentage:'Attendance', hours_conducted:'Hours conducted', hours_present:'Hours present', hours_absent:'Hours absent', days_conducted:'Days conducted', days_present:'Days present', days_absent:'Days absent', semester_gpa:'Semester GPA', overall_cgpa:'CGPA', overall_result:'Result', hours_on_duty:'On duty', eligibility_status:'Eligibility' };
 
 function display(key: string, value: Row[string], currency = 'INR'): string {
@@ -46,16 +51,27 @@ export function StudentErp() {
   const selected = SERVICES.find(item => item.id === service);
   return <div className="student-erp">
     <PageHeading eyebrow="YOUR INSTITUTION RECORDS" title={selected?.title || 'My ERP'}>
-      {student?.full_name} · {student?.roll_number} · Records maintained by your institution.
+      {selected ? selected.description : 'Your academic records and campus services, together in one place.'}
     </PageHeading>
-    {!service && <div className="career-grid student-erp-services">{SERVICES.map(item => {
-      const Icon = SERVICE_ICONS[item.id];
-      return <section className="panel student-erp-service" key={item.id}>
-        <span className="student-erp-service-icon"><Icon size={22} aria-hidden="true"/></span>
-        <h2>{item.title}</h2><p className="muted">{item.description}</p>
-        <Link className="button secondary" to={`/erp/${item.id}`}>View {item.title.toLowerCase()} <ArrowRight size={16} aria-hidden="true"/></Link>
-      </section>;
-    })}</div>}
+    {!service && <>
+      <div className="panel student-erp-identity">
+        <span className="student-erp-avatar" aria-hidden="true">{student?.full_name?.trim().split(/\s+/).slice(0,2).map(name=>name[0]).join('') || <GraduationCap size={22}/>}</span>
+        <div><strong>{student?.full_name || 'Your student records'}</strong><p>{student?.roll_number ? `Roll no. ${student.roll_number} · ` : ''}Maintained by your institution</p></div>
+        <span className="student-erp-readonly">Student records</span>
+      </div>
+      {SERVICE_GROUPS.map(group=><section className="student-erp-group" key={group.title} aria-label={group.title}>
+        <div className="student-erp-group-heading"><div><h2>{group.title}</h2><p>{group.description}</p></div><span>{group.ids.length} services</span></div>
+        <div className="career-grid student-erp-services">{group.ids.map(id => {
+          const item = SERVICES.find(item=>item.id===id)!;
+          const Icon = SERVICE_ICONS[item.id];
+          return <Link className="panel student-erp-service" key={item.id} to={`/erp/${item.id}`}>
+            <div className="student-erp-service-top"><span className="student-erp-service-icon"><Icon size={20} aria-hidden="true"/></span><ArrowRight className="student-erp-card-arrow" size={18} aria-hidden="true"/></div>
+            <h3>{item.title}</h3><p className="muted">{item.description}</p>
+            <span className="student-erp-service-action">{item.id==='opac'?'Search library':'View records'}</span>
+          </Link>;
+        })}</div>
+      </section>)}
+    </>}
     {service && !selected && <section className="panel"><p>This ERP service is unavailable.</p><Link to="/erp">Back to My ERP</Link></section>}
     {selected && <><div className="student-erp-navigation"><Link className="button secondary" to="/erp">← All ERP services</Link><span className="student-erp-readonly">Read-only access</span></div><ServiceView key={selected.id} service={selected}/></>}
   </div>;

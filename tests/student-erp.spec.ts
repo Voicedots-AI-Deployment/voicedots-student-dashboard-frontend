@@ -78,7 +78,7 @@ test('timetable stays usable on mobile and desktop',async({page})=>{
 test('ERP cards align their actions and timetable reuses the client grid structure',async({page})=>{
   await setup(page);await page.setViewportSize({width:1440,height:1000});await page.goto('/erp');
   const cards=page.locator('.student-erp-service');await expect(cards).toHaveCount(11);
-  const buttons=await cards.locator('a').evaluateAll(nodes=>nodes.slice(0,3).map(node=>Math.round(node.getBoundingClientRect().bottom)));
+  const buttons=await cards.locator('.student-erp-service-action').evaluateAll(nodes=>nodes.slice(0,3).map(node=>Math.round(node.getBoundingClientRect().bottom)));
   expect(new Set(buttons).size).toBe(1);
   await page.screenshot({path:'test-results/my-erp-cards-polished.png',fullPage:true});
   await page.goto('/erp/timetable');await expect(page.locator('.erp-timetable-grid')).toBeVisible();
