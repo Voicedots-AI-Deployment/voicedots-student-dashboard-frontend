@@ -47,3 +47,20 @@ test('whole card opens its ERP service', async ({ page }) => {
   await expect(page.getByRole('heading',{name:'Class Timetable',exact:true}).first()).toBeVisible();
   await expect(page.getByText('No records available', {exact:true})).toBeVisible();
 });
+
+test('pilot illustrations animate for their own service only', async ({page}) => {
+  await expect(page.locator('.erp-card-art')).toHaveCount(3);
+  for (const [service,part,name] of [['timetable','.erp-art-page','erp-calendar-flip'],['fees','.erp-art-coin','erp-coin-bounce'],['homework','.erp-art-pencil','erp-pencil-write']]) {
+    const card=page.locator(`.student-erp-service[href="/erp/${service}"]`);
+    await card.hover();
+    expect(await card.locator(part).evaluate(el=>getComputedStyle(el).animationName)).toBe(name);
+    expect(await card.locator(part).evaluate(el=>getComputedStyle(el).animationIterationCount)).toBe('1');
+  }
+});
+
+test('pilot illustrations remain still with reduced motion', async ({page}) => {
+  await page.emulateMedia({reducedMotion:'reduce'});
+  const card=page.locator('.student-erp-service[href="/erp/fees"]');
+  await card.hover();
+  expect(await card.locator('.erp-art-coin').evaluate(el=>getComputedStyle(el).animationName)).toBe('none');
+});

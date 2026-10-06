@@ -2,6 +2,7 @@ import { useTimetableWeek, TimetableWeekToolbar, dateLabel as weekDateLabel, ist
 import { useState, type FormEvent, type CSSProperties } from 'react';
 import { ArrowRight, BookOpen, CalendarDays, ClipboardCheck, FileText, GraduationCap, Library, Megaphone, RefreshCw, Utensils, Wallet, Building2, type LucideIcon } from 'lucide-react';
 import './student-erp.css';
+import { ErpCardIllustration } from './erp-card-illustration';
 import { Link, useParams } from 'react-router-dom';
 import { useAuth } from './auth';
 import { Dialog, ErrorMessage, PageHeading, date, dateTime, humanize, useResource } from './ui';
@@ -65,7 +66,7 @@ export function StudentErp() {
           const item = SERVICES.find(item=>item.id===id)!;
           const Icon = SERVICE_ICONS[item.id];
           return <Link className="panel student-erp-service" key={item.id} to={`/erp/${item.id}`}>
-            <div className="student-erp-service-top"><span className="student-erp-service-icon"><Icon size={20} aria-hidden="true"/></span><ArrowRight className="student-erp-card-arrow" size={18} aria-hidden="true"/></div>
+            <div className="student-erp-service-top"><span className={`student-erp-service-icon${['timetable','fees','homework'].includes(item.id)?' student-erp-illustrated':''}`}>{['timetable','fees','homework'].includes(item.id)?<ErpCardIllustration service={item.id}/>:<Icon size={20} aria-hidden="true"/>}</span><ArrowRight className="student-erp-card-arrow" size={18} aria-hidden="true"/></div>
             <h3>{item.title}</h3><p className="muted">{item.description}</p>
             <span className="student-erp-service-action">{item.id==='opac'?'Search library':'View records'}</span>
           </Link>;
