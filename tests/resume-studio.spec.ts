@@ -147,9 +147,9 @@ test("Resume Studio Overview shares one aligned container at desktop widths",asy
   expect(layout.navWidth).toBe(await page.locator(".resume-studio").evaluate(el=>el.getBoundingClientRect().width));
   expect(layout.navPosition).toBe("relative");
   expect(layout.navBackground).toBe("rgb(248, 248, 250)");
-  // Show the entire first paper page, rather than the former cropped 190px thumbnail.
+  // Keep the library card preview compact while preserving the paper aspect ratio.
   const thumb=await page.locator(".rs-card-paper").first().boundingBox();
-  expect(thumb!.height).toBe(220);expect(thumb!.width).toBeLessThanOrEqual(210);
+  expect(thumb!.height).toBe(190);expect(thumb!.width).toBeLessThanOrEqual(210);
   const sheet=(await page.locator(".rs-thumbnail-viewport iframe").first().boundingBox())!;expect(sheet.x).toBeGreaterThanOrEqual(thumb!.x-1);expect(sheet.x+sheet.width).toBeLessThanOrEqual(thumb!.x+thumb!.width+1);expect(sheet.height/sheet.width).toBeCloseTo(1123/794,1);
   expect(layout.card.width).toBeGreaterThanOrEqual(190);
   expect(layout.card.width).toBeLessThanOrEqual(210);
