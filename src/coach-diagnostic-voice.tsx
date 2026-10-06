@@ -14,7 +14,7 @@ type Props = {
   onSkip: (taskId: string) => Promise<void>;
 };
 
-type VoiceState = 'ready' | 'connecting' | 'speaking' | 'listening' | 'processing' | 'error';
+type VoiceState = 'ready' | 'connecting' | 'listening' | 'processing' | 'error';
 const cleanTranscript = (text: string) => text.replace(/[ \t]+/g, ' ').replace(/\n\s*/g, '\n').trim();
 
 export function CoachDiagnosticVoice({ driveId, language, task, questionNumber, total, onComplete, onSkip }: Props) {
@@ -30,10 +30,8 @@ export function CoachDiagnosticVoice({ driveId, language, task, questionNumber, 
     setError(''); setCaption(''); setFinalText(''); setBusy(true); setMuted(false); muteRef.current = false; completed.current = false;
     setState('connecting');
     let stream: MediaStream | undefined, ctx: AudioContext | undefined, ws: WebSocket | undefined;
-    const sources = new Set<AudioBufferSourceNode>(); let epoch = 0, next = 0;
-    let ack: ReturnType<typeof setTimeout> | undefined, connectingTimer: ReturnType<typeof setTimeout> | undefined;
-    const stopAudio = () => { clearTimeout(ack); sources.forEach(source => { try { source.stop(); } catch { /* already stopped */ } }); sources.clear(); next = ctx?.currentTime || 0; };
-    const stop = () => { micOpen.current = false; clearTimeout(connectingTimer); stopAudio(); if (ws) { ws.onclose = null; ws.onmessage = null; if (ws.readyState < WebSocket.CLOSING) ws.close(); } if (socketRef.current === ws) socketRef.current = null; stream?.getTracks().forEach(track => track.stop()); if (ctx && ctx.state !== 'closed') void ctx.close(); };
+    let connectingTimer: ReturnType<typeof setTimeout> | undefined;
+    const stop = () => { micOpen.current = false; clearTimeout(connectingTimer); if (ws) { ws.onclose = null; ws.onmessage = null; if (ws.readyState < WebSocket.CLOSING) ws.close(); } if (socketRef.current === ws) socketRef.current = null; stream?.getTracks().forEach(track => track.stop()); if (ctx && ctx.state !== 'closed') void ctx.close(); };
     cleanup.current = stop;
     const fail = (message: string) => { stop(); if (token === generation.current) { setBusy(false); setState('error'); setError(message); } };
     try {
@@ -53,33 +51,34 @@ export function CoachDiagnosticVoice({ driveId, language, task, questionNumber, 
       };
       const url = new URL(apiUrl(`/ws/coach-diagnostic/${encodeURIComponent(driveId)}/${encodeURIComponent(task.task_id)}${language ? `?language=${encodeURIComponent(language)}` : ''}`), window.location.href);
       url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
+      const queuedEvents: (string | ArrayBuffer)[] = [];
       ws = new WebSocket(url); socketRef.current = ws; ws.binaryType = 'arraybuffer';
       ws.onmessage = event => {
+        if (token !== generation.current) return;
+        if (!ctx) { queuedEvents.push(event.data); return; }
+        handleMessage(event.data);
+      };
+      const handleMessage = (data: string | ArrayBuffer) => {
         if (token !== generation.current || !ctx) return;
-        if (event.data instanceof ArrayBuffer) {
-          const packet = new DataView(event.data); if (packet.byteLength < 6 || packet.getUint32(0, false) !== epoch) return;
-          const count = Math.floor((packet.byteLength - 4) / 2), buffer = ctx.createBuffer(1, count, 48000), data = buffer.getChannelData(0);
-          for (let index = 0; index < count; index++) data[index] = packet.getInt16(4 + index * 2, true) / 32768;
-          const source = ctx.createBufferSource(); source.buffer = buffer; source.connect(ctx.destination);
-          next = Math.max(next, ctx.currentTime + 0.025); source.start(next); next += buffer.duration; sources.add(source); source.onended = () => sources.delete(source); return;
-        }
-        let payload: any; try { payload = JSON.parse(event.data); } catch { return; }
-        if (payload.type === 'tts_begin') { micOpen.current = false; stopAudio(); epoch = payload.audio_epoch; setState('speaking'); }
-        if (payload.type === 'tts_end' && payload.audio_epoch === epoch) {
-          const ended = epoch; clearTimeout(ack);
-          ack = setTimeout(() => { if (ws?.readyState === WebSocket.OPEN && epoch === ended) ws.send(JSON.stringify({ type: 'playback_complete', audio_epoch: ended })); }, Math.max(0, (next - ctx.currentTime) * 1000) + 70);
+        if (data instanceof ArrayBuffer) return;
+        let payload: any; try { payload = JSON.parse(data); } catch { return; }
+        if (payload.type === 'diagnostic_started') {
+          if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'start_answer', task_id: task.task_id }));
         }
         if (payload.type === 'listening_started') { micOpen.current = true; setState('listening'); }
-        if (payload.type === 'partial_transcript') { setCaption(cleanTranscript(payload.text || '')); setState('listening'); }
-        if (payload.type === 'final_transcript') { const text = cleanTranscript(payload.text || ''); setCaption(''); setFinalText(text); setState('processing'); }
+        if (payload.type === 'partial_transcript') { const text = cleanTranscript(payload.text || ''); setCaption(text); setFinalText(''); setState('listening'); }
+        if (payload.type === 'final_transcript') { const text = cleanTranscript(payload.text || ''); setCaption(''); setFinalText(text); if (text) setState('processing'); }
         if (payload.type === 'processing') { micOpen.current = false; setState('processing'); }
         if (payload.type === 'diagnostic_answer_complete' && !completed.current) {
-          completed.current = true; micOpen.current = false; const text = cleanTranscript(payload.transcript || ''); setFinalText(text); setCaption(''); setState('processing');
+          const text = cleanTranscript(payload.transcript || '');
+          if (!text && !payload.skipped) { fail('No speech was transcribed. Please retry the question.'); return; }
+          completed.current = true; micOpen.current = false; setFinalText(text); setCaption(''); setState('processing');
           const evaluation = payload.evaluation || null, skipped = Boolean(payload.skipped);
           window.setTimeout(() => { if (token === generation.current) { stop(); setBusy(false); onCompleteRef.current(task.task_id, text, evaluation, skipped); } }, 750);
         }
         if (payload.type === 'error') fail(payload.detail || 'The voice diagnostic was interrupted. Please retry.');
       };
+      for (const event of queuedEvents.splice(0)) handleMessage(event);
       ws.onerror = () => fail('Could not connect to the voice diagnostic. Check microphone access and retry.');
       ws.onclose = event => { if (token === generation.current && !completed.current && event.code !== 1000) fail(event.code === 4409 ? 'This answer is already saved. Continue to the next question.' : 'Voice connection ended. Retry this question.'); };
       connectingTimer = setTimeout(() => { if (token === generation.current && ws?.readyState !== WebSocket.OPEN) setError('Waiting for the voice service…'); }, 8000);
@@ -103,11 +102,11 @@ export function CoachDiagnosticVoice({ driveId, language, task, questionNumber, 
     finally { setBusy(false); }
   }
 
-  const statusText = state === 'speaking' ? 'AI speaking' : state === 'listening' ? 'Listening' : state === 'processing' ? 'Thinking' : state === 'connecting' ? 'Connecting to voice' : state === 'error' ? 'Voice unavailable' : 'Ready';
+  const statusText = state === 'listening' ? 'Listening' : state === 'processing' ? 'Saving answer' : state === 'connecting' ? 'Connecting to voice' : state === 'error' ? 'Voice unavailable' : 'Ready';
   return <section className="coach-voice-diagnostic" aria-label="Voice diagnostic answer">
     <div className="coach-diagnostic-persona"><div className={`coach-diagnostic-avatar ${state}`} aria-hidden="true">●</div><div><span className={`coach-diagnostic-state ${state}`} role="status">{statusText}</span><small>Voice diagnostic · {task.question_source_type === 'PREVIOUS_INTERVIEW_QUESTION' ? 'Previous interview question' : 'Diagnostic question'}</small></div></div>
     <div className="coach-diagnostic-question"><span>Question {questionNumber} of {total}</span><strong>Skill: {task.sub_skill}</strong><strong>Difficulty: {task.difficulty || 'Intermediate'}</strong><p>{task.question}</p>{task.schema && <pre>{task.schema}</pre>}{task.code && <pre>{task.code}</pre>}</div>
-    <div className="coach-diagnostic-transcript" aria-live="polite">{caption ? <><small>Live transcript</small><p>{caption}</p></> : finalText ? <><small>Final transcript</small><p>{finalText}</p></> : <small>Your transcript will appear here while you answer.</small>}</div>
+    <label className="coach-diagnostic-transcript"><small>{state === 'listening' ? 'Live transcript' : finalText ? 'Final transcript' : 'Transcript'}</small><textarea aria-label="Diagnostic transcript" value={caption || finalText} onChange={event => { setFinalText(event.target.value); setCaption(''); }} placeholder="Your words will appear here while you answer." readOnly={state !== 'ready' && state !== 'error'} /></label>
     {error && <p className="coach-diagnostic-voice-error" role="alert">{error}</p>}
     <div className="coach-diagnostic-voice-controls">
       {state === 'ready' || state === 'error' ? <button type="button" className="coach-primary" disabled={busy} onClick={() => void connect()}><Mic size={16}/>{state === 'error' ? 'Retry voice question' : 'Start voice question'}</button> : <>

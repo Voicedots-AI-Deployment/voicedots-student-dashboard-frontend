@@ -60,6 +60,7 @@ test.describe("Student Calendar", () => {
   test.use({ timezoneId: "Asia/Kolkata" });
 
   test("agenda is prominent on desktop and search/category filters affect both views", async ({ page }, testInfo) => {
+    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page);
     await page.setViewportSize({ width: 1440, height: 1000 });
     await page.goto("/calendar");
@@ -88,6 +89,7 @@ test.describe("Student Calendar", () => {
   });
 
   test("date selection filters agenda and month navigation/view switching works", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page);
     await page.goto("/calendar");
     const sixth = page.locator('.calendar-day[aria-label="Tue, 6 Oct 2026, 2 events"] .calendar-day-number');
