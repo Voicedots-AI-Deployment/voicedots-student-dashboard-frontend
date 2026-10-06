@@ -167,7 +167,6 @@ export type DriveContext = {
 export type PracticeJobDescription = {
   role_title: string;
   job_description: string;
-  sources: Array<{ title: string; url: string }>;
 };
 export type Readiness = {
   overall_score: number | null;

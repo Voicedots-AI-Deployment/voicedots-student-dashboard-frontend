@@ -23,6 +23,7 @@ import {
   type Resume,
 } from "./api";
 import { useAuth } from "./auth";
+import { ResumePreview } from "./resume-preview";
 import {
   ErrorMessage,
   humanize,
@@ -58,6 +59,7 @@ export function Practice() {
   const selectedDrive = availableDrives.find((drive) => drive.id === driveId) || null;
   const key = `vd_preparation_${identity!.student.id}_${driveId || coachCycleId || "practice"}`;
   const [file, setFile] = useState<File | null>(null);
+  const [resumePreview, setResumePreview] = useState<File | null>(null);
   const [role, setRole] = useState("");
   const [duration, setDuration] = useState("30");
   const [difficulty, setDifficulty] = useState<"beginner" | "intermediate" | "advanced">(() => {
@@ -67,7 +69,6 @@ export function Practice() {
     return academicYear === 1 ? "beginner" : academicYear === 2 ? "intermediate" : "advanced";
   });
   const [jd, setJd] = useState("");
-  const [jdSources, setJdSources] = useState<PracticeJobDescription["sources"]>([]);
   const [jdBusy, setJdBusy] = useState(false);
   const [jdError, setJdError] = useState("");
   const [context, setContext] = useState<DriveContext | null>(null);
@@ -106,7 +107,6 @@ export function Practice() {
     try {
       const result = await api<PracticeJobDescription>("/api/student/practice/job-description", { ...json({ role_title: role.trim() }), timeoutMs: 50000 });
       setJd(result.job_description);
-      setJdSources(result.sources);
     } catch (err) {
       setJdError(err instanceof ApiError ? err.message : "Could not generate a current job description. Your text has not changed; please retry.");
     } finally {
@@ -400,7 +400,8 @@ export function Practice() {
       const response = await request(
         `/api/student/resume-library/${encodeURIComponent(resume.resume_id)}/file`,
       );
-      const saved = new File([await response.blob()], resume.original_filename);
+      const blob = await response.blob();
+      const saved = new File([blob], resume.original_filename, { type: blob.type });
       if (!alive.current) return;
       chooseFile(saved);
     } catch (e) {
@@ -411,9 +412,7 @@ export function Practice() {
   }
   function viewActiveResume() {
     if (!file) return;
-    const url = URL.createObjectURL(file);
-    window.open(url, "_blank", "noopener,noreferrer");
-    window.setTimeout(() => URL.revokeObjectURL(url), 60_000);
+    setResumePreview(file);
   }
   const pending = preparation?.status === "in_progress";
   const needsClarification = preparation?.status === "needs_clarification";
@@ -531,7 +530,7 @@ export function Practice() {
               </div>
               <fieldset disabled={busy || contextLoading} className="interview-fields">
                 <label>Target role
-                  <input value={role} onChange={(e) => { setRole(e.target.value); setJdSources([]); }} maxLength={120} required placeholder="e.g. Quant Engineer"/>
+                  <input value={role} onChange={(e) => setRole(e.target.value)} maxLength={120} required placeholder="e.g. Quant Engineer"/>
                 </label>
                 <div className="interview-field-row">
                   <label>Interview duration
@@ -550,11 +549,9 @@ export function Practice() {
                   <button type="button" className="button secondary small" disabled={!role.trim() || jdBusy} onClick={() => void generateJobDescription()}>
                     {jdBusy ? <><LoaderCircle className="spin" size={15}/> Searching current listings…</> : "Generate latest JD"}
                   </button>
-                  <span className="muted">Uses current public listings for this role in India.</span>
                 </div>
-                <textarea aria-label="Job description" value={jd} onChange={(e) => { setJd(e.target.value); setJdSources([]); }} maxLength={8000} rows={4} placeholder="Add a job description for more focused practice…"/>
+                <textarea aria-label="Job description" value={jd} onChange={(e) => setJd(e.target.value)} maxLength={8000} rows={6} placeholder="Add a job description for more focused practice…"/>
                 {jdError && <p role="alert" className="interview-inline-error">{jdError}</p>}
-                {jdSources.length > 0 && <div className="practice-jd-sources"><span>AI-generated draft based on recent public listings; not an employer’s official posting.</span><ul>{jdSources.map(source => <li key={source.url}><a href={source.url} target="_blank" rel="noreferrer">{source.title}</a></li>)}</ul></div>}
                 <button className="button primary" type="submit" disabled={!activeResume || !file || resumeBusy || busy || !role.trim()}>
                   {busy ? <><LoaderCircle className="spin" size={17}/> Preparing your interview…</> : <>Start practice interview <ArrowRight size={17}/></>}
                 </button>
@@ -624,6 +621,7 @@ export function Practice() {
           : context?.can_resume && context.session_id && context.submission_id ? <div className="interview-session-row"><span className="record-icon"><Mic size={18}/></span><div><strong>{context.company_name} · {context.role_title}</strong><span>Placement Interview · Attempt {attemptNumber} · Interview in progress</span></div><button className="button secondary small" onClick={() => openInterview(context.submission_id!, context.session_id!)}>Continue interview <ArrowRight size={15}/></button></div>
             : <p className="muted">{selectedDrive ? "There is no interrupted interview for this placement." : "When you select a placement with an interview in progress, it will appear here."}</p>}
       </section>
+      {resumePreview && <ResumePreview file={resumePreview} onClose={() => setResumePreview(null)}/>}
     </div>
   );
 }

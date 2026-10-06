@@ -350,13 +350,13 @@ test("upload polls a durable operation across refresh and opens the existing ses
   await expect(page).toHaveURL(/interview.html\?id=sub-1&session_id=session-1/);
 });
 
-test("practice generates a current role JD with sources and does not replace manual text on error", async ({ page }) => {
+test("practice generates a clean role JD without references and preserves manual text on error", async ({ page }) => {
   await mockStudent(page);
   await mockActiveResume(page);
   await page.route("**/api/student/practice/job-description", async route => {
     if (route.request().method() !== "POST") return route.fallback();
     expect(route.request().postDataJSON()).toEqual({ role_title: "AI Engineer" });
-    return route.fulfill({ json: { role_title: "AI Engineer", job_description: "Responsibilities\\nBuild and evaluate AI systems.\\n\\nQualifications\\nPython and machine learning experience.", sources: [{ title: "Recent AI Engineer listing", url: "https://jobs.example.org/ai-engineer" }] } });
+    return route.fulfill({ json: { role_title: "AI Engineer", job_description: "AI Engineer\n\nResponsibilities\nBuild and evaluate AI systems.\n\nRequired qualifications\nPython and machine learning experience." } });
   });
   await page.goto("/practice");
   const generate = page.getByRole("button", { name: "Generate latest JD" });
@@ -365,14 +365,27 @@ test("practice generates a current role JD with sources and does not replace man
   await expect(generate).toBeEnabled();
   await generate.click();
   await expect(page.getByLabel("Job description")).toContainText("Build and evaluate AI systems");
-  await expect(page.getByRole("link", { name: "Recent AI Engineer listing" })).toHaveAttribute("href", "https://jobs.example.org/ai-engineer");
-  await expect(page.getByText(/not an employer’s official posting/)).toBeVisible();
+  await expect(page.getByLabel("Job description")).toContainText("Required qualifications");
+  await expect(page.getByRole("link", { name: "Recent AI Engineer listing" })).toHaveCount(0);
+  await expect(page.getByText(/not an employer’s official posting/)).toHaveCount(0);
   await page.getByLabel("Job description").fill("My manually edited description");
   await expect(page.getByRole("link", { name: "Recent AI Engineer listing" })).toHaveCount(0);
   await page.route("**/api/student/practice/job-description", route => route.fulfill({ status: 502, json: { detail: "Current listings are temporarily unavailable. Your form has not changed; please retry." } }));
   await generate.click();
   await expect(page.getByRole("alert")).toContainText("Current listings are temporarily unavailable");
   await expect(page.getByLabel("Job description")).toHaveValue("My manually edited description");
+});
+
+test("practice View resume opens an in-page preview of the active PDF", async ({ page }) => {
+  await mockStudent(page);
+  await mockActiveResume(page);
+  await page.goto("/practice");
+  await page.getByRole("button", { name: "View resume" }).click();
+  const dialog = page.getByRole("dialog", { name: /active-resume\.pdf/i });
+  await expect(dialog).toBeVisible();
+  await expect(dialog.locator("iframe")).toHaveAttribute("title", "Resume preview: active-resume.pdf");
+  await dialog.getByRole("button", { name: "Close resume preview" }).click();
+  await expect(dialog).toHaveCount(0);
 });
 
 test("resume clarification is saved before continuing preparation", async ({
@@ -549,7 +562,7 @@ test("closed eligible drives remain viewable without offering an interview start
   await page.getByLabel("Interview status").selectOption("closed");
   await expect(page.getByText("Interview closed")).toBeVisible();
   await page.getByRole("button", { name: "View opportunity" }).click();
-  await expect(page.getByText("This placement drive is closed.")).toBeVisible();
+  await expect(page.getByText("This placement drive is closed. No further interview action is available.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Start interview" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Resume interview" })).toHaveCount(0);
 });
@@ -1330,13 +1343,84 @@ test("profile upload becomes the single active resume and enables replacement", 
   let profileSyncBody = "";
   await page.route("**/api/student/resume-studio/resumes/import", async route => { profileSyncBody = route.request().postData() || ""; return route.fulfill({ status: 201, json: { id: "studio-profile-1", import_report: { warnings: [] } } }); });
   await page.goto("/profile");
-  await page.getByLabel("Upload active resume").setInputFiles({ name: "profile-resume.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 profile resume") });
+  await page.getByLabel("Add resume").setInputFiles({ name: "profile-resume.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 profile resume") });
   await expect(page.getByRole("status")).toContainText("ready to use across AI Coach, placement interviews, self-practice, and Career Coach");
   await expect(page.getByText("profile-resume", { exact: true })).toBeVisible();
   await expect(page.getByLabel("Replace active resume")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Edit this resume in Resume Studio →" })).toHaveAttribute("href", "/resume-studio?resume=studio-profile-1");
+  await expect(page.getByRole("link", { name: "Edit in Resume Studio" })).toHaveAttribute("href", "/resume-studio?resume=studio-profile-1");
   expect(profileSyncBody).toContain('name="profile_resume_id"');
   expect(profileSyncBody).toContain("profile-file-1");
+});
+
+test("profile supports viewing, downloading and confirmed deletion of the active resume", async ({ page }) => {
+  await mockStudent(page);
+  const active = { resume_id: "profile-main", submission_id: "profile-submission", label: "Main resume", original_filename: "main-resume.pdf", is_primary: true, uploaded_at: "2026-10-01T00:00:00Z" };
+  let exists = true;
+  let deletedId = "";
+  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: exists ? [active] : [] } }));
+  await page.route("**/api/student/resume-library/profile-main/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 test resume" }));
+  await page.route("**/api/student/resume-library/profile-main", async route => {
+    if (route.request().method() !== "DELETE") return route.fallback();
+    deletedId = "profile-main";
+    exists = false;
+    return route.fulfill({ json: { status: "deleted", resume_id: deletedId } });
+  });
+  await page.route("**/api/student/resume-studio/resumes", route => route.fulfill({ json: [{ id: "studio-main", linked_resume_id: "profile-main" }] }));
+  await page.goto("/profile");
+  await page.getByRole("button", { name: "View resume" }).click();
+  await expect(page.getByRole("dialog", { name: /main-resume\.pdf/i }).locator("iframe")).toBeVisible();
+  await page.getByRole("button", { name: "Close resume preview" }).click();
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download", exact: true }).click();
+  expect((await download).suggestedFilename()).toBe("main-resume.pdf");
+  await expect(page.locator(".saved-resumes-panel")).not.toContainText(/https?:\/\//);
+  await expect(page.getByRole("link", { name: "Edit in Resume Studio" })).toHaveAttribute("href", "/resume-studio?resume=studio-main");
+  await page.getByRole("button", { name: "Delete" }).click();
+  const confirm = page.getByRole("dialog", { name: "Delete this active resume?" });
+  await expect(confirm).toContainText("separate Resume Studio project");
+  await confirm.getByRole("button", { name: "Delete resume" }).click();
+  await expect(page.getByText(/The active resume was deleted from your profile/)).toBeVisible();
+  await expect(page.getByText("No active resume", { exact: true })).toBeVisible();
+  expect(deletedId).toBe("profile-main");
+  await expect(page.getByRole("link", { name: "Open Resume Studio" })).toHaveAttribute("href", "/resume-studio");
+  await expect(page.getByText("No active resume", { exact: true })).toBeVisible();
+  await expect(page.getByText("Add a resume to use it across Interview Practice, Placements, AI Coach and Career Coach.")).toBeVisible();
+  await expect(page.getByLabel("Add resume")).toBeVisible();
+});
+
+test("profile rejects unsupported and oversized resume files with a clear message", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
+  await page.goto("/profile");
+  const input = page.getByLabel("Add resume");
+  await input.setInputFiles({ name: "notes.txt", mimeType: "text/plain", buffer: Buffer.from("not a resume") });
+  await expect(page.getByText("Choose a non-empty PDF or DOCX up to 5 MB.")).toBeVisible();
+  await input.setInputFiles({ name: "large.pdf", mimeType: "application/pdf", buffer: Buffer.alloc(5 * 1024 * 1024 + 1, 65) });
+  await expect(page.getByText("Choose a non-empty PDF or DOCX up to 5 MB.")).toBeVisible();
+});
+
+test("replacing the active resume with identical content remains the single persisted Main Resume", async ({ page }) => {
+  await mockStudent(page);
+  const active = { resume_id: "same-resume", submission_id: "same-submission", label: "Main resume", original_filename: "same.pdf", is_primary: true, uploaded_at: "2026-10-01T00:00:00Z" };
+  let replacementUploaded = false;
+  await page.route("**/api/auth/student-me", route => route.fulfill({ json: { student: { ...identity.student, current_resume_submission_id: active.submission_id } } }));
+  await page.route("**/api/student/resume-library", async route => {
+    if (route.request().method() === "POST") {
+      replacementUploaded = true;
+      return route.fulfill({ json: { analysis_status: "ready", resume_id: active.resume_id, submission_id: active.submission_id } });
+    }
+    return route.fulfill({ json: { resumes: [active] } });
+  });
+  await page.route("**/api/student/resume-studio/resumes", route => route.fulfill({ json: [] }));
+  await page.route("**/api/student/resume-library/same-resume/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 same" }));
+  await page.goto("/profile");
+  await page.getByLabel("Replace active resume").setInputFiles({ name: "same.pdf", mimeType: "application/pdf", buffer: Buffer.from("%PDF-1.4 same") });
+  await expect(page.getByRole("status")).toContainText("ready to use across");
+  await expect(page.getByText("Main Resume · active across coaching and interviews")).toBeVisible();
+  expect(replacementUploaded).toBe(true);
+  await page.reload();
+  await expect(page.getByText("Main Resume · active across coaching and interviews")).toBeVisible();
+  await expect(page.locator(".saved-resume-row")).toHaveCount(1);
 });
 
 test("Career Coach labels an evidence fallback and remains readable on mobile with limited evidence", async ({ page }) => {

@@ -553,11 +553,11 @@ export function Placements() {
     if (context.main_resume_available === false)
       nextStep = "Upload or select your Main Resume in My Profile before starting or resuming this placement interview.";
     else if (interviewWindow === "closed" || selected?.status === "closed")
-      nextStep = attemptState.remaining === 0 ? "You have completed all available attempts." : "This opportunity is closed, so no further interview action is available.";
+      nextStep = attemptState.remaining === 0 ? "You have completed all available attempts." : "This placement drive is closed. No further interview action is available.";
     else if (context.action === "not_assigned")
       nextStep = interviewWindow === "not_open" && context.interview_window_start_at
         ? `This interview opens on ${dateTime(context.interview_window_start_at)}.`
-        : "You are eligible. Your placement cell will assign an interview attempt before you can begin.";
+        : "You’re eligible, but your placement cell hasn’t assigned an interview attempt yet. You can begin once they assign one.";
     else if (interviewWindow === "not_open")
       nextStep = context.interview_window_start_at ? `This interview opens on ${dateTime(context.interview_window_start_at)}.` : "This interview has been scheduled and is not open yet.";
     else if (context.coach_gate_locked)
