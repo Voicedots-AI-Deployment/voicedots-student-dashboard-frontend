@@ -72,7 +72,7 @@ async function mockActiveResume(page: Page) {
   await page.route("**/api/student/resume-library/resume-main-file/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 active profile resume" }));
 }
 
-test("AI Coach opens traceable previous questions for the selected placement and filters by round", async ({ page }) => {
+test("AI Coach opens a non-layout-shifting question drawer with provenance and local search", async ({ page }) => {
   await mockStudent(page);
   await page.route("**/api/student/coach/overview", route => route.fulfill({ json: {
     upcoming_drives: [{ drive_id: "drive-q", company_name: "Example Co", role_title: "Backend Engineer", window_start_at: "2026-10-20T10:00:00Z" }],
@@ -82,8 +82,7 @@ test("AI Coach opens traceable previous questions for the selected placement and
     drive_id: "drive-q", company_name: "Example Co", role_title: "Backend Engineer", job_description: "Build APIs with PostgreSQL.", preparation_mode: "upcoming_placement",
   } }));
   await page.route("**/api/student/coach/drives/drive-q/previous-questions**", route => {
-    const round = new URL(route.request().url()).searchParams.get("round_type");
-    const questions = round && round !== "Technical" ? [] : [{ id: "question-1", question_text: "Explain REST APIs.", round_type: "Technical", canonical_skill: "REST APIs", difficulty: "Intermediate", report_count: 3, last_reported_at: "2026-02-01T00:00:00Z" }];
+    const questions = [{ id: "question-1", question_text: "Explain REST APIs.", round_type: "Technical", canonical_skill: "REST APIs", difficulty: "Intermediate", report_count: 3, last_reported_at: "2026-02-01T00:00:00Z", source_type: "STUDENT_REPORTED", verified: false }];
     return route.fulfill({ json: { company_name: "Example Co", role_name: "Backend Engineer", count: questions.length, questions } });
   });
   await page.goto("/coach?drive=drive-q");
@@ -91,13 +90,41 @@ test("AI Coach opens traceable previous questions for the selected placement and
   await expect(stepToolbar).toContainText("STEP 1 OF 5");
   await expect(stepToolbar.getByRole("button", { name: /Previous Interview Questions/ })).toBeVisible();
   const open = page.getByRole("button", { name: /Previous Interview Questions/ });
+  const toolbarBefore = await stepToolbar.boundingBox();
   await expect(open).toBeVisible();
   await open.click();
+  expect(await stepToolbar.boundingBox()).toEqual(toolbarBefore);
+  await expect(page.getByRole("dialog", { name: "Previous Interview Questions" })).toBeVisible();
   await expect(page.getByText("Example Co · Backend Engineer")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Explain REST APIs." })).toBeVisible();
-  await expect(page.getByText("3 interviews")).toBeVisible();
-  await page.getByRole("button", { name: "System Design" }).click();
-  await expect(page.getByText("No traceable previous interview questions are available for this placement yet.")).toBeVisible();
+  await expect(page.getByText("Reported in 3 interviews")).toBeVisible();
+  await expect(page.getByText("Candidate reported")).toBeVisible();
+  await expect(page.getByRole("button", { name: "System Design" })).toHaveCount(0);
+  await page.getByLabel("Search questions").fill("missing phrase");
+  await expect(page.getByText("No questions match this search.")).toBeVisible();
+  await page.getByRole("button", { name: "Close previous interview questions" }).click();
+  await expect(page.getByRole("dialog", { name: "Previous Interview Questions" })).toHaveCount(0);
+});
+
+test("AI Coach question drawer separates loading, empty, and retryable error states", async ({page}) => {
+  await mockStudent(page);
+  await page.route("**/api/student/coach/overview", route => route.fulfill({json:{upcoming_drives:[{drive_id:"drive-q",company_name:"Example Co",role_title:"Backend Engineer"}],completed_placements:[],plans:[],main_resume:{submission_id:"resume-q",label:"Main Resume"}}}));
+  await page.route("**/api/student/coach/drives/drive-q/context", route => route.fulfill({json:{drive_id:"drive-q",company_name:"Example Co",role_title:"Backend Engineer",job_description:"Build APIs with PostgreSQL.",preparation_mode:"upcoming_placement"}}));
+  let requestCount=0;
+  let releaseFirstRequest!: () => void;
+  const firstRequestGate = new Promise<void>(resolve => { releaseFirstRequest = resolve; });
+  await page.route("**/api/student/coach/drives/drive-q/previous-questions", async route => { requestCount++; if(requestCount===1){await firstRequestGate;return route.fulfill({status:503,json:{detail:"unavailable"}});} return route.fulfill({json:{company_name:"Example Co",role_name:"Backend Engineer",count:0,questions:[]}}); });
+  await page.goto("/coach?drive=drive-q");
+  await page.getByRole("button",{name:/Previous Interview Questions/}).click();
+  await expect(page.getByRole("dialog", { name: "Previous Interview Questions" }).getByRole("status")).toContainText("Loading previous interview questions");
+  releaseFirstRequest();
+  await expect(page.getByRole("alert")).toContainText("Previous interview questions couldn’t be loaded.");
+  await page.getByRole("button",{name:"Retry"}).click();
+  const drawer=page.getByRole("dialog",{name:"Previous Interview Questions"});
+  await expect(drawer).toContainText("No previous interview questions are available for Example Co · Backend Engineer yet.");
+  await expect(drawer.getByRole("button",{name:"All",exact:true})).toHaveCount(0);
+  await expect(drawer.getByLabel("Search questions")).toHaveCount(0);
+  expect(requestCount).toBe(2);
 });
 
 test("sign in uses student auth and restores the requested page", async ({
@@ -918,7 +945,7 @@ test("restores the API-host CSRF token without a frontend cookie", async ({ page
   await page.route("**/api/auth/student-logout", async (route) => {
     expect(route.request().headers()["x-csrf-token"]).toBe("api-host-csrf");
     expect(new URL(route.request().url()).origin).toBe(
-      process.env.VITE_API_URL || "http://127.0.0.1:5175",
+      process.env.VITE_API_URL || new URL(page.url()).origin,
     );
     signedOut = true;
     await route.fulfill({ json: { status: "ok" } });
@@ -1043,9 +1070,9 @@ test('AI Coach moves through placement, skills, diagnostic, schedule, and the co
  await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Backend engineer',resume_label:'My Main Resume',groups:{resume_match:['Python'],related_evidence:['APIs'],no_resume_evidence:['Testing']},language_options:[],language_is_alternative:false}}));
  await page.route('**/api/student/coach/drives/drive-1/diagnostic**',route=>route.fulfill({json:{id:'diagnostic-1',status:'completed',tasks_json:[],answers_json:{},result_json:{skills:[]}}}));
  await page.route('**/api/student/coach/plans**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/messages')){plan.messages.push({id:'m2',role:'student',content:'Explain APIs'},{id:'m3',role:'coach',content:'An API receives a request and returns a response.'});return route.fulfill({json:{reply:plan.messages[2].content}})}if(path.endsWith('/schedule')&&route.request().method()==='PUT'){booked=route.request().postDataJSON().sessions[0];Object.assign(day,{planned_at:(booked as any).scheduled_for,duration_minutes:45,schedule_status:'scheduled'});return route.fulfill({json:{sessions:[day]}})}if(path.endsWith('/plans')&&route.request().method()==='POST'){created=true;return route.fulfill({json:plan})}if(path.includes('/sessions/'))return route.fulfill({json:{id:day.session_id,stage:'teaching',skill:'Python APIs',learning_objective:'Explain a request'}});return route.fulfill({json:plan})});
- await page.goto('/coach');await page.getByLabel('Placement opportunity').selectOption('drive-1');await page.getByRole('button',{name:'Build preparation plan'}).click();await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toBeVisible();await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Diagnostic saved. These results guide your plan')).toBeVisible();await page.getByRole('button',{name:'Continue to plan'}).click();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await page.getByRole('button',{name:'Confirm & add all sessions'}).click();await expect(page.getByText('Scheduled ·')).toBeVisible();expect(booked).toMatchObject({session_id:day.session_id,duration_minutes:45});await page.getByRole('button',{name:'Open lesson'}).click();await expect(page.getByText('Connect with Neha',{exact:true})).toBeVisible();await expect(page.getByAltText('Neha, AI preparation coach')).toBeVisible();await expect(page.getByText('What would you like to work through first about Request handling?')).toBeVisible();await page.getByLabel('Ask Neha or share your answer').fill('Explain APIs');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();
+ await page.goto('/coach');await page.getByLabel('Placement opportunity').selectOption('drive-1');const rails: {x:number;width:number}[]=[];const rail=async(selector:string)=>{const box=await page.locator(selector).boundingBox();expect(box).not.toBeNull();rails.push({x:box!.x,width:box!.width})};await rail('.coach-placement-layout');await page.getByRole('button',{name:'Build preparation plan'}).click();await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toBeVisible();await rail('.coach-skills-stage');await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Diagnostic saved. These results guide your plan')).toBeVisible();await rail('.coach-diagnostic-stage');await page.getByRole('button',{name:'Continue to plan'}).click();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await rail('.coach-plan-stage');await page.getByRole('button',{name:'Confirm & add all sessions'}).click();await expect(page.getByText('Scheduled ·')).toBeVisible();expect(booked).toMatchObject({session_id:day.session_id,duration_minutes:45});await page.getByRole('button',{name:'Open lesson'}).click();await expect(page.getByText('Connect with Neha',{exact:true})).toBeVisible();await rail('.coach-lesson-stage');expect(Math.max(...rails.map(item=>item.width))-Math.min(...rails.map(item=>item.width))).toBeLessThanOrEqual(1);expect(Math.max(...rails.map(item=>item.x))-Math.min(...rails.map(item=>item.x))).toBeLessThanOrEqual(1);await expect(page.getByAltText('Neha, AI preparation coach')).toBeVisible();await expect(page.getByText('What would you like to work through first about Request handling?')).toBeVisible();await page.getByLabel('Ask Neha or share your answer').fill('Explain APIs');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();
  const lessonWidth=await page.locator('.coach-lesson-stage').evaluate(el=>el.getBoundingClientRect().width);
- expect(lessonWidth).toBeGreaterThan(1200);
+ expect(lessonWidth).toBeGreaterThanOrEqual(1200);
  expect(lessonWidth).toBeLessThanOrEqual(1340);
  const avatar=page.locator('.coach-lesson-portrait .coach-call-avatar');
  expect(await avatar.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(190);
@@ -1210,9 +1237,9 @@ test('AI Coach diagnostic streams mic audio, shows transcripts, and finalizes on
  await page.route('**/api/student/coach/drives/drive-1/diagnostic**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/answers')){Object.assign(diagnostic.answers_json,route.request().postDataJSON().answers);return route.fulfill({json:diagnostic})}if(path.endsWith('/complete')){diagnostic.status='completed';diagnostic.result_json.skills=[{skill:'SQL',state:'some_evidence',assessed_tasks:1,demonstrated_tasks:1}];return route.fulfill({json:diagnostic})}if(route.request().method()==='POST')started=true;return route.fulfill({json:started?diagnostic:{detail:'Not started'},status:started?200:404})});
  await page.route('**/api/student/coach/plans**',route=>route.fulfill({json:plan}));
  await page.addInitScript(()=>{(window as any).diagnosticMicReleased=false;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);track.stop=()=>{(window as any).diagnosticMicReleased=true;stop();void ctx.close()};return destination.stream}});(window as any).AudioWorkletNode=class extends AudioWorkletNode{constructor(context:BaseAudioContext,name:string,options?:AudioWorkletNodeOptions){super(context,name,options);setTimeout(()=>this.port.onmessage?.({data:new Float32Array(480).fill(.15)} as MessageEvent),120)}}});
- await page.routeWebSocket('**/ws/coach-diagnostic/**',ws=>{ws.onMessage(message=>{if(message instanceof Buffer){audioChunks++;return}const data=JSON.parse(String(message));if(data.type==='start_answer')ws.send(JSON.stringify({type:'listening_started',task_id:'sql-voice'}));if(data.type==='stop_answer'){finalized++;ws.send(JSON.stringify({type:'final_transcript',text:'A join combines matching rows from two tables.'}));ws.send(JSON.stringify({type:'processing'}));ws.send(JSON.stringify({type:'diagnostic_answer_complete',task_id:'sql-voice',transcript:'A join combines matching rows from two tables.',evaluation:{demonstrated:true,confidence:.9},skipped:false,accepted:true}))}});ws.send(JSON.stringify({type:'diagnostic_started',task_id:'sql-voice',question:'Explain how a join combines rows.',question_source_type:'PREVIOUS_INTERVIEW_QUESTION'}));});
+ await page.routeWebSocket('**/ws/coach-diagnostic/**',ws=>{ws.onMessage(message=>{if(message instanceof Buffer){audioChunks++;if(audioChunks===1)ws.send(JSON.stringify({type:'partial_transcript',text:'A join combines'}));return}const data=JSON.parse(String(message));if(data.type==='start_answer')ws.send(JSON.stringify({type:'listening_started',task_id:'sql-voice'}));if(data.type==='stop_answer'){finalized++;ws.send(JSON.stringify({type:'final_transcript',text:'A join combines matching rows from two tables.'}));ws.send(JSON.stringify({type:'processing'}));ws.send(JSON.stringify({type:'diagnostic_answer_complete',task_id:'sql-voice',transcript:'A join combines matching rows from two tables.',evaluation:{demonstrated:true,confidence:.9},skipped:false,accepted:true}))}});ws.send(JSON.stringify({type:'diagnostic_started',task_id:'sql-voice',question:'Explain how a join combines rows.',question_source_type:'PREVIOUS_INTERVIEW_QUESTION'}));});
  await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
- await expect(page.locator('.coach-diagnostic-persona small')).toContainText('Previous interview question');await expect(page.getByRole('textbox',{name:'Diagnostic transcript'})).toBeVisible();await expect(page.getByRole('button',{name:'Start voice question'})).toBeVisible();await page.getByRole('button',{name:'Start voice question'}).click();await expect(page.getByRole('button',{name:'Stop answer'})).toBeEnabled();await expect.poll(()=>audioChunks).toBeGreaterThan(0);await page.getByRole('button',{name:'Stop answer'}).click();await expect(page.getByRole('textbox',{name:'Diagnostic transcript'})).toHaveValue('A join combines matching rows from two tables.');await expect(page.getByText('Your baseline is ready to evaluate.')).toBeVisible();expect(finalized).toBe(1);await expect.poll(()=>page.evaluate(()=>(window as any).diagnosticMicReleased)).toBe(true);
+ await expect(page.getByRole('heading',{name:'Explain how a join combines rows.'})).toBeVisible();await expect(page.getByText('Listening',{exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'Start answering'})).toBeVisible();await expect(page.getByRole('textbox',{name:'Diagnostic transcript'})).toHaveCount(0);await page.getByRole('button',{name:'Start answering'}).click();await expect.poll(()=>audioChunks).toBeGreaterThan(0);await expect(page.getByText('A join combines',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Stop answer'})).toBeEnabled();await page.getByRole('button',{name:'Stop answer'}).click();await expect(page.getByText('A join combines matching rows from two tables.')).toBeVisible();await expect(page.getByText('Your baseline is ready to evaluate.')).toBeVisible();expect(finalized).toBe(1);await expect.poll(()=>page.evaluate(()=>(window as any).diagnosticMicReleased)).toBe(true);
 });
 
 test("Calendar opens the exact persisted AI Coach session from its event", async ({ page }) => {
