@@ -72,6 +72,31 @@ async function mockActiveResume(page: Page) {
   await page.route("**/api/student/resume-library/resume-main-file/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 active profile resume" }));
 }
 
+test("AI Coach opens traceable previous questions for the selected placement and filters by round", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/coach/overview", route => route.fulfill({ json: {
+    upcoming_drives: [{ drive_id: "drive-q", company_name: "Example Co", role_title: "Backend Engineer", window_start_at: "2026-10-20T10:00:00Z" }],
+    completed_placements: [], plans: [], main_resume: { submission_id: "resume-q", label: "Main Resume" },
+  } }));
+  await page.route("**/api/student/coach/drives/drive-q/context", route => route.fulfill({ json: {
+    drive_id: "drive-q", company_name: "Example Co", role_title: "Backend Engineer", job_description: "Build APIs with PostgreSQL.", preparation_mode: "upcoming_placement",
+  } }));
+  await page.route("**/api/student/coach/drives/drive-q/previous-questions**", route => {
+    const round = new URL(route.request().url()).searchParams.get("round_type");
+    const questions = round && round !== "Technical" ? [] : [{ id: "question-1", question_text: "Explain REST APIs.", round_type: "Technical", canonical_skill: "REST APIs", difficulty: "Intermediate", report_count: 3, last_reported_at: "2026-02-01T00:00:00Z" }];
+    return route.fulfill({ json: { company_name: "Example Co", role_name: "Backend Engineer", count: questions.length, questions } });
+  });
+  await page.goto("/coach?drive=drive-q");
+  const open = page.getByRole("button", { name: /Previous Interview Questions/ });
+  await expect(open).toBeVisible();
+  await open.click();
+  await expect(page.getByText("Example Co · Backend Engineer")).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Explain REST APIs." })).toBeVisible();
+  await expect(page.getByText("3 interviews")).toBeVisible();
+  await page.getByRole("button", { name: "System Design" }).click();
+  await expect(page.getByText("No traceable previous interview questions are available for this placement yet.")).toBeVisible();
+});
+
 test("sign in uses student auth and restores the requested page", async ({
   page,
 }) => {
@@ -1040,6 +1065,42 @@ test('completed placements keep unreleased feedback private until the placement 
   await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toHaveCount(0);
 });
 
+test('completed placement can contribute confirmed voice questions without showing student identity', async ({page}) => {
+  await mockStudent(page);
+  await page.addInitScript(() => {
+    class Recognition {
+      continuous = false; interimResults = false; lang = ''; onresult: any = null; onerror: any = null; onend: any = null;
+      start() { setTimeout(() => { this.onresult?.({ resultIndex: 0, results: Object.assign([{ isFinal: true, 0: { transcript: 'What is REST? How do retries work?' } }], { length: 1 }) }); this.onend?.(); }, 0); }
+      stop() {}
+    }
+    (window as any).SpeechRecognition = Recognition;
+  });
+  await page.route('**/api/student/coach/overview', route => route.fulfill({json:{upcoming_drives:[],completed_placements:[{drive_id:'closed-drive',company_name:'Example Co',role_title:'Analyst',feedback_status:'awaiting_release',completed_at:'2026-09-20T10:00:00Z'}],plans:[],main_resume:{submission_id:'resume-1',label:'Main Resume'}}}));
+  await page.route('**/api/student/coach/drives/closed-drive/context', route => route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',preparation_mode:'completed_placement'}}));
+  await page.route('**/api/student/coach/drives/closed-drive/question-contribution/extract', route => route.fulfill({json:{candidates:[{question_text:'What is REST?',round_type:'Technical'},{question_text:'How do retries work?',round_type:'Technical'}]}}));
+  let contribution: any;
+  await page.route('**/api/student/coach/drives/closed-drive/question-contribution', async route => {
+    if (route.request().method() === 'POST') { contribution = route.request().postDataJSON(); return route.fulfill({json:{count:2,questions:[]}}); }
+    return route.fulfill({json:{has_contributed:false}});
+  });
+  await page.goto('/coach');
+  await page.getByRole('button', {name:'Help future students prepare'}).click();
+  await expect(page.getByRole('dialog')).toContainText('What questions were you asked?');
+  await page.getByRole('button', {name:'Speak questions'}).click();
+  await expect(page.getByText('Review and edit before confirming')).toBeVisible();
+  const firstQuestion = page.getByLabel('Question 1');
+  await firstQuestion.fill('What is REST in a web API?');
+  const submit = page.getByRole('button', {name:'Confirm and submit'});
+  await expect(submit).toBeDisabled();
+  await page.getByRole('checkbox', {name:/I confirm these are questions/}).check();
+  await expect(submit).toBeEnabled();
+  await submit.click();
+  await expect(page.getByRole('status').filter({hasText:'2 questions added'})).toBeVisible();
+  expect(contribution.confirmed).toBe(true);
+  expect(contribution.questions[0].question_text).toBe('What is REST in a web API?');
+  expect(JSON.stringify(contribution)).not.toContain('student-1');
+});
+
 test('Coach schedule confirms the complete plan once and supports rescheduling and cancellation', async ({page}) => {
   await mockStudent(page);
   const first:Record<string,unknown> = {day:1,session_id:'plan-booking:day:1',title:'SQL joins',focus:'Combine tables',activities:['Practice joins'],success_check:'Explain a join'};
@@ -1099,22 +1160,20 @@ test('My Placement Skills distinguishes resume evidence from unassessed requirem
   await expect(page.getByRole('link', {name: 'Continue lesson'})).toHaveAttribute('href', '/coach?plan=plan-skills&session=sql-session');
 });
 
-test('Placement diagnostic saves one-question drafts and restores them after returning to the diagnostic', async ({page}) => {
-  await mockStudent(page);
-  const diagnostic:any = {id:'diagnostic-1',status:'in_progress',tasks_json:[{task_id:'sql-1',sub_skill:'SQL',format:'solve',question:'Write a join.'},{task_id:'sql-2',sub_skill:'SQL',format:'debug',question:'Fix a join.'}],answers_json:{},result_json:{skills:[]}};
-  let started=false;
-  const plan={id:'plan-diagnostic',drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',target_date:'2027-01-01',plan:{summary:'Practice SQL',goal:'Explain SQL joins',daily_roadmap:[{day:1,session_id:'plan-diagnostic:day:1',title:'SQL joins',focus:'Combine tables',activities:['Practice a join'],success_check:'Explain a join'}, {day:2,title:'Communication',focus:'Explain findings',activities:[],success_check:'Describe a result'}],discussion_starters:[]}};
-  await page.route('**/api/student/coach/overview', route=>route.fulfill({json:{upcoming_drives:[{drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30'}],plans:[],main_resume:{submission_id:'resume-1',label:'Main Resume'},completed_placements:[]}}));
-  await page.route('**/api/student/coach/drives/drive-1/context',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30',preparation_mode:'upcoming_placement'}}));
-  await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',resume_label:'Main Resume',groups:{resume_match:['SQL'],related_evidence:[],no_resume_evidence:['Dashboards']},language_options:[],language_is_alternative:false}}));
-  await page.route('**/api/student/coach/drives/drive-1/diagnostic**', route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/answers')){Object.assign(diagnostic.answers_json,route.request().postDataJSON().answers);return route.fulfill({json:diagnostic})}if(path.endsWith('/complete')){diagnostic.status='completed';diagnostic.result_json.skills=[{skill:'SQL',state:'some_evidence',assessed_tasks:1,demonstrated_tasks:1}];return route.fulfill({json:diagnostic})}if(route.request().method()==='POST')started=true;return route.fulfill({json:started?diagnostic:{detail:'Not started'},status:started?200:404})});
-  await page.route('**/api/student/coach/plans**',route=>{if(route.request().method()==='POST')return route.fulfill({json:plan});return route.fulfill({json:plan})});
-  await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
-  await expect(page.getByText('Question 1 of 2')).toBeVisible();await expect(page.getByText('Fix a join.')).toHaveCount(0);
-  await page.getByLabel('Your answer').fill('SELECT * FROM a JOIN b ON a.id = b.id');await expect.poll(()=>diagnostic.answers_json['sql-1']).toContain('SELECT *');
-  await page.reload();await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
-  await expect(page.getByLabel('Your answer')).toHaveValue('SELECT * FROM a JOIN b ON a.id = b.id');await page.getByRole('button',{name:'Next question'}).click();await expect(page.getByText('Question 2 of 2')).toBeVisible();await page.getByRole('button',{name:'Previous'}).click();await expect(page.getByLabel('Your answer')).toHaveValue('SELECT * FROM a JOIN b ON a.id = b.id');
-  await page.getByRole('button',{name:'Next question'}).click();await page.getByRole('button',{name:'Finish diagnostic'}).click();await expect(page.getByText('Your diagnostic is saved. These results guide your plan')).toBeVisible();await expect(page.getByText('Day 1 of 2')).toBeVisible();
+test('AI Coach diagnostic asks aloud, saves finalized speech, and releases the microphone', async ({page}) => {
+ await mockStudent(page);
+ const diagnostic:any={id:'diagnostic-voice',status:'in_progress',tasks_json:[{task_id:'sql-voice',sub_skill:'SQL',format:'scenario',question:'Explain how a join combines rows.',question_source_type:'PREVIOUS_INTERVIEW_QUESTION',source_question_id:'q-1'}],answers_json:{},result_json:{skills:[]}};
+ let started=false,playbackAck=false,stopRequested=false,micReleased=false;
+ const plan={id:'plan-diagnostic',drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',target_date:'2027-01-01',plan:{summary:'Practice SQL',goal:'Explain SQL joins',daily_roadmap:[{day:1,session_id:'plan-diagnostic:day:1',title:'SQL joins',focus:'Combine tables',activities:['Practice a join'],success_check:'Explain a join'}],discussion_starters:[]}};
+ await page.route('**/api/student/coach/overview',route=>route.fulfill({json:{upcoming_drives:[{drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30'}],plans:[],main_resume:{submission_id:'resume-1',label:'Main Resume'},completed_placements:[]}}));
+ await page.route('**/api/student/coach/drives/drive-1/context',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',job_description:'Analyze data using SQL and dashboards.',window_start_at:'2027-01-01T10:00:00+05:30',preparation_mode:'upcoming_placement'}}));
+ await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',resume_label:'Main Resume',groups:{resume_match:['SQL'],related_evidence:[],no_resume_evidence:[]},language_options:[],language_is_alternative:false}}));
+ await page.route('**/api/student/coach/drives/drive-1/diagnostic**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/answers')){Object.assign(diagnostic.answers_json,route.request().postDataJSON().answers);return route.fulfill({json:diagnostic})}if(path.endsWith('/complete')){diagnostic.status='completed';diagnostic.result_json.skills=[{skill:'SQL',state:'some_evidence',assessed_tasks:1,demonstrated_tasks:1}];return route.fulfill({json:diagnostic})}if(route.request().method()==='POST')started=true;return route.fulfill({json:started?diagnostic:{detail:'Not started'},status:started?200:404})});
+ await page.route('**/api/student/coach/plans**',route=>route.fulfill({json:plan}));
+ await page.addInitScript(()=>{Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);track.stop=()=>{(window as any).diagnosticMicReleased=true;stop();void ctx.close()};return destination.stream}})});
+ await page.routeWebSocket('**/ws/coach-diagnostic/**',ws=>{ws.onMessage(message=>{if(typeof message!=='string')return;const data=JSON.parse(message);if(data.type==='playback_complete'){playbackAck=true;ws.send(JSON.stringify({type:'listening_started',task_id:'sql-voice'}))}if(data.type==='stop_answer'){stopRequested=true;ws.send(JSON.stringify({type:'final_transcript',text:'A join combines matching rows from two tables.'}));ws.send(JSON.stringify({type:'processing'}));ws.send(JSON.stringify({type:'diagnostic_answer_complete',task_id:'sql-voice',transcript:'A join combines matching rows from two tables.',evaluation:{demonstrated:true,confidence:.9},skipped:false,accepted:true}))}});ws.send(JSON.stringify({type:'diagnostic_started',task_id:'sql-voice',question:'Explain how a join combines rows.',question_source_type:'PREVIOUS_INTERVIEW_QUESTION'}));ws.send(JSON.stringify({type:'tts_begin',audio_epoch:1,text:'Explain how a join combines rows.'}));const packet=Buffer.alloc(964);packet.writeUInt32BE(1);ws.send(packet);ws.send(JSON.stringify({type:'tts_end',audio_epoch:1}));ws.onClose(()=>{micReleased=true})});
+ await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
+ await expect(page.locator('.coach-diagnostic-persona small')).toContainText('Previous interview question');await expect(page.getByRole('button',{name:'Start voice question'})).toBeVisible();await page.getByRole('button',{name:'Start voice question'}).click();await expect.poll(()=>playbackAck).toBe(true);await expect(page.getByRole('button',{name:'Stop answer'})).toBeEnabled();await page.getByRole('button',{name:'Stop answer'}).click();await expect.poll(()=>stopRequested).toBe(true);await expect(page.getByText('Your baseline is ready to evaluate.')).toBeVisible();await expect.poll(()=>page.evaluate(()=>(window as any).diagnosticMicReleased)).toBe(true);expect(micReleased).toBe(true);
 });
 
 test("Calendar opens the exact persisted AI Coach session from its event", async ({ page }) => {
