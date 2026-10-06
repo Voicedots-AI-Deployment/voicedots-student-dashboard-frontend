@@ -104,9 +104,15 @@ export function Practice() {
   async function generateJobDescription() {
     setJdBusy(true);
     setJdError("");
+    setNotice("");
     try {
       const result = await api<PracticeJobDescription>("/api/student/practice/job-description", { ...json({ role_title: role.trim() }), timeoutMs: 50000 });
       setJd(result.job_description);
+      if (result.cache_status === "reused") setNotice("Reused a recent role description from current listings.");
+      else if (result.cache_status === "stale_fallback") {
+        const age = result.generated_at ? new Date(result.generated_at).toLocaleDateString() : "an earlier date";
+        setNotice(`Current listings could not be refreshed. Showing the saved description from ${age}.`);
+      } else setNotice("");
     } catch (err) {
       setJdError(err instanceof ApiError ? err.message : "Could not generate a current job description. Your text has not changed; please retry.");
     } finally {

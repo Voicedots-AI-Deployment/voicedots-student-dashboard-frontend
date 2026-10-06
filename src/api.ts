@@ -167,6 +167,8 @@ export type DriveContext = {
 export type PracticeJobDescription = {
   role_title: string;
   job_description: string;
+  cache_status?: "generated" | "reused" | "stale_fallback";
+  generated_at?: string;
 };
 export type Readiness = {
   overall_score: number | null;

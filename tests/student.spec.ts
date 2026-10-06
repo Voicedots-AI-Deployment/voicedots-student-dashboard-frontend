@@ -407,6 +407,23 @@ test("practice generates a clean role JD without references and preserves manual
   await expect(page.getByLabel("Job description")).toHaveValue("My manually edited description");
 });
 
+test("practice clearly labels a saved JD used when current listings cannot be refreshed", async ({ page }) => {
+  await mockStudent(page);
+  await mockActiveResume(page);
+  await page.route("**/api/student/practice/job-description", route => route.fulfill({ json: {
+    role_title: "Data Analyst",
+    job_description: "Saved role JD",
+    cache_status: "stale_fallback",
+    generated_at: "2026-09-28T12:00:00+00:00",
+  } }));
+  await page.goto("/practice");
+  await page.getByLabel("Target role", { exact: true }).fill("Data Analyst");
+  await page.getByRole("button", { name: "Generate latest JD" }).click();
+  await expect(page.getByLabel("Job description")).toHaveValue("Saved role JD");
+  await expect(page.getByRole("status")).toContainText("Current listings could not be refreshed");
+  await expect(page.getByRole("status")).toContainText("9/28/2026");
+});
+
 test("My growth readiness appears on Overview, not in sidebar or a separate page", async ({ page }) => {
   await mockStudent(page);
   let readiness: Record<string, unknown> = { overall_score: 72, axis_scores: { interview_readiness: 68, resume_readiness: 76 } };
