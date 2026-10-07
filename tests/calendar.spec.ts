@@ -121,6 +121,7 @@ test.describe("Student Calendar", () => {
     await page.getByLabel("Start time *").fill("19:00");
     await page.getByLabel("End time *").fill("20:00");
     await page.getByLabel("Category").selectOption("study");
+    await page.getByText("Location, meeting link & notes",{exact:true}).click();
     await page.getByLabel("Location").fill("Library");
     await page.getByRole("button", { name: "Create event", exact: true }).click();
     await expect(page.locator('.calendar-card-main[aria-label="View Review database indexing"]')).toBeVisible();

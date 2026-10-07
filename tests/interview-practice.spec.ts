@@ -62,6 +62,7 @@ test("Practice mode uses editable setup, one Main Resume and the standard four-p
   await expect(page.getByLabel("Interview difficulty")).toBeEnabled();
   await expect(page.getByLabel("Interview difficulty").locator("option:checked")).toHaveText("Personalized");
   await expect(page.getByLabel("Interview difficulty")).toHaveValue("dynamic");
+  for(const name of ["Interview duration","Interview difficulty"])expect(await page.getByLabel(name).evaluate(el=>getComputedStyle(el).fontWeight)).toBe("400");
   await expect(page.getByLabel("Job description")).toBeEditable();
   const fieldSpacing = await page.evaluate(() => {
     const role = document.querySelector('.interview-fields label');
@@ -129,6 +130,8 @@ test("Placement mode filters unavailable drives and renders only its configured 
   await expect(page.getByLabel("Target role", { exact: true })).toHaveCount(0);
   await expect(page.getByLabel("Interview difficulty")).toHaveCount(0);
   await expect(page.getByLabel("Job description")).toHaveCount(0);
+  await expect(page.locator(".placement-panel-person")).toHaveCount(2);
+  await selector.selectOption("drive-active");
   await expect(page.locator(".placement-panel-person")).toHaveCount(2);
   await expect(page.locator(".placement-panel-person").nth(0)).toContainText("Technical Interviewer");
   await expect(page.locator(".placement-panel-person").nth(1)).toContainText("Manager Round");

@@ -289,9 +289,11 @@ export function Calendar() {
         {!allDay && <label className="calendar-form-field">End time *<input name="end_time" type="time" required defaultValue={formEvent && !formEvent.all_day ? indiaTime.format(new Date(formEvent.end_at)).replace(/\s/g, "").replace(/(\d+):(\d+)(am|pm)/i, (_m, h, m, half) => `${String((Number(h) % 12) + (half.toLowerCase() === "pm" ? 12 : 0)).padStart(2, "0")}:${m}`) : "19:30"}/></label>}
         <label className="calendar-form-field">Category<select aria-label="Category" name="category" defaultValue={formEvent?.category || "personal"}><option value="personal">Personal</option><option value="study">Study</option><option value="reminder">Reminder</option></select></label>
         <label className="calendar-form-field">Reminder<select aria-label="Reminder" name="reminder_minutes" defaultValue={formEvent?.reminder_minutes ?? ""}><option value="">None</option><option value="10">10 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>
+        <details className="calendar-event-extras" open={formEvent&&(Boolean(formEvent.location||formEvent.meeting_url||formEvent.description))||undefined}><summary>Location, meeting link & notes</summary><div>
         <label className="calendar-form-field full">Location<input name="location" maxLength={240} defaultValue={formEvent?.location || ""} placeholder="Location or room"/></label>
         <label className="calendar-form-field full">Meeting link<input name="meeting_url" type="url" maxLength={500} defaultValue={formEvent?.meeting_url || ""} placeholder="https://…"/></label>
         <label className="calendar-form-field full">Description / notes<textarea name="description" rows={3} maxLength={4000} defaultValue={formEvent?.description || ""} placeholder="Add a note for yourself"/></label>
+        </div></details>
         <footer className="calendar-dialog-actions"><button className="button secondary" type="button" onClick={() => { setCreating(false); setFormEvent(null); }}>Cancel</button><button className="button primary" type="submit" disabled={saving}>{saving ? "Saving…" : creating ? "Create event" : "Save changes"}</button></footer>
       </form>
     </Dialog>}

@@ -581,7 +581,7 @@ export function Practice() {
                 <div><span className="eyebrow">PLACEMENT INTERVIEW</span><h2>Choose an active opportunity</h2><p>Official role, attempt and interview settings come from your placement team.</p></div>
               </div>
               <label className="placement-select-label">Select placement opportunity
-                <select aria-label="Select placement opportunity" value={selectedDriveId} onChange={(event) => { setSelectedDriveId(event.target.value); setPreparation(null); setContext(null); setError(""); }} disabled={drives.loading || availableDrives.length === 0}>
+                <select aria-label="Select placement opportunity" value={selectedDriveId} onChange={(event) => { if(event.target.value===driveId)return;setSelectedDriveId(event.target.value); setPreparation(null); setContext(null); setError(""); }} disabled={drives.loading || availableDrives.length === 0}>
                   {availableDrives.length === 0 && <option value="">No active placement interviews</option>}
                   {availableDrives.map((drive) => <option key={drive.id} value={drive.id}>{drive.company_name} · {drive.role_title}</option>)}
                 </select>
@@ -618,7 +618,7 @@ export function Practice() {
             {mode === "practice" ? practicePanel.map((person) => <div className="panel-person" key={person.n}><span>{person.n}</span><div><strong>{person.title}</strong><p>{person.text}</p></div></div>)
               : !selectedDrive ? <div className="interview-empty-state"><strong>Choose an active opportunity</strong><p>The placement panel will appear here after you select a drive.</p></div>
                 : contextLoading ? <p className="muted" role="status">Loading the configured panel…</p>
-                : panel.length ? panel.map((person) => <div className="panel-person placement-panel-person" key={`${person.order}-${person.track}`}><span>{String(person.order).padStart(2, "0")}</span><div><strong>{person.name}</strong><p className="placement-panel-role">{person.role}</p>{person.persona && <p>{person.persona} approach</p>}{person.description && <p className="placement-panel-description">{person.description}</p>}</div></div>)
+                : panel.length ? panel.map((person) => <div className="panel-person placement-panel-person" key={`${person.order}-${person.track}`}><span>{String(person.order).padStart(2, "0")}</span><div><strong>{person.role}</strong><p className="placement-panel-role">{person.name}</p>{person.persona && <p>{person.persona} approach</p>}{person.description && <p className="placement-panel-description">{person.description}</p>}</div></div>)
                   : <div className="interview-empty-state"><strong>Panel details unavailable</strong><p>The placement team has not provided interviewer details for this opportunity.</p></div>}
           </aside>
         </div>
