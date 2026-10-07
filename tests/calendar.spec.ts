@@ -107,6 +107,7 @@ test.describe("Student Calendar", () => {
   });
 
   test("personal event creates, persists on reload, edits and deletes with confirmation", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page, { withEvents: false });
     await page.goto("/calendar");
     await page.getByRole("button", { name: "Create Event" }).click();
@@ -134,6 +135,7 @@ test.describe("Student Calendar", () => {
   });
 
   test("interview and Coach events are read-only and use the existing action flows", async ({ page }) => {
+    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page);
     await page.goto("/calendar");
     await expect(page.locator('.calendar-event-card.placement button[aria-label^="More actions"]')).toHaveCount(0);

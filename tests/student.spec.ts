@@ -323,7 +323,7 @@ test("an unreleased placement report never offers an export", async ({
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /Open report/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Download PDF report/ })).toHaveCount(0);
-  await expect(page.locator(".record-result")).toHaveCount(0);
+  await expect(page.locator(".student-report-card__result strong")).toHaveText("In review");
 });
 
 test("a released placement report identifies the company and offers web and PDF views", async ({page}) => {
@@ -338,6 +338,29 @@ test("a released placement report identifies the company and offers web and PDF 
   await expect(page.getByText(/Attempt 2/)).toBeVisible();
   await expect(page.getByRole("link",{name:"Open report for Data Analyst"})).toHaveAttribute("href",/\/s2\/evaluation\/report.html$/);
   await expect(page.getByRole("link",{name:"Download PDF report for Data Analyst"})).toHaveAttribute("href",/\/s2\/evaluation\/report.pdf$/);
+});
+
+test("reports show a scannable overview and search and filter the report list", async ({page}) => {
+  await mockStudent(page);
+  await page.route("**/api/student/reports", route => route.fulfill({json:{reports:[
+    {evaluation_id:"practice-1",session_id:"s-practice",status:"released",target_role:"Python Developer",created_at:"2026-09-01",report:{status:"released",overall_score:76,readiness:"Ready",executive_summary:"Clear project examples.",priority_improvement_areas:[{focus:"Testing"}]}},
+    {evaluation_id:"placement-1",session_id:"s-placement",status:"released",drive_id:"d1",company_name:"Northwind",target_role:"Data Analyst",created_at:"2026-09-02",report:{status:"released",overall_score:88,readiness:"Ready"}},
+    {evaluation_id:"pending-1",session_id:"s-pending",status:"released",drive_id:"d2",company_name:"Contoso",target_role:"Software Engineer",created_at:"2026-09-03",report:{status:"awaiting_release"}},
+  ]}}));
+  await page.goto("/reports");
+  await expect(page.getByRole("heading",{name:"Reports & feedback"})).toBeVisible();
+  await expect(page.locator(".student-reports-overview article").nth(0)).toContainText("3");
+  await expect(page.locator(".student-reports-overview article").nth(1)).toContainText("2");
+  await expect(page.locator(".student-reports-overview article").nth(2)).toContainText("1");
+  await expect(page.locator(".student-report-card")).toHaveCount(3);
+  await expect(page.locator(".student-report-focus")).toContainText("Testing");
+  await page.getByLabel("Interview type").selectOption("placement");
+  await expect(page.locator(".student-report-card")).toHaveCount(2);
+  await page.getByLabel("Search reports").fill("northwind");
+  await expect(page.locator(".student-report-card")).toHaveCount(1);
+  await expect(page.locator(".student-report-card")).toContainText("Northwind");
+  await page.setViewportSize({width:390,height:844});
+  await expect(page.locator("body")).toHaveJSProperty("scrollWidth",390);
 });
 
 test("upload polls a durable operation across refresh and opens the existing session", async ({
@@ -1432,6 +1455,7 @@ test("Career Coach uses owned resume and interests without a personal target rol
   await page.getByLabel("What matters most in your career?").fill("Growth and meaningful work");
   await page.getByRole("button", { name: "Next question" }).click();
   await page.getByLabel("How open are you to learning new skills?").fill("Very open to adjacent tools");
+  await expect(page.getByLabel("How open are you to learning new skills?")).toHaveValue("Very open to adjacent tools");
   await page.getByRole("button", { name: "Explore career paths" }).click();
   await expect(page.getByText("Backend Developer", { exact: true }).first()).toBeVisible();
   await expect(page.getByText("Data Engineer", { exact: true })).toBeVisible();
@@ -1555,14 +1579,21 @@ test("Career Coach labels an evidence fallback and remains readable on mobile wi
     { submission_id: "resume-limited", label: "Limited resume", original_filename: "resume.pdf", is_primary: true },
   ] } }));
   await page.route("**/api/student/career/reports", route => route.fulfill({ json: { reports: [] } }));
-  await page.route("**/api/student/career/finder", route => route.fulfill({ json: {
-    analysis_status: "evidence_fallback",
-    analysis_note: "The AI career analysis service is unavailable. These results are an evidence-only fallback, not a complete AI analysis.",
-    career_profile: "There is not enough specific evidence in this resume to identify a current-fit role yet.",
-    strongest_current_fit: "Not enough resume evidence yet",
-    strongest_growth_path: "Explore adjacent paths as you build more evidence.",
-    recommended_roles: [],
-  } }));
+  let analysisCalls = 0;
+  await page.route("**/api/student/career/finder", route => {
+    analysisCalls += 1;
+    return route.fulfill({ json: analysisCalls === 1 ? {
+      analysis_status: "evidence_fallback",
+      analysis_note: "The AI career analysis service is unavailable. These results are an evidence-only fallback, not a complete AI analysis.",
+      career_profile: "There is not enough specific evidence in this resume to identify a current-fit role yet.",
+      strongest_current_fit: "Not enough resume evidence yet",
+      strongest_growth_path: "Explore adjacent paths as you build more evidence.",
+      recommended_roles: [],
+    } : {
+      analysis_status: "ai", career_profile: "Your interests and resume evidence support a path to explore.",
+      strongest_current_fit: "Not enough resume evidence yet", strongest_growth_path: "Data Analyst", recommended_roles: [],
+    } });
+  });
   await page.goto("/career");
   await expect(page.getByText(/Using active profile resume: Limited resume/)).toBeVisible();
   await page.getByRole("button", { name: "Next question" }).click();
@@ -1571,6 +1602,9 @@ test("Career Coach labels an evidence fallback and remains readable on mobile wi
   await page.getByRole("button", { name: "Explore career paths" }).click();
   await expect(page.getByText("Evidence-only analysis")).toBeVisible();
   await expect(page.getByRole("heading", { name: "Not enough role-specific evidence yet" })).toBeVisible();
+  await page.getByRole("button", { name: "Retry AI analysis" }).click();
+  await expect(page.getByText("AI analysis grounded against extracted resume evidence")).toBeVisible();
+  expect(analysisCalls).toBe(2);
   const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
 });
