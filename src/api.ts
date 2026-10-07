@@ -115,6 +115,7 @@ export type ConfiguredInterviewAgent = {
   description: string;
 };
 export type DriveContext = {
+  is_locked?: boolean;
   drive_id: string;
   company_name: string;
   company_description: string;

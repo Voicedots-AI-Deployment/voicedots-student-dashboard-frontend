@@ -433,7 +433,7 @@ export function Practice() {
     preparation?.status === "ready" && preparation.submission_id && !pending;
   const driveCanStart = Boolean(context && context.can_start && context.main_resume_available === true
     && context.interview_window === "open" && !context.coach_gate_locked);
-  const driveCanResume = Boolean(context?.can_resume && context.session_id && context.submission_id);
+  const driveCanResume = Boolean(!context?.is_locked && context?.can_resume && context.session_id && context.submission_id);
   const releasedAttempt = context?.attempt_history?.slice().reverse().find((attempt) =>
     attempt.result_available && attempt.submission_id,
   ) || (context?.publication_status === "released" && context.submission_id
@@ -631,7 +631,7 @@ export function Practice() {
           : attempts.error ? <ErrorMessage message={attempts.error}/>
             : practiceAttempts.length ? <div className="interview-session-list">{practiceAttempts.map((attempt) => <div className="interview-session-row" key={attempt.submission_id}><span className="record-icon"><Mic size={18}/></span><div><strong>{attempt.target_role || "Practice interview"}</strong><span>Practice Interview{attempt.submitted_at ? ` · Started ${formatDateTime(attempt.submitted_at)}` : ""}{attempt.duration_minutes ? ` · ${attempt.duration_minutes} minutes` : ""}</span></div><button className="button secondary small" onClick={() => attempt.session_id && openInterview(attempt.submission_id, attempt.session_id)}>Continue <ArrowRight size={15}/></button></div>)}</div>
               : <p className="muted">No interrupted practice interviews. You’re ready for a fresh start.</p>
-          : context?.can_resume && context.session_id && context.submission_id ? <div className="interview-session-row"><span className="record-icon"><Mic size={18}/></span><div><strong>{context.company_name} · {context.role_title}</strong><span>Placement Interview · Attempt {attemptNumber} · Interview in progress</span></div><button className="button secondary small" onClick={() => openInterview(context.submission_id!, context.session_id!)}>Continue interview <ArrowRight size={15}/></button></div>
+          : !context?.is_locked && context?.can_resume && context.session_id && context.submission_id ? <div className="interview-session-row"><span className="record-icon"><Mic size={18}/></span><div><strong>{context.company_name} · {context.role_title}</strong><span>Placement Interview · Attempt {attemptNumber} · Interview in progress</span></div><button className="button secondary small" onClick={() => openInterview(context.submission_id!, context.session_id!)}>Continue interview <ArrowRight size={15}/></button></div>
             : <p className="muted">{selectedDrive ? "There is no interrupted interview for this placement." : "When you select a placement with an interview in progress, it will appear here."}</p>}
       </section>
       {resumePreview && <ResumePreview file={resumePreview} onClose={() => setResumePreview(null)}/>}

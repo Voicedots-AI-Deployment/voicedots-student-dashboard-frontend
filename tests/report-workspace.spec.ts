@@ -13,7 +13,11 @@ test('released interview report stays in the portal and shows its real placement
   await page.getByRole('link',{name:'Open report for Backend Engineer'}).click();
   await expect(page).toHaveURL(/\/reports\/session-1$/);
   await expect(page.frameLocator('iframe[title="Complete interview report and questions"]').getByRole('heading',{name:'Full assessment'})).toBeVisible();
+  await expect(page.getByRole("alert")).toHaveCount(0);
+  await page.getByText("Interview recording",{exact:true}).click();
   await expect(page.getByText('The recording retention period has ended.')).toBeVisible();
+  await page.evaluate(()=>window.scrollTo(0,0));
+  await page.screenshot({path:"/root/voicedots/artifacts/student-ui-20261007/student-report-corrected.png",fullPage:false});
   await page.getByRole('button',{name:'View placement result'}).click();
   await expect(page.getByRole('heading',{name:'Shortlisted'})).toBeVisible();
 });

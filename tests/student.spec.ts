@@ -205,7 +205,7 @@ test("overview is honest about missing data and is responsive", async ({
     documentWidth: document.documentElement.scrollWidth,
     content: (() => {
       const main = document.querySelector<HTMLElement>(".dashboard-content")!;
-      const actions = main.querySelector<HTMLElement>(".welcome-banner")!;
+      const actions = main.querySelector<HTMLElement>(".latest-drive-card")!;
       const button = actions.querySelector<HTMLElement>(".button")!;
       return { main: main.getBoundingClientRect().toJSON(), actions: actions.getBoundingClientRect().toJSON(), button: button.getBoundingClientRect().toJSON(), display: getComputedStyle(actions).display, grid: getComputedStyle(actions).gridTemplateColumns, width: getComputedStyle(actions).width, minWidth: getComputedStyle(actions).minWidth };
     })(),
@@ -256,18 +256,15 @@ test("overview follows the requested section order and keeps feedback percentage
   await expect(page.getByTestId("overview-latest-drive")).toContainText("Data Analyst");
   await expect(page.getByTestId("overview-feedback").locator(".feedback-score strong")).toHaveText("21%");
   const overviewContentStarts = await page.evaluate(() => [
-    document.querySelector(".page-heading > div:first-child > .eyebrow")!,
-    document.querySelector(".welcome-banner > div:first-child")!,
-    document.querySelector(".latest-drive-card > div:first-child")!,
-    document.querySelector(".stats-grid .stat-card .stat-label")!,
+    document.querySelector(".page-heading")!,
+    document.querySelector(".latest-drive-card")!,
+    document.querySelector(".stats-grid")!,
   ].map(node => Math.round(node.getBoundingClientRect().left)));
   expect(Math.max(...overviewContentStarts) - Math.min(...overviewContentStarts)).toBeLessThanOrEqual(1);
   const order = await page.evaluate(() => [
     document.querySelector(".page-heading")!,
-    document.querySelector("[data-testid='overview-hero']")!,
     document.querySelector("[data-testid='overview-latest-drive']")!,
     document.querySelector("[data-testid='overview-kpis']")!,
-    document.querySelector("[data-testid='overview-academics']")!,
     document.querySelector("[data-testid='overview-feedback']")!,
     document.querySelector("[data-testid='overview-next-steps']")!,
   ].map(node => Array.from(document.querySelectorAll(".dashboard-content > *")).indexOf(node.parentElement?.classList.contains("overview-columns") ? node.parentElement : node)));
@@ -281,16 +278,21 @@ test("overview follows the requested section order and keeps feedback percentage
     return Math.abs((value.left + value.right) / 2 - (bounds.left + bounds.right) / 2) < 2;
   });
   expect(scoreIsCentered).toBe(true);
+  await page.screenshot({path:"/root/voicedots/artifacts/student-ui-20261007/student-overview-corrected.png",fullPage:false});
+  await page.evaluate(()=>window.scrollTo(0,document.querySelector('.overview-columns')!.getBoundingClientRect().top+window.scrollY-105));
+  await page.screenshot({path:"/root/voicedots/artifacts/student-ui-20261007/student-overview-feedback-corrected.png"});
+  await page.getByRole('button',{name:'Close navigation'}).click();
+  await page.screenshot({path:"/root/voicedots/artifacts/student-ui-20261007/student-overview-sidebar-closed.png"});
+  await page.getByRole('button',{name:'Open navigation'}).click();
   await expect(page.getByTestId("overview-latest-drive").getByRole("link", { name: /Start AI Interview/ })).toHaveAttribute("href", /\/practice\?drive=drive-1/);
   const resumableKpi = page.locator(".stat-card").filter({ hasText: "Interviews to resume" });
   await expect(resumableKpi.locator("strong")).toHaveText("1");
   await expect(page.getByRole("heading", { name: "Ready when you are" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Prepare with your AI Coach" })).toHaveAttribute("href", "/coach");
+  await expect(page.getByRole("link", { name: "Train weak areas with AI Coach" })).toHaveAttribute("href", "/coach");
   const quickActions = page.getByTestId("overview-next-steps").getByRole("link");
-  await expect(quickActions).toHaveCount(5);
-  await expect(quickActions.nth(3)).toHaveAttribute("href", "/resume-studio");
-  await expect(quickActions.nth(4)).toHaveAttribute("href", "/career");
+  await expect(quickActions).toHaveCount(3);
+  await expect(page.getByTestId("overview-hero")).toHaveCount(0);
   await page.getByTestId("overview-latest-drive").getByRole("link", { name: /^AI Coach/ }).click();
   await expect(page.getByRole("heading", { name: "AI Coach" })).toBeVisible();
   await expect(page.getByLabel("Placement opportunity")).toBeVisible();
@@ -1095,10 +1097,10 @@ test('AI Coach moves through placement, skills, diagnostic, schedule, and the co
  await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Backend engineer',resume_label:'My Main Resume',groups:{resume_match:['Python'],related_evidence:['APIs'],no_resume_evidence:['Testing']},language_options:[],language_is_alternative:false}}));
  await page.route('**/api/student/coach/drives/drive-1/diagnostic**',route=>route.fulfill({json:{id:'diagnostic-1',status:'completed',tasks_json:[],answers_json:{},result_json:{skills:[]}}}));
  await page.route('**/api/student/coach/plans**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/messages')){plan.messages.push({id:'m2',role:'student',content:'Explain APIs'},{id:'m3',role:'coach',content:'An API receives a request and returns a response.'});return route.fulfill({json:{reply:plan.messages[2].content}})}if(path.endsWith('/schedule')&&route.request().method()==='PUT'){booked=route.request().postDataJSON().sessions[0];Object.assign(day,{planned_at:(booked as any).scheduled_for,duration_minutes:45,schedule_status:'scheduled'});return route.fulfill({json:{sessions:[day]}})}if(path.endsWith('/plans')&&route.request().method()==='POST'){created=true;return route.fulfill({json:plan})}if(path.includes('/sessions/'))return route.fulfill({json:{id:day.session_id,stage:'teaching',skill:'Python APIs',learning_objective:'Explain a request'}});return route.fulfill({json:plan})});
- await page.goto('/coach');await page.getByLabel('Placement opportunity').selectOption('drive-1');const rails: {x:number;width:number}[]=[];const rail=async(selector:string)=>{const box=await page.locator(selector).boundingBox();expect(box).not.toBeNull();rails.push({x:box!.x,width:box!.width})};await rail('.coach-placement-layout');await page.getByRole('button',{name:'Build preparation plan'}).click();await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toBeVisible();await rail('.coach-skills-stage');await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Diagnostic saved. These results guide your plan')).toBeVisible();await rail('.coach-diagnostic-stage');await page.getByRole('button',{name:'Continue to plan'}).click();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await rail('.coach-plan-stage');await page.getByRole('button',{name:'Confirm & add all sessions'}).click();await expect(page.getByText('Scheduled ·')).toBeVisible();expect(booked).toMatchObject({session_id:day.session_id,duration_minutes:45});await page.getByRole('button',{name:'Open lesson'}).click();await expect(page.getByText('Connect with Neha',{exact:true})).toBeVisible();await rail('.coach-lesson-stage');expect(Math.max(...rails.map(item=>item.width))-Math.min(...rails.map(item=>item.width))).toBeLessThanOrEqual(1);expect(Math.max(...rails.map(item=>item.x))-Math.min(...rails.map(item=>item.x))).toBeLessThanOrEqual(1);await expect(page.getByAltText('Neha, AI preparation coach')).toBeVisible();await expect(page.getByText('What would you like to work through first about Request handling?')).toBeVisible();await page.getByLabel('Ask Neha or share your answer').fill('Explain APIs');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();
+ await page.goto('/coach');await page.getByLabel('Placement opportunity').selectOption('drive-1');const rails: {x:number;width:number}[]=[];const rail=async(selector:string)=>{const box=await page.locator(selector).boundingBox();expect(box).not.toBeNull();rails.push({x:box!.x,width:box!.width})};await rail('.coach-placement-layout');await page.getByRole('button',{name:'Build preparation plan'}).click();await expect(page.getByRole('heading',{name:'Your skills for Example Co'})).toBeVisible();await rail('.coach-skills-stage');await page.screenshot({path:'/root/voicedots/artifacts/student-ui-20261007/student-coach-skills-corrected.png'});await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Diagnostic saved. These results guide your plan')).toBeVisible();await rail('.coach-diagnostic-stage');await page.getByRole('button',{name:'Continue to plan'}).click();await expect(page.getByText('Python APIs',{exact:true})).toBeVisible();await expect(page.getByText('Build one endpoint')).toBeVisible();await rail('.coach-plan-stage');await page.getByRole('button',{name:'Confirm & add all sessions'}).click();await expect(page.getByText('Scheduled ·')).toBeVisible();expect(booked).toMatchObject({session_id:day.session_id,duration_minutes:45});await page.getByRole('button',{name:'Open lesson'}).click();await expect(page.getByText('Connect with Neha',{exact:true})).toBeVisible();await rail('.coach-lesson-stage');expect(Math.max(...rails.map(item=>item.width))-Math.min(...rails.map(item=>item.width))).toBeLessThanOrEqual(1);expect(Math.max(...rails.map(item=>item.x))-Math.min(...rails.map(item=>item.x))).toBeLessThanOrEqual(1);await expect(page.getByAltText('Neha, AI preparation coach')).toBeVisible();await expect(page.getByText('What would you like to work through first about Request handling?')).toBeVisible();await page.getByLabel('Ask Neha or share your answer').fill('Explain APIs');await page.getByRole('button',{name:'Send',exact:true}).click();await expect(page.getByText('An API receives a request and returns a response.')).toBeVisible();
  const lessonWidth=await page.locator('.coach-lesson-stage').evaluate(el=>el.getBoundingClientRect().width);
  expect(lessonWidth).toBeGreaterThanOrEqual(1200);
- expect(lessonWidth).toBeLessThanOrEqual(1340);
+ expect(lessonWidth).toBeLessThanOrEqual(await page.locator(".coach-approved-page").evaluate(el=>el.getBoundingClientRect().width));
  const avatar=page.locator('.coach-lesson-portrait .coach-call-avatar');
  expect(await avatar.evaluate(el=>el.getBoundingClientRect().width)).toBeGreaterThanOrEqual(190);
  await expect(avatar.locator('span')).toHaveCount(0);
@@ -1261,10 +1263,10 @@ test('AI Coach diagnostic streams mic audio, shows transcripts, and finalizes on
  await page.route('**/api/student/coach/drives/drive-1/skill-match',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Analyst',resume_label:'Main Resume',groups:{resume_match:['SQL'],related_evidence:[],no_resume_evidence:[]},language_options:[],language_is_alternative:false}}));
  await page.route('**/api/student/coach/drives/drive-1/diagnostic**',route=>{const path=new URL(route.request().url()).pathname;if(path.endsWith('/answers')){Object.assign(diagnostic.answers_json,route.request().postDataJSON().answers);return route.fulfill({json:diagnostic})}if(path.endsWith('/complete')){diagnostic.status='completed';diagnostic.result_json.skills=[{skill:'SQL',state:'some_evidence',assessed_tasks:1,demonstrated_tasks:1}];return route.fulfill({json:diagnostic})}if(route.request().method()==='POST')started=true;return route.fulfill({json:started?diagnostic:{detail:'Not started'},status:started?200:404})});
  await page.route('**/api/student/coach/plans**',route=>route.fulfill({json:plan}));
- await page.addInitScript(()=>{(window as any).diagnosticMicReleased=false;Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);track.stop=()=>{(window as any).diagnosticMicReleased=true;stop();void ctx.close()};return destination.stream}});(window as any).AudioWorkletNode=class extends AudioWorkletNode{constructor(context:BaseAudioContext,name:string,options?:AudioWorkletNodeOptions){super(context,name,options);setTimeout(()=>this.port.onmessage?.({data:new Float32Array(480).fill(.15)} as MessageEvent),120)}}});
+ await page.addInitScript(()=>{(window as any).diagnosticMicReleased=false;Object.defineProperty(navigator.mediaDevices,'enumerateDevices',{value:async()=>[{kind:'audioinput',deviceId:'default',label:'Default microphone',groupId:'test'},{kind:'audioinput',deviceId:'usb-mic',label:'USB microphone',groupId:'test'}]});Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>{const ctx=new AudioContext(),destination=ctx.createMediaStreamDestination(),track=destination.stream.getAudioTracks()[0],stop=track.stop.bind(track);Object.defineProperty(track,'getSettings',{value:()=>({deviceId:'usb-mic'})});track.stop=()=>{(window as any).diagnosticMicReleased=true;stop();void ctx.close()};return destination.stream}});(window as any).AudioWorkletNode=class extends AudioWorkletNode{constructor(context:BaseAudioContext,name:string,options?:AudioWorkletNodeOptions){super(context,name,options);setTimeout(()=>this.port.onmessage?.({data:new Float32Array(480).fill(.15)} as MessageEvent),120)}}});
  await page.routeWebSocket('**/ws/coach-diagnostic/**',ws=>{ws.onMessage(message=>{if(message instanceof Buffer){audioChunks++;if(audioChunks===1)ws.send(JSON.stringify({type:'partial_transcript',text:'A join combines'}));return}const data=JSON.parse(String(message));if(data.type==='start_answer')ws.send(JSON.stringify({type:'listening_started',task_id:'sql-voice'}));if(data.type==='stop_answer'){finalized++;ws.send(JSON.stringify({type:'final_transcript',text:'A join combines matching rows from two tables.'}));ws.send(JSON.stringify({type:'processing'}));ws.send(JSON.stringify({type:'diagnostic_answer_complete',task_id:'sql-voice',transcript:'A join combines matching rows from two tables.',evaluation:{demonstrated:true,confidence:.9},skipped:false,accepted:true}))}});ws.send(JSON.stringify({type:'diagnostic_started',task_id:'sql-voice',question:'Explain how a join combines rows.',question_source_type:'PREVIOUS_INTERVIEW_QUESTION'}));});
  await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();
- await expect(page.getByRole('heading',{name:'Explain how a join combines rows.'})).toBeVisible();await expect(page.getByText('Listening',{exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'Start answering'})).toBeVisible();await expect(page.getByRole('textbox',{name:'Diagnostic transcript'})).toHaveCount(0);await page.getByRole('button',{name:'Start answering'}).click();await expect.poll(()=>audioChunks).toBeGreaterThan(0);await expect(page.getByText('A join combines',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Stop answer'})).toBeEnabled();await page.getByRole('button',{name:'Stop answer'}).click();await expect(page.getByText('A join combines matching rows from two tables.')).toBeVisible();await expect(page.getByText('Your baseline is ready to evaluate.')).toBeVisible();expect(finalized).toBe(1);await expect.poll(()=>page.evaluate(()=>(window as any).diagnosticMicReleased)).toBe(true);
+ await expect(page.getByRole('heading',{name:'Explain how a join combines rows.'})).toBeVisible();await expect(page.getByText('Listening',{exact:true})).toHaveCount(0);await expect(page.getByRole('button',{name:'Start answering'})).toBeVisible();await expect(page.getByRole('textbox',{name:'Diagnostic transcript'})).toHaveCount(0);await page.getByRole('button',{name:'Start answering'}).click();await expect.poll(()=>audioChunks).toBeGreaterThan(0);await expect(page.getByText('A join combines',{exact:true})).toBeVisible();await expect(page.getByRole('button',{name:'Stop answer'})).toBeEnabled();await expect(page.getByLabel('Microphone input')).toHaveValue('usb-mic');const micBox=await page.getByLabel('Microphone input').boundingBox(),stopBox=await page.getByRole('button',{name:'Stop answer'}).boundingBox();expect(Math.abs(micBox!.y-stopBox!.y)).toBeLessThanOrEqual(2);await page.screenshot({path:'/root/voicedots/artifacts/student-ui-20261007/student-coach-voice-corrected.png'});await page.getByRole('button',{name:'Stop answer'}).click();await expect(page.getByText('A join combines matching rows from two tables.')).toBeVisible();await expect(page.getByText('Your baseline is ready to evaluate.')).toBeVisible();expect(finalized).toBe(1);await expect.poll(()=>page.evaluate(()=>(window as any).diagnosticMicReleased)).toBe(true);
 });
 
 test("Calendar opens the exact persisted AI Coach session from its event", async ({ page }) => {
@@ -1621,7 +1623,7 @@ test('academics shows source dates, attendance and private marks reports on mobi
  await mockStudent(page);await page.setViewportSize({width:390,height:844});
  await page.route('**/api/student/academics',r=>r.fulfill({json:{status:'connected',source_name:'Campus academic records',notice:'Imported academic records, not a live ERP feed.',attendance:[{period_start:'2026-07-06',period_end:'2026-09-04',hours_conducted:100,hours_present:85,hours_absent:15,percentage:85,source_file:'Attendance.xlsx',subjects:[{subject:'Python (24 hrs)',reported_value:20}]}],marks_reports:[{report_id:'report-1',title:'Semester marks',page_number:1}]}}));
  await page.route('**/api/student/academics/reports/report-1',r=>r.fulfill({contentType:'image/png',body:Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+j8X8AAAAASUVORK5CYII=','base64')}));
- await page.goto('/');await expect(page.getByText('85%',{exact:true})).toBeVisible();await page.getByRole('link',{name:'View marks and attendance →'}).click();await expect(page.getByRole('heading',{name:'Marks and attendance',exact:true})).toBeVisible();await expect(page.getByText('Hours present',{exact:true})).toBeVisible();await expect(page.getByText('Python (24 hrs)',{exact:true})).toBeVisible();await expect(page.getByText('Imported academic records, not a live ERP feed.')).toBeVisible();await expect(page.getByRole('img',{name:'Your marks report: Semester marks'})).toBeVisible();const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download report'}).click();expect((await download).suggestedFilename()).toBe('My-marks-report.png');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+ await page.goto('/academics');await expect(page.getByText('85%',{exact:true})).toBeVisible();await expect(page.getByRole('heading',{name:'Marks and attendance',exact:true})).toBeVisible();await expect(page.getByText('Hours present',{exact:true})).toBeVisible();await expect(page.getByText('Python (24 hrs)',{exact:true})).toBeVisible();await expect(page.getByText('Imported academic records, not a live ERP feed.')).toBeVisible();await expect(page.getByRole('img',{name:'Your marks report: Semester marks'})).toBeVisible();const download=page.waitForEvent('download');await page.getByRole('button',{name:'Download report'}).click();expect((await download).suggestedFilename()).toBe('My-marks-report.png');expect(await page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
 });
 
 test('academics distinguishes missing records and service errors without invented marks',async({page})=>{
@@ -1719,4 +1721,18 @@ test('general practice does not inherit the removed profile target role',async({
  await page.route('**/api/auth/student-me',route=>route.fulfill({json:{student:{...identity.student,target_role:'Legacy role'}}}));
  await page.goto('/practice');
  await expect(page.getByLabel('Target role',{exact:true})).toHaveValue('');
+});
+
+test('locked placement keeps compact badges and disables resume even with a stale actionable context',async({page})=>{
+ await mockStudent(page);
+ const drive={id:'locked-drive',company_name:'Netflix',role_title:'Senior analyst',status:'active',is_locked:true,main_resume_available:true,interview_status:'in_progress',interview_action:'resume',interview_max_attempts:1,interview_attempts_used:1,interview_current_attempt_number:1};
+ await page.route('**/api/student/drives',route=>route.fulfill({json:[drive]}));
+ await page.route('**/api/student/drives/locked-drive/interview-context',route=>route.fulfill({json:{drive_id:drive.id,company_name:drive.company_name,role_title:drive.role_title,is_locked:true,action:'resume',can_resume:true,can_start:true,main_resume_available:true,interview_window:'open',session_id:'session-1',submission_id:'submission-1',max_attempts:1,attempt_number:1,attempts_used:1,assignment_status:'in_progress'}}));
+ await page.goto('/placements');
+ await expect(page.locator('.drive-status-badges').getByText('Locked',{exact:true})).toBeVisible();
+ const badge=await page.locator('.placement-locked-badge').boundingBox();expect(badge!.width).toBeLessThan(90);
+ await page.screenshot({path:'/root/voicedots/artifacts/student-ui-20261007/student-placement-lock-corrected.png'});
+ await page.getByRole('button',{name:'View opportunity'}).click();
+ await expect(page.getByRole('button',{name:/Resume interview|Start.*interview/i})).toHaveCount(0);
+ await page.screenshot({path:'/root/voicedots/artifacts/student-ui-20261007/student-placement-modal-corrected.png'});
 });

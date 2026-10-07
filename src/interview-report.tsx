@@ -14,19 +14,20 @@ export function InterviewReport() {
   const [error, setError] = useState("");
   const [recording, setRecording] = useState<Recording | null>(null);
   const [recordingError, setRecordingError] = useState("");
+  const [retry, setRetry] = useState(0);
   const [showResult, setShowResult] = useState(false);
   useEffect(() => {
     const controller = new AbortController();
     setHtml(""); setError(""); setRecording(null); setRecordingError(""); setShowResult(false);
     if (!report || report.status !== "released" || report.report?.status === "awaiting_release") return;
     void request(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.html`, { signal: controller.signal })
-      .then(response => response.text()).then(value => { if (!controller.signal.aborted) setHtml(value.replace('href="report.pdf"', `href="${apiUrl(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.pdf`)}"`)); })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause.message); });
+      .then(response => response.text()).then(value => { if (!controller.signal.aborted) setHtml(value.replace('</head>', '<style>body{background:#fff;font-size:14px}.page{max-width:none;margin:0;padding:20px}.download-bar,.report-header h1{display:none}.report-header{margin-bottom:16px}.panel{border-radius:10px;padding:16px 18px;margin-bottom:14px}.panel--score{flex-wrap:wrap}@media(max-width:600px){.page{padding:14px}.profile-grid,.dimension-grid{grid-template-columns:1fr}.panel{padding:14px}.question-review summary span{float:none;display:block;margin:4px 0 0}}</style></head>').replace('href="report.pdf"', `href="${apiUrl(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.pdf`)}"`)); })
+      .catch(cause => { if (!controller.signal.aborted) setError(cause.message || "Unable to load your interview report. Please retry."); });
     void api<Recording>(`/api/student/interview/${encodeURIComponent(sessionId)}/recording`, { signal: controller.signal })
       .then(value => { if (!controller.signal.aborted) setRecording(value); })
       .catch(cause => { if (!controller.signal.aborted) setRecordingError(cause.message); });
     return () => controller.abort();
-  }, [sessionId, report]);
+  }, [sessionId, report, retry]);
   return <section className="interview-report-page">
     <Link className="button secondary" to="/reports"><ArrowLeft size={17}/> All reports</Link>
     <ResourceState resource={reports}>
@@ -35,10 +36,12 @@ export function InterviewReport() {
           {report.status === "released" && report.report?.status !== "awaiting_release" && <a className="button primary" href={apiUrl(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.pdf`)}><Download size={17}/> Download PDF</a>}
         </header>
         {report.report?.status === "awaiting_release" || report.status !== "released" ? <p className="panel">Your report is awaiting release.</p> : <>
-          {report.drive_id && <section className="panel"><button className="button secondary" aria-expanded={showResult} onClick={() => setShowResult(value => !value)}>View placement result</button>{showResult && <div className="placement-result-reveal" role="status"><h2>{report.placement_decision ? humanize(report.placement_decision) : "Decision pending"}</h2></div>}</section>}
-          <section className="panel"><h2>Interview recording</h2>{recording?.playback_url ? <video className="report-video" controls playsInline preload="metadata" src={recording.playback_url} aria-label="Interview recording"/> : <p>{recordingError || recording?.message || (recording ? `Recording ${humanize(recording.status).toLowerCase()}` : "Loading recording…")}</p>}</section>
-          <ErrorMessage message={error}/>
+          {error && <ErrorMessage message={error} retry={() => setRetry(value => value + 1)}/>}
           {html ? <iframe className="full-report-document" title="Complete interview report and questions" srcDoc={html} sandbox="allow-same-origin allow-popups"/> : !error && <p role="status">Loading full report…</p>}
+          <section className="panel report-extras">
+            {report.drive_id && <div><button className="button secondary" aria-expanded={showResult} onClick={() => setShowResult(value => !value)}>View placement result</button>{showResult && <div className="placement-result-reveal" role="status"><h2>{report.placement_decision ? humanize(report.placement_decision) : "Decision pending"}</h2></div>}</div>}
+            <details><summary>Interview recording</summary>{recording?.playback_url ? <video className="report-video" controls playsInline preload="metadata" src={recording.playback_url} aria-label="Interview recording"/> : <p>{recordingError || recording?.message || (recording ? `Recording ${humanize(recording.status).toLowerCase()}` : "Loading recording…")}</p>}</details>
+          </section>
         </>}
       </> : reports.data && <p className="panel">This report is unavailable.</p>}
     </ResourceState>

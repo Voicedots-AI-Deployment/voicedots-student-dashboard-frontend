@@ -1,4 +1,3 @@
-import { AcademicOverview } from "./academics";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
 import { useEffect, useRef, useState, type FormEvent } from "react";
@@ -16,7 +15,6 @@ import {
   Mic,
   RefreshCw,
   Search,
-  Sparkles,
   Target,
   TrendingUp,
   Upload,
@@ -83,7 +81,7 @@ function ReportList({ reports, search = "", filter = "all" }: { reports: Report[
 
           </div>
           <div className="student-report-card__result">
-            {pending ? <><strong className="student-report-pending">In review</strong><span>Your placement team will share feedback here.</span></> : <><strong>{report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</strong><span>{humanize(report.report?.readiness || "Not assessed")}</span></>}
+            {pending ? <><strong className="student-report-pending">In review</strong><span>Your placement team will share feedback here.</span></> : <><strong>{report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</strong><span>{report.report?.readiness ? humanize(report.report.readiness) : report.report?.overall_score == null ? "Assessment pending" : "Feedback ready"}</span></>}
             {report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
             {report.status === "released" && !pending && <div className="report-actions"><Link
               aria-label={`Open report for ${report.target_role || "interview"}`}
@@ -138,8 +136,9 @@ export function Overview() {
   const { identity } = useAuth();
   const resource = useResource<Dashboard>("/api/student/dashboard");
   const data = resource.data;
+  const resumableAttempts = (data?.attempts || []).filter(attempt => { const drive = data?.drives.find(item => item.id === attempt.drive_id); return !drive || !drive.is_locked && drive.status !== "closed" && drive.interview_action !== "blocked"; });
   const latestDrive = data?.drives?.find((drive) => ["active", "scheduled"].includes(drive.status)) || data?.drives?.[0];
-  const latestDriveAvailable = Boolean(latestDrive && ["active", "scheduled"].includes(latestDrive.status) && latestDrive.interview_status !== "closed");
+  const latestDriveAvailable = Boolean(latestDrive && !latestDrive.is_locked && ["active", "scheduled"].includes(latestDrive.status) && latestDrive.interview_status !== "closed");
   const canStartLatestDrive = latestDriveAvailable && ["start", "retry_preparation"].includes(latestDrive?.interview_action || "");
   const canResumeLatestDrive = latestDriveAvailable && latestDrive?.interview_action === "resume";
   return (
@@ -150,42 +149,6 @@ export function Overview() {
       >
         Your next opportunity starts with what you do today.
       </PageHeading>
-      <section className="welcome-banner" data-testid="overview-hero">
-        <div>
-          <span className="pill">
-            <Sparkles size={14} /> YOUR SPACE TO GROW
-          </span>
-          <h2>
-            Good interviews
-            <br />
-            start with <em>great practice.</em>
-          </h2>
-          <p>
-            A personalized AI panel. Meaningful feedback.
-            <br />
-            Everything you need to show up with confidence.
-          </p>
-          <Link to="/practice" className="button white">
-            Start an interview <ArrowRight size={17} />
-          </Link>
-          <Link to="/coach" className="overview-coach-link">Prepare with your AI Coach</Link>
-        </div>
-        <div className="voice-art" aria-hidden="true">
-          <div className="voice-orbit orbit-one" />
-          <div className="voice-orbit orbit-two" />
-          <div className="voice-orbit orbit-three" />
-          <div className="voice-core">
-            <Mic size={45} />
-          </div>
-          <div className="floating-label label-one">
-            <span />
-            Your future is calling
-          </div>
-          <div className="floating-label label-two">
-            <Sparkles size={15} /> Practice. Reflect. Repeat.
-          </div>
-        </div>
-      </section>
       <ResourceState resource={resource}>
         {data && (
           <>
@@ -237,7 +200,7 @@ export function Overview() {
                 {
                   icon: Target,
                   label: "Interviews to resume",
-                  value: data.attempts.length,
+                  value: resumableAttempts.length,
                   detail: "Pick up where you left off",
                 },
               ].map(({ icon: Icon, label, value, detail }) => (
@@ -252,8 +215,6 @@ export function Overview() {
                 ))}
             </section>
             <Growth />
-            <AcademicOverview />
-            <section className="panel"><div className="section-heading"><div><span className="eyebrow">YOUR INSTITUTION RECORDS</span><h2>My ERP</h2><p>View your timetable, marks, fees, homework and campus attendance.</p></div><Link className="button secondary" to="/erp">Open My ERP <ArrowRight size={15}/></Link></div></section>
             <div className="overview-columns">
               <section className="panel" data-testid="overview-feedback">
                 <div className="section-heading">
@@ -272,7 +233,7 @@ export function Overview() {
                       <div><strong>Focus before your next attempt</strong><div className="focus-chips">{improvementLabels(data.reports[0]).map(item => <span className="pill" key={item}>{item}</span>)}</div>{!improvementLabels(data.reports[0]).length && <p>Your detailed feedback is being prepared.</p>}</div>
                     </div>
                     {data.reports[0].drive_id && data.reports[0].report?.status !== "awaiting_release" && <Link className="button primary" to="/coach">Train weak areas with AI Coach <ArrowRight size={16}/></Link>}
-                    <ReportList reports={data.reports.slice(0, 2)} />
+                    <ReportList reports={data.reports.slice(0, 1)} />
                   </>
                 ) : (
                   <Empty
@@ -306,18 +267,6 @@ export function Overview() {
                     text: "Build a plan for your next opportunity.",
                     to: "/coach",
                   },
-                  {
-                    n: "04",
-                    title: "Build your resume",
-                    text: "Create and improve it in Resume Studio.",
-                    to: "/resume-studio",
-                  },
-                  {
-                    n: "05",
-                    title: "Explore Career Coach",
-                    text: "Get guidance for your career next steps.",
-                    to: "/career",
-                  },
                 ].map((step) => (
                   <Link key={step.n} to={step.to}>
                     <span>{step.n}</span>
@@ -330,13 +279,13 @@ export function Overview() {
                 ))}
               </section>
             </div>
-            {data.attempts.length > 0 && (
+            {resumableAttempts.length > 0 && (
               <section className="panel">
                 <div className="section-heading">
                   <div><h2>Ready when you are</h2><p>Continue an interview you already started.</p></div>
                   <span className="pill">Saved progress</span>
                 </div>
-                <AttemptList attempts={data.attempts} />
+                <AttemptList attempts={resumableAttempts} />
               </section>
             )}
           </>
@@ -402,7 +351,7 @@ function studentAttemptState(value: Drive | DriveContext): StudentAttemptState {
 function placementGroup(drive: Drive) {
   const status = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
   const action = drive.interview_action || "";
-  if (status === "closed" || status === "completed" || drive.status === "closed") return "closed";
+  if (drive.is_locked || status === "closed" || status === "completed" || drive.status === "closed") return "closed";
   if (["resume", "start", "retry_preparation"].includes(action) && status !== "upcoming") return "active";
   if (["upcoming", "awaiting_assignment"].includes(status) || drive.status === "scheduled") return "upcoming";
   return "closed";
@@ -528,8 +477,8 @@ export function Placements() {
   ].filter((item): item is string => Boolean(item)) : [];
   const interviewWindow = context?.interview_window || "";
   const mainResumeAvailable = context?.main_resume_available === true;
-  const canResume = Boolean(context && mainResumeAvailable && interviewWindow === "open" && (context.can_resume ?? context.action === "resume"));
-  const canStart = Boolean(context && mainResumeAvailable && interviewWindow === "open" && !context.coach_gate_locked && (
+  const canResume = Boolean(context && !context.is_locked && !selected?.is_locked && mainResumeAvailable && interviewWindow === "open" && (context.can_resume ?? context.action === "resume"));
+  const canStart = Boolean(context && !context.is_locked && !selected?.is_locked && mainResumeAvailable && interviewWindow === "open" && !context.coach_gate_locked && (
     context.can_start ?? (["start", "retry_preparation"].includes(context.action) || Boolean(context.can_start_next_attempt))
   ));
   const startInterview = () => context && navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
@@ -539,7 +488,7 @@ export function Placements() {
     else navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
   };
   const statusText = context
-    ? canResume ? "In progress"
+    ? context.is_locked || selected?.is_locked ? "Locked" : canResume ? "In progress"
       : context.main_resume_available === false ? "Main Resume required"
       : interviewWindow === "closed" ? "Closed"
       : interviewWindow === "not_open" ? "Scheduled"
@@ -551,7 +500,9 @@ export function Placements() {
     : "Checking status";
   let nextStep = "Your placement interview details are being checked.";
   if (context && attemptState) {
-    if (context.main_resume_available === false)
+    if (context.is_locked || selected?.is_locked)
+      nextStep = "This placement is locked. Contact your placement cell to reopen interview access.";
+    else if (context.main_resume_available === false)
       nextStep = "Upload or select your Main Resume in My Profile before starting or resuming this placement interview.";
     else if (interviewWindow === "closed" || selected?.status === "closed")
       nextStep = attemptState.remaining === 0 ? "You have completed all available attempts." : "This placement drive is closed. No further interview action is available.";
@@ -616,7 +567,7 @@ export function Placements() {
               <article className="panel drive-card" key={drive.id}>
                 {(() => {
                   const interviewStatus = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
-                  const statusLabel = drive.interview_action === "blocked" ? "Locked" : interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
+                  const statusLabel = drive.is_locked || drive.interview_action === "blocked" ? "Locked" : interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
                   const state = studentAttemptState(drive);
                   const attemptProgress = interviewStatus === "closed"
                     ? "Interview closed"
@@ -626,9 +577,9 @@ export function Placements() {
                   <span className="company-avatar">
                     {(drive.company_name || "C").slice(0, 2).toUpperCase()}
                   </span>
-                  <span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span>
+                  <div className="drive-status-badges"><span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span>{drive.is_locked && <span className="pill placement-locked-badge">Locked</span>}</div>
                 </div>
-                {drive.is_locked && <span className="pill">Locked</span>}
+
                 <span className="eyebrow">{drive.company_name}</span>
                 <h2>{drive.role_title}</h2>
                 <p>
@@ -784,78 +735,7 @@ export function Reports() {
 
 export function Growth() {
   const resource = useResource<Readiness>("/api/student/readiness");
-  return (
-    <section className="overview-growth">
-      <div className="section-heading panel">
-        <div><span className="eyebrow">PROGRESS WITH PURPOSE</span><h2>My growth</h2><p>Understand your placement readiness and decide where to focus next.</p></div>
-        <button className="button secondary small" onClick={resource.reload}><RefreshCw size={15} /> Refresh</button>
-      </div>
-      <ResourceState resource={resource}>
-        {resource.data && (
-          <div className="growth-grid">
-            <section className="panel readiness-card">
-              <span className="eyebrow">PLACEMENT READINESS</span>
-              <div className="readiness-ring">
-                <strong>{score(resource.data.overall_score ?? null)}</strong>
-              </div>
-              <h2>
-                {resource.data.overall_score == null
-                  ? "Your story is still unfolding"
-                  : "Keep building on your progress"}
-              </h2>
-              <p>
-                Based on your official placement interview and the resume used
-                in that assessment. Missing evidence is never counted as a zero
-                score.
-              </p>
-              <Link className="button primary" to="/placements">
-                Explore placements <ArrowRight size={16} />
-              </Link>
-            </section>
-            <section className="panel">
-              <div className="section-heading">
-                <h2>Your readiness areas</h2>
-              </div>
-              {["interview_readiness", "resume_readiness"].map((axis) => {
-                const value = resource.data!.axis_scores?.[axis] ?? null;
-                return (
-                  <div className="readiness-axis" key={axis}>
-                    <div>
-                      <strong>{humanize(axis)}</strong>
-                      <span>{score(value)}</span>
-                    </div>
-                    <progress
-                      max={100}
-                      value={value ?? 0}
-                      aria-label={humanize(axis)}
-                    />
-                    <p>
-                      {value == null
-                        ? "Waiting for assessment evidence."
-                        : "From your latest qualifying placement assessment."}
-                    </p>
-                  </div>
-                );
-              })}
-              <div className="gentle-note">
-                <Sparkles size={22} />
-                <div>
-                  <strong>One conversation can make a difference.</strong>
-                  <p>
-                    Practice is a place to try, learn, and become more
-                    comfortable telling your story.
-                  </p>
-                  <Link to="/practice">
-                    Make time for practice <ArrowRight size={15} />
-                  </Link>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-      </ResourceState>
-    </section>
-  );
+  return <section className="panel overview-growth"><div className="section-heading"><div><h2>My growth</h2><p>Readiness from your latest placement assessment.</p></div><button className="button secondary small" onClick={resource.reload}><RefreshCw size={15}/> Refresh</button></div><ResourceState resource={resource}>{resource.data && <div className="growth-summary">{[{key:'overall',label:'Placement readiness',value:resource.data.overall_score},...['interview_readiness','resume_readiness'].map(key=>({key,label:humanize(key),value:resource.data!.axis_scores?.[key]}))].map(item=><div key={item.key}><span>{item.label}</span><strong>{score(item.value)}</strong><progress max={100} value={item.value??0} aria-label={item.label}/><small>{item.value==null?'Awaiting assessment':'Latest assessment'}</small></div>)}</div>}</ResourceState></section>;
 }
 
 export function Profile() {

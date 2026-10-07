@@ -303,6 +303,7 @@ export function App() {
   useEffect(() => {
     setMobileOpen(false);
     window.scrollTo(0, 0);
+    document.querySelector("main")?.scrollTo(0, 0);
   }, [location.pathname]);
   useEffect(() => {
     const viewport = window.matchMedia("(max-width: 760px)");
@@ -343,7 +344,7 @@ export function App() {
   const student = auth.identity.student;
   const current =
     nav.find((item) => item.to === location.pathname || (item.to === '/erp' && location.pathname.startsWith('/erp/')))?.label ||
-    "Student dashboard";
+    (location.pathname.startsWith("/reports/") ? "Interview report" : "Student dashboard");
   async function logout() {
     setLoggingOut(true);
     setError("");
