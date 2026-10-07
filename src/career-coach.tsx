@@ -35,17 +35,18 @@ export function CareerCoach() {
   const resumes = useResource<{ resumes: Resume[] }>("/api/student/resume-library");
   const saved = useResource<{ reports: { id: string; resume_id: string; created_at: string; model_version?: string; answers?: Record<string, string>; report: CareerResult }[] }>("/api/student/career/reports");
   const [resume, setResume] = useState("");
+  const [resumeReady, setResumeReady] = useState(false);
   const [answers, setAnswers] = useState<Record<string, string>>({});
   const [questionIndex, setQuestionIndex] = useState(0);
   const [result, setResult] = useState<CareerResult | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const analysisInFlight = useRef(false);
-  const submitTimer = useRef<number | undefined>(undefined);
   const lastSubmitted = useRef<{ signature: string; at: number } | null>(null);
   const answersRef = useRef(answers);
 
   useEffect(() => {
+    if (resumes.loading) return;
     const currentId = identity?.student.current_resume_submission_id;
     const item = resumes.data?.resumes.find((row) => row.submission_id === currentId)
       || resumes.data?.resumes.find((row) => row.is_primary && row.submission_id);
@@ -57,7 +58,8 @@ export function CareerCoach() {
       setAnswers(nextAnswers);
       setResult(null);
     }
-  }, [resumes.data, identity?.student.current_resume_submission_id, resume]);
+    setResumeReady(true);
+  }, [resumes.data, resumes.loading, identity?.student.current_resume_submission_id, resume]);
 
   useEffect(() => {
     if (resume) sessionStorage.setItem(answerKey(resume), JSON.stringify(answers));
@@ -86,15 +88,12 @@ export function CareerCoach() {
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = event.currentTarget;
-    window.clearTimeout(submitTimer.current);
-    submitTimer.current = window.setTimeout(() => {
-      const formData = new FormData(form);
-      void analyze({ ...answersRef.current, [key]: String(formData.get(key) || answersRef.current[key] || "") });
-    }, 50);
+    const submittedAnswers = { ...answersRef.current };
+    const formData = new FormData(event.currentTarget);
+    const currentAnswer = formData.get(key);
+    if (typeof currentAnswer === "string") submittedAnswers[key] = currentAnswer;
+    void analyze(submittedAnswers);
   }
-
-  useEffect(() => () => window.clearTimeout(submitTimer.current), []);
 
   const selectedResume = resumes.data?.resumes.find((row) => row.submission_id === resume);
   const [key, title, help, placeholder] = questions[questionIndex];
@@ -104,10 +103,10 @@ export function CareerCoach() {
     {resumes.error && <ErrorMessage message={resumes.error} retry={resumes.reload} />}
     <div className="career-discovery-layout">
       <section className="panel career-discovery-input"><div className="section-heading"><div><span className="eyebrow">01 · YOUR STARTING POINT</span><h2>Your evidence and interests</h2></div><FileText size={20} /></div>
-        <form onSubmit={submit}><fieldset disabled={busy || resumes.loading}>
+        <form onSubmit={submit}><fieldset disabled={busy || resumes.loading || !resumeReady}>
           {selectedResume ? <p className="career-active-resume"><FileText size={16}/> Using active profile resume: <strong>{selectedResume.label || selectedResume.original_filename}</strong> · <Link to="/profile#resume-library">Change in My Profile</Link></p> : <p className="muted">{resumes.loading ? "Loading your active profile resume…" : <>Add an active resume in <Link to="/profile#resume-library">My Profile</Link> before requesting recommendations.</>}</p>}
           <div className="career-question-progress" aria-label={`Question ${questionIndex + 1} of ${questions.length}`}><div><span>QUESTION {questionIndex + 1} OF {questions.length}</span><strong>{Math.round(((questionIndex + 1) / questions.length) * 100)}%</strong></div><span className="career-question-progress-track"><i style={{ width: `${((questionIndex + 1) / questions.length) * 100}%` }} /></span></div>
-          <label className="career-question-field" htmlFor={`career-answer-${key}`}><span>{title}</span><small>{help}</small><textarea id={`career-answer-${key}`} name={key} value={answers[key] || ""} onInput={(event) => { const value = event.currentTarget.value; const nextAnswers = { ...answersRef.current, [key]: value }; answersRef.current = nextAnswers; setAnswers(nextAnswers); }} placeholder={placeholder} rows={4} /></label>
+          <label className="career-question-field" htmlFor={`career-answer-${key}`}><span>{title}</span><small>{help}</small><textarea id={`career-answer-${key}`} name={key} value={answers[key] || ""} onChange={(event) => { const nextAnswers = { ...answersRef.current, [key]: event.currentTarget.value }; answersRef.current = nextAnswers; setAnswers(nextAnswers); }} placeholder={placeholder} rows={4} /></label>
           <p className="career-answer-save-state" role="status">Answers are saved on this device and can be edited later.</p>
           <div className="career-question-actions"><button className="button secondary" type="button" disabled={questionIndex === 0} onClick={() => setQuestionIndex((current) => Math.max(0, current - 1))}>Previous</button>{questionIndex < questions.length - 1 ? <button className="button primary" type="button" disabled={!resume} onClick={() => setQuestionIndex((current) => Math.min(questions.length - 1, current + 1))}>Next question <ArrowRight size={15} /></button> : <button className="button primary" type="submit" disabled={!resume || busy}><Compass size={16} />{busy ? "Analysing your evidence…" : "Explore career paths"}</button>}</div>
         </fieldset></form>
