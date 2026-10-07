@@ -114,3 +114,50 @@
 @media(max-width:680px){.coach-question-drawer-header{padding:19px}.coach-question-search{margin-inline:16px}.coach-question-drawer .coach-question-rounds{margin-inline:16px}.coach-question-drawer-list{padding-inline:16px}.coach-question-drawer-state{margin-inline:16px}.coach-diagnostic-question-count{flex-direction:column;gap:5px}.coach-diagnostic-live{align-items:flex-start;flex-wrap:wrap}.coach-diagnostic-live>span:last-child{width:100%;margin-left:19px}}
 /* Keep every active Coach stage aligned to the same centered content rail. */
 .coach-placement-layout,.coach-skills-stage,.coach-diagnostic-stage,.coach-plan-stage,.coach-lesson-stage{width:100%;max-width:1200px;margin-left:auto;margin-right:auto}
+
+/* AI Coach visual refresh: one calm, cohesive workspace across all five stages. */
+.coach-approved-page{--coach-ink:#201d35;--coach-muted:#77758d;--coach-violet:#7138e8;--coach-lilac:#f1ebff;max-width:1360px;padding:24px 30px 48px;color:var(--coach-ink)}
+.coach-approved-page .coach-approved-heading{align-items:center;margin-bottom:20px}
+.coach-approved-page .coach-approved-heading .page-heading h1{letter-spacing:-.045em}
+.coach-welcome-band{position:relative;display:flex;align-items:center;justify-content:space-between;gap:24px;min-height:176px;overflow:hidden;margin:0 0 20px;padding:28px 34px;border:1px solid #e8e0fb;border-radius:24px;background:linear-gradient(112deg,#261b43 0%,#3c2868 55%,#633bd0 100%);color:#fff;box-shadow:0 16px 38px rgba(57,36,105,.13)}
+.coach-welcome-copy{position:relative;z-index:1;max-width:720px}
+.coach-welcome-kicker{display:flex;align-items:center;gap:8px;color:#d5c5ff;font-size:10px;font-weight:750;letter-spacing:.15em}
+.coach-welcome-copy h2{max-width:680px;margin:14px 0 7px;color:#fff;font-size:clamp(22px,3vw,32px);font-weight:680;letter-spacing:-.04em;line-height:1.16}
+.coach-welcome-copy p{margin:0;color:#d6cfee;font-size:13px;line-height:1.5}
+.coach-welcome-progress{position:relative;z-index:1;display:flex;align-items:center;gap:14px;min-width:190px;padding:14px 17px;border:1px solid rgba(255,255,255,.2);border-radius:16px;background:rgba(255,255,255,.09);backdrop-filter:blur(8px)}
+.coach-welcome-progress-ring{display:grid;width:52px;height:52px;place-content:center;justify-items:center;border:2px solid #c7aaff;border-radius:50%;background:rgba(255,255,255,.08)}
+.coach-welcome-progress-ring strong{font-size:17px;line-height:1}.coach-welcome-progress-ring small{margin-top:3px;color:#d3c7eb;font-size:8px;font-weight:700;letter-spacing:.09em}
+.coach-welcome-progress>span:last-child{display:grid;gap:5px}.coach-welcome-progress>span:last-child small{color:#d3c7eb;font-size:9px;font-weight:700;letter-spacing:.12em}.coach-welcome-progress>span:last-child strong{color:#fff;font-size:13px;font-weight:650}
+.coach-welcome-glow{position:absolute;right:15%;top:-130px;width:340px;height:340px;border-radius:50%;background:rgba(174,133,255,.16);filter:blur(2px);pointer-events:none}
+.coach-approved-page .coach-stage-nav{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px;margin:0 0 15px;padding:7px;border:1px solid #ebe8f3;border-radius:17px;background:#fff;box-shadow:0 5px 18px rgba(39,32,69,.035)}
+.coach-approved-page .coach-stage-nav button{display:flex;align-items:center;justify-content:flex-start;gap:10px;min-width:0;min-height:48px;padding:0 13px;border:1px solid transparent;border-radius:12px;background:transparent;color:#77758a;font-size:12px;font-weight:620;transition:background .18s,border-color .18s,color .18s,transform .18s}
+.coach-approved-page .coach-stage-nav button:hover:not(:disabled){transform:translateY(-1px);background:#f8f6fd;color:#5135a4}
+.coach-approved-page .coach-stage-nav button>span{display:grid;flex:0 0 27px;width:27px;height:27px;place-items:center;border-radius:9px;background:#f1eff6;color:#767187;font-size:11px;font-weight:750}
+.coach-approved-page .coach-stage-nav button.active{border-color:#e2d8ff;background:#f5f0ff;color:#5825ce;box-shadow:inset 0 0 0 1px rgba(118,67,231,.035)}
+.coach-approved-page .coach-stage-nav button.active>span{background:var(--coach-violet);color:#fff}
+.coach-approved-page .coach-stage-nav button.complete{color:#36816b}
+.coach-approved-page .coach-stage-nav button.complete>span{background:#e8f7f0;color:#26825c}
+.coach-approved-page .coach-stage-nav button:disabled{opacity:.55}
+.coach-approved-page .coach-step-session-toolbar{min-height:56px;margin-bottom:18px;padding:8px 3px;border-color:#e9e6f0}
+.coach-approved-page .coach-previous-questions.compact>.coach-secondary{min-height:39px;padding:0 13px;border:1px solid #e6def9;border-radius:11px;background:#fff;color:#5932bd;font-weight:650}
+.coach-approved-page .coach-stage-card,.coach-approved-page .coach-previous-interview,.coach-approved-page .coach-plan-title,.coach-approved-page .coach-lesson-progress{border-radius:19px;box-shadow:0 7px 23px rgba(42,35,70,.045)}
+.coach-approved-page .coach-stage-card{padding:25px;border-color:#eae7f1}
+.coach-approved-page .coach-card-kicker{color:#7648dc;letter-spacing:.13em}
+.coach-approved-page .coach-placement-builder h2,.coach-approved-page .coach-saved-plans h2,.coach-approved-page .coach-stage-card>h2{letter-spacing:-.025em}
+.coach-approved-page .coach-control-label select,.coach-approved-page .coach-control-label input{min-height:46px;border-radius:11px;border-color:#e4e1eb;background-color:#fff}
+.coach-approved-page .coach-jd-block,.coach-approved-page .coach-context-grid>div{border-radius:12px}
+.coach-approved-page .coach-primary,.coach-approved-page .coach-secondary{border-radius:11px}
+.coach-approved-page .coach-saved-list>button{border-radius:13px;transition:border-color .18s,background .18s,transform .18s}
+.coach-approved-page .coach-saved-list>button:hover{transform:translateY(-1px);border-color:#d9cbfa;background:#fbfaff}
+.coach-approved-page .coach-evidence-band{border-radius:14px}
+.coach-approved-page .coach-evidence-rows article{border-radius:11px}
+.coach-approved-page .coach-stage-error,.coach-approved-page .coach-stage-notice{border-radius:12px}
+.coach-approved-page .coach-plan-grid{gap:18px}
+.coach-approved-page .coach-day-card,.coach-approved-page .coach-scheduler{border-radius:19px}
+.coach-approved-page .coach-day-switch button,.coach-approved-page .coach-day-strip button{border-radius:10px}
+.coach-approved-page .coach-voice-diagnostic,.coach-approved-page .coach-diagnostic-question,.coach-approved-page .coach-diagnostic-live,.coach-approved-page .coach-diagnostic-transcript{border-radius:14px}
+.coach-approved-page .coach-lesson-stage .coach-combined-lesson{border-radius:20px}
+.coach-approved-page .coach-lesson-progress{border:1px solid #eae7f1;background:#fff}
+@media(max-width:900px){.coach-approved-page{padding:20px 20px 36px}.coach-welcome-band{min-height:155px;padding:24px}.coach-approved-page .coach-stage-nav{grid-template-columns:repeat(5,minmax(104px,1fr));overflow-x:auto}.coach-approved-page .coach-stage-nav button{padding-inline:10px;font-size:11px}}
+@media(max-width:600px){.coach-approved-page{padding:14px 14px 28px}.coach-welcome-band{align-items:flex-start;flex-direction:column;gap:18px;margin-bottom:14px;padding:22px 20px;border-radius:19px}.coach-welcome-copy h2{font-size:25px}.coach-welcome-progress{min-width:0;padding:9px 12px}.coach-welcome-progress-ring{width:44px;height:44px}.coach-approved-page .coach-stage-nav{gap:5px;padding:5px;border-radius:14px}.coach-approved-page .coach-stage-nav button{min-height:43px;gap:7px;padding-inline:8px}.coach-approved-page .coach-stage-nav button>span{flex-basis:23px;width:23px;height:23px}.coach-approved-page .coach-stage-card{padding:19px;border-radius:16px}.coach-approved-page .coach-step-session-toolbar{align-items:stretch}.coach-approved-page .coach-previous-questions.compact>.coach-secondary{justify-content:center}}
+@media(prefers-reduced-motion:reduce){.coach-approved-page .coach-stage-nav button,.coach-approved-page .coach-saved-list>button{transition:none}}
