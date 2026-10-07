@@ -26,7 +26,7 @@ for(const [decision,label] of [['shortlist','Shortlisted'],['reject','Rejected']
  await expect(page.getByText('46%',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Questions & feedback (1)'}).click();await expect(page.getByText(/No separate feedback was saved/)).toBeVisible();
  await page.getByRole('button',{name:'Recording & audio'}).click();await expect(page.getByLabel('Full interview audio')).toHaveAttribute('src',/recording.webm/);
- await page.setViewportSize({width:390,height:844});expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
+ await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
  });
 }
 test('pending reports never fetch protected details or media',async({page})=>{

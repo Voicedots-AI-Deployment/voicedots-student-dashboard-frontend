@@ -399,7 +399,7 @@ export function App() {
         </div>
         </div>
         <div className="sidebar-account">
-          <span className="avatar">
+          <NavLink className="sidebar-profile-link" to="/profile" aria-label="Open my profile"><span className="avatar">
             {student.full_name
               .split(/\s+/)
               .slice(0, 2)
@@ -409,7 +409,7 @@ export function App() {
           <div>
             <strong title={student.full_name}>{displayName(student.full_name)}</strong>
             <span title={student.roll_number}>{student.roll_number}</span>
-          </div>
+          </div></NavLink>
           <button
             className="icon-button"
             aria-label="Sign out"

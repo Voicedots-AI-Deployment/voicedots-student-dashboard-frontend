@@ -41,6 +41,9 @@ export type Report = {
   status: string;
   created_at: string;
   completed_at?: string;
+  started_at?: string | null;
+  duration_minutes?: number | null;
+  placement_decided_at?: string | null;
   target_role?: string;
   drive_id?: string;
   company_name?: string | null;

@@ -28,7 +28,7 @@ test('released report uses native sections with question feedback and a private 
   await page.getByRole('button',{name:'Recording & audio'}).click();
   await expect(page.getByText('The recording retention period has ended.')).toBeVisible();
   await page.setViewportSize({width:390,height:844});
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
 });
 
 test('a mismatched resume name requires a choice before replacing the Main Resume', async ({page}) => {

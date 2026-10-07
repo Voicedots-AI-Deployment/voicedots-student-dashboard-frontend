@@ -6,7 +6,7 @@ export function placementResult(value?: string | null) {
   if (["hold", "on_hold"].includes(key)) return {label:"On hold", tone:"hold", Icon:CirclePause, message:"Your placement decision is on hold. Check back here for an update."};
   return {label:"Decision pending", tone:"pending", Icon:Clock3, message:"Your interview feedback is ready. Your placement decision will appear here when it is shared."};
 }
-export function PlacementResult({value, compact=false}: {value?:string|null; compact?:boolean}) {
+export function PlacementResult({value, compact=false, decidedAt}: {value?:string|null; compact?:boolean; decidedAt?:string|null}) {
   const result=placementResult(value), Icon=result.Icon;
-  return compact ? <span className={`placement-outcome outcome-${result.tone}`}><Icon size={14}/>{result.label}</span> : <section className={`report-placement-outcome outcome-${result.tone}`} aria-label="Placement result"><span className="report-outcome-icon"><Icon size={25}/></span><div><span className="eyebrow">YOUR PLACEMENT RESULT</span><h2>{result.label}</h2><p>{result.message}</p></div></section>;
+  return compact ? <span className={`placement-outcome outcome-${result.tone}`}><Icon size={14}/>{result.label}</span> : <section className={`report-placement-outcome outcome-${result.tone}`} aria-label="Placement result"><span className="report-outcome-icon"><Icon size={25}/></span><div><span className="eyebrow">YOUR PLACEMENT RESULT</span><h2>{result.label}</h2><p>{result.message}</p>{decidedAt && result.tone !== "pending" && <span className="report-decision-date">{result.tone === "success" ? "Shortlisted" : "Decision shared"} on {new Date(decidedAt).toLocaleDateString("en-IN",{day:"numeric",month:"short",year:"numeric"})}</span>}</div></section>;
 }

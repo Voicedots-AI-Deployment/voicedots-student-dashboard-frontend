@@ -28,3 +28,40 @@
 @media(max-width:640px){.student-report-list.report-view-cards{grid-template-columns:1fr}.student-reports-toolbar{gap:10px}.student-reports-toolbar label.student-reports-search{min-width:0;width:100%}.student-reports-toolbar .placement-view-switcher{align-self:flex-start}.report-workspace .full-report-header{align-items:flex-start;flex-direction:column}.report-workspace .full-report-header h1{font-size:25px}.report-workspace .full-report-header .button{width:auto}.report-workspace .panel{padding:16px}.report-placement-outcome{padding:16px;gap:12px}.report-placement-outcome h2{font-size:20px}.report-score-block{gap:16px}.report-score-block h2{font-size:20px}.report-score-ring{width:106px;height:106px}.report-score-ring>div{width:90px;height:90px}.report-score-ring strong{font-size:25px}.report-score-ring span{font-size:9px}.report-question>summary{padding:14px;flex-wrap:wrap}.report-evidence-label{margin-left:42px}.report-question-content{padding:0 14px 14px}.report-section-heading{align-items:flex-start}.report-section-heading>span{display:none}.report-section-nav button{font-size:11px;padding:9px 10px}.report-question-cta{padding:16px}.report-score-row{grid-template-columns:100px 1fr 65px;gap:8px}.opportunity-outcome{padding:14px 16px 0}}
 .report-question>summary::after{content:"⌄";color:var(--muted);font-size:18px;line-height:1;transition:transform .15s}.report-question[open]>summary::after{transform:rotate(180deg)}
 .report-guidance-stack{display:grid;gap:18px}.report-speaking-metrics{display:flex;gap:24px;margin-bottom:12px}.report-speaking-metrics>div{display:grid;gap:4px}.report-speaking-metrics strong{font-size:24px;font-weight:500}.report-speaking-metrics span{color:var(--muted);font-size:11px}.report-filler-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:12px}.report-filler-chips>span{background:var(--soft);border-radius:8px;padding:5px 9px;color:var(--muted);font-size:11px}.report-speaking-scores{margin-top:12px;display:grid;gap:10px}.report-speaking-scores>div{display:flex;justify-content:space-between;font-size:12px;color:var(--muted)}.report-feedback-loading{font-size:12px;color:var(--muted);padding:12px 14px;border-radius:10px;background:var(--soft)}.report-question-content .report-feedback-evidence{font-size:11px;border-top:1px solid var(--border);padding-top:10px}
+/* Shared report and profile finishing details. */
+.report-table-actions{display:flex;align-items:center;gap:8px;white-space:nowrap}
+.report-download-icon{padding:9px!important;min-width:36px;justify-content:center}
+.reports-table th:last-child{width:190px}
+.reports-table tbody tr:hover{background:var(--soft)}
+.report-interview-details{padding:22px;gap:16px}
+.report-interview-details h2{font-size:18px;font-weight:500;margin:5px 0 0}
+.report-interview-details dl{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:16px 24px;margin:0}
+.report-interview-details dt{font-size:11px;color:var(--muted);margin-bottom:5px}
+.report-interview-details dd{margin:0;font-size:13px;overflow-wrap:anywhere}
+.report-community{display:flex;align-items:center;justify-content:space-between;gap:16px;border-top:1px solid var(--border);padding-top:16px}
+.report-community h3{font-size:14px;font-weight:500;margin:0 0 4px}
+.report-community p{font-size:12px;color:var(--muted);margin:0}
+.report-community .coach-contribute-trigger{flex-shrink:0;border:1px solid var(--border);border-radius:10px;padding:10px 14px;background:var(--soft);color:var(--primary);font:inherit;font-size:12px;font-weight:500}
+.report-decision-date{display:block;margin-top:8px;font-size:12px;opacity:.85}
+.sidebar-profile-link{display:flex;align-items:center;gap:9px;flex:1;min-width:0;color:inherit;text-decoration:none;border-radius:9px}
+.sidebar-profile-link>div{min-width:0;flex:1}.sidebar-profile-link:hover strong{color:var(--primary)}
+.sidebar-profile-link:focus-visible{outline:2px solid var(--primary);outline-offset:4px}
+.profile-panel{padding:22px;gap:16px}
+.profile-panel .profile-heading{padding-bottom:16px}
+.profile-panel .profile-details{margin:0;padding:0;gap:16px 24px}
+.profile-panel .profile-details dt{margin-bottom:5px}
+.profile-panel .profile-date-form{max-width:none;margin:0;padding:16px 0 0;gap:8px}
+.profile-panel .profile-date-form input{padding:9px 12px}
+.profile-panel .profile-date-form .button{padding:10px 14px;font-size:12px}
+.profile-panel>p.muted{margin:0;font-size:12px}
+.dashboard-content .career-tools:has(#resume-library){width:100%;max-width:none;margin:0;gap:16px}
+.dashboard-content #resume-library{max-width:none;margin:0;padding:22px;gap:16px}
+#resume-library .saved-resumes-heading p{max-width:850px;font-size:12px}
+#resume-library .saved-resume-row{grid-template-columns:minmax(200px,1fr) auto;padding:16px 0;gap:16px}
+#resume-library .profile-resume-studio-link{margin:0;padding-top:16px;gap:12px}
+@media(max-width:900px){#resume-library .saved-resume-row{grid-template-columns:1fr}#resume-library .saved-resume-row .career-actions{justify-content:flex-start;flex-wrap:wrap}}
+@media(max-width:640px){.report-interview-details dl{grid-template-columns:repeat(2,minmax(0,1fr));gap:14px}.report-community{align-items:flex-start;flex-direction:column}.profile-panel,.dashboard-content #resume-library{padding:18px}.profile-panel .profile-details{grid-template-columns:1fr;gap:14px}.report-interview-details{padding:18px}}
+.report-overview-content>.report-interview-details{min-width:0;display:grid;grid-template-columns:minmax(0,1fr)}
+.report-community{flex-wrap:wrap}.report-community>*{min-width:0;max-width:100%;overflow-wrap:anywhere}
+
+.profile-panel .profile-date-form>label{margin:0}

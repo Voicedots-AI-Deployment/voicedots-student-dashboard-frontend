@@ -69,9 +69,9 @@ function ReportList({ reports, search = "", filter = "all", view = "list" }: { r
   });
   return (
     <div className={`student-report-list report-view-${view}`}>
-      {view === "table" && visible.length > 0 ? <div className="reports-table-scroll" role="region" aria-label="Interview reports table" tabIndex={0}><table className="reports-table"><caption className="sr-only">Your interview reports</caption><thead><tr><th>Company & role</th><th>Interview</th><th>Date</th><th>Score</th><th>Feedback</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{visible.map(report => {
+      {view === "table" && visible.length > 0 ? <div className="reports-table-scroll" role="region" aria-label="Interview reports table" tabIndex={0}><table className="reports-table"><thead><tr><th>Company & role</th><th>Interview</th><th>Date</th><th>Score</th><th>Feedback</th><th>Actions</th></tr></thead><tbody>{visible.map(report => {
         const pending=report.report?.status === "awaiting_release" || report.status !== "released";
-        return <tr key={report.evaluation_id}><td><span>{report.company_name || "Self practice"}</span><strong>{report.target_role || "Interview report"}</strong></td><td>{report.drive_id ? "Placement" : "Practice"}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</td><td>{date(report.completed_at || report.created_at)}</td><td>{pending || report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</td><td>{pending ? "Awaiting release" : "Feedback ready"}</td><td>{!pending && <Link className="button secondary small" aria-label={`Open report for ${report.target_role || "interview"}`} to={`/reports/${encodeURIComponent(report.session_id)}`}>View report <ArrowRight size={14}/></Link>}</td></tr>;
+        return <tr key={report.evaluation_id}><td><span>{report.company_name || "Self practice"}</span><strong>{report.target_role || "Interview report"}</strong></td><td>{report.drive_id ? "Placement" : "Practice"}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</td><td>{date(report.completed_at || report.created_at)}</td><td>{pending || report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</td><td>{pending ? "Awaiting release" : "Feedback ready"}</td><td><div className="report-table-actions">{!pending && <><Link className="button secondary small" aria-label={`Open report for ${report.target_role || "interview"}`} to={`/reports/${encodeURIComponent(report.session_id)}`}>View report <ArrowRight size={14}/></Link><a className="button secondary small report-download-icon" aria-label={`Download report for ${report.target_role || "interview"}`} title="Download PDF" href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.pdf`)}><Download size={16}/></a></>}</div></td></tr>;
       })}</tbody></table></div> : visible.map((report) => {
         const pending = report.report?.status === "awaiting_release" || report.status !== "released";
         const assessed = report.report?.overall_score != null && !pending;
@@ -787,6 +787,7 @@ export function Growth() {
 export function Profile() {
   const { identity, refresh } = useAuth();
   const student = identity!.student;
+  useEffect(() => { void refresh(); }, [refresh]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

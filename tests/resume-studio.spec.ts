@@ -135,6 +135,7 @@ test("Resume Studio landing actions have consistent button sizing and alignment"
 
 test("Resume Studio Overview shares one aligned container at desktop widths",async({page})=>{
  await mockResumeStudio(page);await page.goto("/resume-studio");
+ await expect(page.locator(".rs-project-card-new").first()).toBeVisible();
  for(const width of [1920,1440,1280]){
   await page.setViewportSize({width,height:900});
   const layout=await page.evaluate(()=>{
