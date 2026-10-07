@@ -1572,7 +1572,7 @@ test("replacing the active resume with identical content remains the single pers
   await expect(page.locator(".saved-resume-row")).toHaveCount(1);
 });
 
-test("Career Coach labels an evidence fallback and remains readable on mobile with limited evidence", async ({ page }) => {
+test("Career Coach retries a failed AI request without presenting synthetic results", async ({ page }) => {
   await mockStudent(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [
@@ -1582,14 +1582,10 @@ test("Career Coach labels an evidence fallback and remains readable on mobile wi
   let analysisCalls = 0;
   await page.route("**/api/student/career/finder", route => {
     analysisCalls += 1;
-    return route.fulfill({ json: analysisCalls === 1 ? {
-      analysis_status: "evidence_fallback",
-      analysis_note: "The AI career analysis service is unavailable. These results are an evidence-only fallback, not a complete AI analysis.",
-      career_profile: "There is not enough specific evidence in this resume to identify a current-fit role yet.",
-      strongest_current_fit: "Not enough resume evidence yet",
-      strongest_growth_path: "Explore adjacent paths as you build more evidence.",
-      recommended_roles: [],
-    } : {
+    if (analysisCalls === 1) return route.fulfill({ status: 503, json: {
+      detail: "The AI career analysis service could not complete the request. Please retry.",
+    } });
+    return route.fulfill({ json: {
       analysis_status: "ai", career_profile: "Your interests and resume evidence support a path to explore.",
       strongest_current_fit: "Not enough resume evidence yet", strongest_growth_path: "Data Analyst", recommended_roles: [],
     } });
@@ -1599,10 +1595,10 @@ test("Career Coach labels an evidence fallback and remains readable on mobile wi
   await page.getByRole("button", { name: "Next question" }).click();
   await page.getByRole("button", { name: "Next question" }).click();
   await page.getByRole("button", { name: "Next question" }).click();
-  await page.getByRole("button", { name: "Explore career paths" }).click();
-  await expect(page.getByText("Evidence-only analysis")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Not enough role-specific evidence yet" })).toBeVisible();
-  await page.getByRole("button", { name: "Retry AI analysis" }).click();
+  await expect.poll(() => analysisCalls).toBe(1);
+  await expect(page.getByRole("alert")).toContainText("AI career analysis service could not complete the request");
+  await expect(page.getByRole("heading", { name: "Your career picture" })).toHaveCount(0);
+  await page.getByRole("button", { name: "Try again" }).click();
   await expect(page.getByText("AI analysis grounded against extracted resume evidence")).toBeVisible();
   expect(analysisCalls).toBe(2);
   const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth }));
