@@ -503,7 +503,7 @@ test("practice View resume opens an in-page preview of the active PDF", async ({
   const dialog = page.getByRole("dialog", { name: /active-resume\.pdf/i });
   await expect(dialog).toBeVisible();
   await expect(dialog.locator("iframe")).toHaveAttribute("title", "Resume preview: active-resume.pdf");
-  await dialog.getByRole("button", { name: "Close resume preview" }).click();
+  await page.keyboard.press("Escape");
   await expect(dialog).toHaveCount(0);
 });
 
@@ -1775,4 +1775,58 @@ test("overview shows up to four active drives and balanced feedback with compact
   await page.screenshot({path:"/root/voicedots/artifacts/overview-step/overview-pending-feedback.png",fullPage:true});
   await page.getByTestId("overview-hero").getByRole("link",{name:"Start an interview"}).click();
   await expect(page).toHaveURL(/\/practice$/);
+});
+
+test("placement card and table views preserve filters, data and alphabetical sorting", async ({page}) => {
+  await mockStudent(page);
+  await page.setViewportSize({width:1706,height:960});
+  const drives = [
+    {id:'beta',company_name:'Beta Co',role_title:'Senior Backend Developer',location:'Chennai',status:'active',eligibility_status:'eligible',interview_status:'in_progress',interview_action:'resume',interview_duration_minutes:30,interview_max_attempts:3,interview_attempts_used:1,interview_current_attempt_number:1,salary_min_amount:1000000,salary_type:'fixed',job_type:'full_time'},
+    {id:'alpha',company_name:'Alpha Co',role_title:'Data Analyst',location:'Bengaluru',status:'active',eligibility_status:'eligible',interview_status:'open',interview_action:'start',interview_duration_minutes:45,interview_max_attempts:2,interview_attempts_used:0,job_type:'full_time'},
+    {id:'locked',company_name:'Locked Co',role_title:'Engineer',status:'active',eligibility_status:'eligible',is_locked:true,interview_status:'in_progress',interview_action:'resume'},
+  ];
+  await page.route('**/api/student/drives',route=>route.fulfill({json:drives}));
+  await page.route('**/api/student/drives/alpha/interview-context',route=>route.fulfill({json:{drive_id:'alpha',company_name:'Alpha Co',role_title:'Data Analyst',action:'start',main_resume_available:true,interview_window:'open',can_start:true,max_attempts:2,attempts_used:0,attempt_number:1,job_description:'Analyze business data'}}));
+  await page.goto('/placements');
+  await expect(page.locator('.drive-card')).toHaveCount(3);
+  const cards=await page.locator('.drive-card').evaluateAll(nodes=>Object.fromEntries(nodes.map(n=>[n.getAttribute('data-drive-id'),n.textContent!.replace(/\s+/g,' ')])));
+  const heights=await page.locator('.drive-card').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
+  expect(heights.every(h=>h<400)).toBe(true);
+  await page.getByLabel('Sort by').selectOption('company');
+  await expect(page.locator('.placement-group').first().locator('.drive-company-name').first()).toHaveText('Alpha Co');
+  await page.getByRole('button',{name:'Table',exact:true}).click();
+  await expect(page.getByRole('button',{name:'Table',exact:true})).toHaveAttribute('aria-pressed','true');
+  await expect(page.locator('.placement-table tbody tr')).toHaveCount(3);
+  for(const drive of drives){const row=page.locator(`tr[data-drive-id="${drive.id}"]`);await expect(row).toContainText(drive.company_name);await expect(row).toContainText(drive.role_title);if(drive.location)await expect(row).toContainText(drive.location);}
+  await expect(page.locator('tr[data-drive-id="beta"]')).toContainText('Attempt 1 in progress');
+  await expect(page.locator('tr[data-drive-id="beta"]')).toContainText('2 remaining');
+  await expect(page.locator('tr[data-drive-id="locked"]')).toContainText('Locked');
+  await page.getByPlaceholder('Company or role').fill('Alpha');
+  await expect(page.locator('.placement-table tbody tr')).toHaveCount(1);
+  await page.locator('.placement-table tbody tr').getByRole('button',{name:/View opportunity/}).click();
+  await expect(page.getByRole('dialog')).toContainText('Analyze business data');
+  await page.getByRole('button',{name:'Close details'}).click();
+  await page.getByRole('button',{name:'Cards',exact:true}).click();
+  await expect(page.locator('.drive-card')).toHaveCount(1);
+  await expect(page.locator('.drive-card')).toContainText('Alpha Co');
+  await page.getByPlaceholder('Company or role').fill('');
+  await page.getByLabel('Interview status').selectOption('open');
+  await expect(page.locator('.drive-card')).toHaveCount(1);
+  expect(cards.beta).toContain('Beta Co');
+  await page.setViewportSize({width:390,height:844});
+  await page.getByRole('button',{name:'Table',exact:true}).click();
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+});
+
+test("placement details ignore a stale response after another opportunity opens", async ({page}) => {
+  await mockStudent(page);
+  await page.route('**/api/student/drives',route=>route.fulfill({json:[{id:'a',company_name:'Alpha',role_title:'Analyst',status:'active',interview_status:'open',interview_action:'start'},{id:'b',company_name:'Beta',role_title:'Developer',status:'active',interview_status:'open',interview_action:'start'}]}));
+  await page.route('**/api/student/drives/*/interview-context',async route=>{const isAlpha=route.request().url().includes('/a/');if(isAlpha)await new Promise(resolve=>setTimeout(resolve,800));await route.fulfill({json:{drive_id:isAlpha?'a':'b',company_name:isAlpha?'Alpha':'Beta',role_title:isAlpha?'Analyst':'Developer',job_description:isAlpha?'Only Alpha details':'Only Beta details',main_resume_available:true,interview_window:'open',action:'start',max_attempts:1,attempts_used:0,attempt_number:1}})});
+  await page.goto('/placements');
+  await page.locator('[data-drive-id="a"]').getByRole('button',{name:'View opportunity'}).click();
+  await page.getByRole('button',{name:'Close opportunity details'}).click();
+  await page.locator('[data-drive-id="b"]').getByRole('button',{name:'View opportunity'}).click();
+  await expect(page.getByRole('dialog')).toContainText('Only Beta details');
+  await page.waitForTimeout(1000);
+  await expect(page.getByRole('dialog')).not.toContainText('Only Alpha details');
 });

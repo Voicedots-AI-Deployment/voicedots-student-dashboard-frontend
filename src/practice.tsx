@@ -50,7 +50,7 @@ export function Practice() {
   const availableDrives = (drives.data || []).filter((drive) => {
     const actionable = ["start", "resume", "retry_preparation"].includes(drive.interview_action || "");
     const releasedResult = drive.interview_result_available === true;
-    return drive.status === "active"
+    return !drive.is_locked && drive.status === "active"
       && drive.eligibility_status === "eligible"
       && drive.main_resume_available === true
       && !["closed", "expired"].includes(drive.interview_status || "")
@@ -63,7 +63,10 @@ export function Practice() {
   const [resumePreview, setResumePreview] = useState<File | null>(null);
   const [role, setRole] = useState(() => sessionStorage.getItem(`${draftKey}:role`) || "");
   const [duration, setDuration] = useState(() => sessionStorage.getItem(`${draftKey}:duration`) || "30");
-  const [difficulty, setDifficulty] = useState<"dynamic" | "beginner" | "intermediate" | "advanced">("dynamic");
+  const [difficulty, setDifficulty] = useState<"dynamic" | "beginner" | "intermediate" | "advanced">(() => {
+    const saved = sessionStorage.getItem(`${draftKey}:difficulty`);
+    return saved === "beginner" || saved === "intermediate" || saved === "advanced" ? saved : "dynamic";
+  });
   const [jd, setJd] = useState(() => sessionStorage.getItem(`${draftKey}:jd`) || "");
   const [jdBusy, setJdBusy] = useState(false);
   const [jdError, setJdError] = useState("");
@@ -86,8 +89,9 @@ export function Practice() {
   useEffect(() => {
     sessionStorage.setItem(`${draftKey}:role`, role);
     sessionStorage.setItem(`${draftKey}:duration`, duration);
+    sessionStorage.setItem(`${draftKey}:difficulty`, difficulty);
     sessionStorage.setItem(`${draftKey}:jd`, jd);
-  }, [draftKey, role, duration, jd]);
+  }, [draftKey, role, duration, difficulty, jd]);
   const alive = useRef(true);
   const library = useResource<{ resumes: Resume[] }>(
     "/api/student/resume-library",
@@ -201,6 +205,7 @@ export function Practice() {
   function remember(result: Preparation) {
     sessionStorage.removeItem(`${draftKey}:role`);
     sessionStorage.removeItem(`${draftKey}:duration`);
+    sessionStorage.removeItem(`${draftKey}:difficulty`);
     sessionStorage.removeItem(`${draftKey}:jd`);
     sessionStorage.setItem(key, JSON.stringify(result));
     setPreparation(result);
@@ -210,6 +215,7 @@ export function Practice() {
     sessionStorage.removeItem(`${key}_upload`);
     sessionStorage.removeItem(`${draftKey}:role`);
     sessionStorage.removeItem(`${draftKey}:duration`);
+    sessionStorage.removeItem(`${draftKey}:difficulty`);
     sessionStorage.removeItem(`${draftKey}:jd`);
     setPreparation(null);
     setPollError("");
@@ -553,7 +559,7 @@ export function Practice() {
                   </label>
                   <label>Interview difficulty
                     <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
-                      <option value="dynamic">Dynamic · based on resume experience</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
+                      <option value="dynamic">Personalized</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
                     </select>
                   </label>
                 </div>

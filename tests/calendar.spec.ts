@@ -103,6 +103,11 @@ test.describe("Student Calendar", () => {
     await expect(page.locator(".calendar-grid.week")).toBeVisible();
     await page.getByRole("button", { name: "Day", exact: true }).click();
     await expect(page.locator(".calendar-grid.day")).toBeVisible();
+    const badge = page.locator(".calendar-grid.day .calendar-day-number");
+    const shape = await badge.evaluate(node => {const b=node.getBoundingClientRect();return {width:b.width,height:b.height,weight:Number(getComputedStyle(node).fontWeight)};});
+    expect(shape.width).toBeGreaterThanOrEqual(32);
+    expect(shape.width).toBe(shape.height);
+    expect(shape.weight).toBeLessThanOrEqual(500);
     await page.getByRole("button", { name: "Agenda", exact: true }).click();
     await expect(page.locator(".calendar-agenda-view")).toBeVisible();
   });

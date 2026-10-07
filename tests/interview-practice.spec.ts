@@ -60,6 +60,8 @@ test("Practice mode uses editable setup, one Main Resume and the standard four-p
   await expect(page.getByLabel("Target role", { exact: true })).toBeEditable();
   await expect(page.getByLabel("Interview duration")).toBeEnabled();
   await expect(page.getByLabel("Interview difficulty")).toBeEnabled();
+  await expect(page.getByLabel("Interview difficulty").locator("option:checked")).toHaveText("Personalized");
+  await expect(page.getByLabel("Interview difficulty")).toHaveValue("dynamic");
   await expect(page.getByLabel("Job description")).toBeEditable();
   const fieldSpacing = await page.evaluate(() => {
     const role = document.querySelector('.interview-fields label');
@@ -98,10 +100,12 @@ test("practice setup fields persist in session storage when returning to the sec
   await mockPortal(page);
   await page.goto("/practice");
   await page.getByLabel("Target role",{exact:true}).fill("Platform Engineer");
+  await page.getByLabel("Interview difficulty").selectOption("advanced");
   await page.getByLabel("Job description").fill("Build dependable APIs for students.");
   await page.getByRole("link",{name:"Calendar"}).click();
   await page.getByRole("link",{name:"Interview practice"}).click();
   await expect(page.getByLabel("Target role",{exact:true})).toHaveValue("Platform Engineer");
+  await expect(page.getByLabel("Interview difficulty")).toHaveValue("advanced");
   await expect(page.getByLabel("Job description")).toHaveValue("Build dependable APIs for students.");
   expect(await page.evaluate(()=>Object.keys(sessionStorage).some(key=>key.startsWith("vd_practice_draft_student-1")))).toBe(true);
 });
