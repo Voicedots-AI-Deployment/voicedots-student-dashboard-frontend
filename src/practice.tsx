@@ -618,7 +618,7 @@ export function Practice() {
             {mode === "practice" ? practicePanel.map((person) => <div className="panel-person" key={person.n}><span>{person.n}</span><div><strong>{person.title}</strong><p>{person.text}</p></div></div>)
               : !selectedDrive ? <div className="interview-empty-state"><strong>Choose an active opportunity</strong><p>The placement panel will appear here after you select a drive.</p></div>
                 : contextLoading ? <p className="muted" role="status">Loading the configured panel…</p>
-                : panel.length ? panel.map((person) => <div className="panel-person placement-panel-person" key={`${person.order}-${person.track}`}><span>{String(person.order).padStart(2, "0")}</span><div><strong>{person.role}</strong><p className="placement-panel-role">{person.name}</p>{person.persona && <p>{person.persona} approach</p>}{person.description && <p className="placement-panel-description">{person.description}</p>}</div></div>)
+                : panel.length ? panel.map((person) => <div className="panel-person placement-panel-person" key={`${person.order}-${person.track}`}><span>{String(person.order).padStart(2, "0")}</span><div><strong className="placement-panel-role">{person.role}</strong></div></div>)
                   : <div className="interview-empty-state"><strong>Panel details unavailable</strong><p>The placement team has not provided interviewer details for this opportunity.</p></div>}
           </aside>
         </div>

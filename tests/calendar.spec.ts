@@ -187,3 +187,5 @@ test.describe("Student Calendar", () => {
     await expect(page.getByRole("button", { name: "Create Event" })).toBeVisible();
   });
 });
+
+ test('expanded optional event fields stay compact and aligned',async({page})=>{await mockStudent(page);await page.goto('/calendar');await page.getByRole('button',{name:'Create Event',exact:true}).click();await page.getByText('Location, meeting link & notes',{exact:true}).click();const fields=page.locator('.calendar-event-extras label');await expect(fields).toHaveCount(3);const boxes=await fields.evaluateAll(nodes=>nodes.map(n=>({top:n.getBoundingClientRect().top,bottom:n.getBoundingClientRect().bottom,margin:getComputedStyle(n).marginTop})));for(let i=1;i<boxes.length;i++)expect(boxes[i].top-boxes[i-1].bottom).toBeLessThanOrEqual(14);for(const box of boxes)expect(box.margin).toBe('0px');await page.getByLabel('Location',{exact:true}).fill('Library');await page.getByLabel('Meeting link',{exact:true}).fill('https://example.com/meeting');await page.getByLabel('Description / notes',{exact:true}).fill('Prepare');await expect(page.getByRole('button',{name:'Create event',exact:true})).toBeEnabled();});

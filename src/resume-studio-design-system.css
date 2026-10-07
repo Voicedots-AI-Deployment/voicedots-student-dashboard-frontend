@@ -1489,3 +1489,5 @@
 
 .resume-studio .rs-project-card-new .rs-card-status { position: absolute; top: 8px; right: 8px; z-index: 2; display: flex; align-items: center; justify-content: flex-end; pointer-events: none; }
 .resume-studio .rs-project-card-new .rs-project-open > span:not(.rs-card-paper):not(.rs-main-label) { height: 36px; overflow: hidden; }
+
+.resume-studio.rs-library-home .rs-home-intro h1{font-family:Poppins,sans-serif;font-size:28px;font-weight:500;line-height:1.3;letter-spacing:-.03em}.resume-studio .rs-ai-hero strong{font-family:inherit;font-weight:500}

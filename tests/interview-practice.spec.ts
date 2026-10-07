@@ -135,6 +135,9 @@ test("Placement mode filters unavailable drives and renders only its configured 
   await expect(page.locator(".placement-panel-person")).toHaveCount(2);
   await expect(page.locator(".placement-panel-person").nth(0)).toContainText("Technical Interviewer");
   await expect(page.locator(".placement-panel-person").nth(1)).toContainText("Manager Round");
+  await expect(page.locator('.placement-panel-person p')).toHaveCount(0);
+  const panelHeights=await page.locator('.interview-setup-grid>.panel').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
+  expect(Math.abs(panelHeights[0]-panelHeights[1])).toBeLessThan(2);
   await expect(page.getByText("HR interviewer", { exact: true })).toHaveCount(0);
   const placementCardGap = await page.evaluate(() => {
     const setup = document.querySelector('.interview-setup-grid');
