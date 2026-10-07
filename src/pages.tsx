@@ -1,3 +1,4 @@
+import { PlacementResult } from "./report-result";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
 import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from "react";
@@ -60,16 +61,19 @@ function safeAttemptNumber(value: unknown, fallback = 1, maximum?: unknown): num
   return Number.isFinite(cap) && cap >= 1 ? Math.min(normalized, Math.floor(cap)) : normalized;
 }
 
-function ReportList({ reports, search = "", filter = "all" }: { reports: Report[]; search?: string; filter?: string }) {
+function ReportList({ reports, search = "", filter = "all", view = "list" }: { reports: Report[]; search?: string; filter?: string; view?: "list" | "cards" | "table" }) {
   const visible = reports.filter((report) => {
     const category = report.drive_id ? "placement" : "practice";
-    const query = `${report.company_name || ""} ${report.target_role || ""} ${report.report?.executive_summary || ""}`.toLowerCase();
+    const query = `${report.company_name || ""} ${report.target_role || ""} ${report.report?.readiness || ""}`.toLowerCase();
     return (filter === "all" || filter === category) && query.includes(search.trim().toLowerCase());
   });
   return (
-    <div className="student-report-list">
-      {visible.map((report) => {
-        const pending = report.report?.status === "awaiting_release";
+    <div className={`student-report-list report-view-${view}`}>
+      {view === "table" && visible.length > 0 ? <div className="reports-table-scroll" role="region" aria-label="Interview reports table" tabIndex={0}><table className="reports-table"><caption className="sr-only">Your interview reports</caption><thead><tr><th>Company & role</th><th>Interview</th><th>Date</th><th>Score</th><th>Feedback</th><th><span className="sr-only">Actions</span></th></tr></thead><tbody>{visible.map(report => {
+        const pending=report.report?.status === "awaiting_release" || report.status !== "released";
+        return <tr key={report.evaluation_id}><td><span>{report.company_name || "Self practice"}</span><strong>{report.target_role || "Interview report"}</strong></td><td>{report.drive_id ? "Placement" : "Practice"}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</td><td>{date(report.completed_at || report.created_at)}</td><td>{pending || report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</td><td>{pending ? "Awaiting release" : "Feedback ready"}</td><td>{!pending && <Link className="button secondary small" aria-label={`Open report for ${report.target_role || "interview"}`} to={`/reports/${encodeURIComponent(report.session_id)}`}>View report <ArrowRight size={14}/></Link>}</td></tr>;
+      })}</tbody></table></div> : visible.map((report) => {
+        const pending = report.report?.status === "awaiting_release" || report.status !== "released";
         const assessed = report.report?.overall_score != null && !pending;
         return <article className="student-report-card" key={report.evaluation_id}>
           <div className="student-report-card__icon"><FileText size={19} /></div>
@@ -80,12 +84,12 @@ function ReportList({ reports, search = "", filter = "all" }: { reports: Report[
             </div>
             <h2>{report.company_name ? `${report.company_name} · ` : ""}{report.target_role || "Interview report"}</h2>
             <p className="student-report-meta">{date(report.completed_at || report.created_at)}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</p>
-            {report.report?.executive_summary && <p className="student-report-summary">{report.report.executive_summary}</p>}
+
 
           </div>
           <div className="student-report-card__result">
             {pending ? <><strong className="student-report-pending">In review</strong><span>Your placement team will share feedback here.</span></> : <><strong>{report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</strong><span>{report.report?.readiness ? humanize(report.report.readiness) : report.report?.overall_score == null ? "Assessment pending" : "Feedback ready"}</span></>}
-            {report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
+
             {report.status === "released" && !pending && <div className="report-actions"><Link
               aria-label={`Open report for ${report.target_role || "interview"}`}
               to={`/reports/${encodeURIComponent(report.session_id)}`}
@@ -432,14 +436,6 @@ function placementPresentation(drive: Drive) {
   };
 }
 
-const decisionTone = (value?: string) => {
-  const key = (value || "undecided").toLowerCase().replace(/[-\s]+/g, "_");
-  if (key.includes("shortlist")) return "shortlisted";
-  if (key.includes("reject")) return "rejected";
-  if (key.includes("hold")) return "on-hold";
-  return "undecided";
-};
-
 export function Placements() {
   const resource = useResource<Drive[]>("/api/student/drives");
   const navigate = useNavigate();
@@ -611,7 +607,7 @@ export function Placements() {
             <div className="placement-group-heading"><div><h2 id={`placement-group-${group.key}`}>{group.title}</h2><p>{group.description}</p></div><span>{group.drives.length}</span></div>
             {view === "table" ? <div className="placement-table-scroll" role="region" aria-label={`${group.title} opportunities`} tabIndex={0}><table className="placement-table"><caption className="sr-only">{group.title} placement opportunities</caption><thead><tr><th scope="col">Company & role</th><th scope="col">Location & window</th><th scope="col">Interview</th><th scope="col">Attempts</th><th scope="col">Compensation</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{group.drives.map(drive => {
               const info = placementPresentation(drive);
-              return <tr key={drive.id} data-drive-id={drive.id}><td><span className="placement-table-company">{drive.company_name}</span><strong>{drive.role_title}</strong><span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span></td><td><span>{drive.location || "Location to be announced"}</span><small>{info.window}</small></td><td><span className={`pill ${info.status === "Locked" ? "placement-locked-badge" : ""}`}>{info.status}</span><small>{info.interview}</small></td><td><span>{info.attempts}</span></td><td><span>{info.compensation}</span><small>{humanize(drive.job_type || "Job type not set")}</small></td><td><button className="button secondary small" aria-label={`View opportunity at ${drive.company_name} for ${drive.role_title}`} onClick={() => void select(drive)}>View opportunity <ArrowRight size={14}/></button></td></tr>;
+              return <tr key={drive.id} data-drive-id={drive.id}><td><span className="placement-table-company">{drive.company_name}</span><strong>{drive.role_title}</strong><span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span></td><td><span>{drive.location || "Location to be announced"}</span><small>{info.window}</small></td><td><span className={`pill ${info.status === "Locked" ? "placement-locked-badge" : ""}`}>{info.status}</span><small>{info.interview}</small>{drive.placement_decision && <PlacementResult value={drive.placement_decision} compact/>}</td><td><span>{info.attempts}</span></td><td><span>{info.compensation}</span><small>{humanize(drive.job_type || "Job type not set")}</small></td><td><button className="button secondary small" aria-label={`View opportunity at ${drive.company_name} for ${drive.role_title}`} onClick={() => void select(drive)}>View opportunity <ArrowRight size={14}/></button></td></tr>;
             })}</tbody></table></div> : <div className="drive-grid">
             {group.drives.map((drive) => (
               <article className="panel drive-card" key={drive.id} data-drive-id={drive.id}>
@@ -637,6 +633,7 @@ export function Placements() {
                 </p>
                 <p className="drive-attempt-summary"><span className="drive-interview-status">{info.status}</span><span>{info.attempts}</span></p>
                 <p className="drive-interview-summary">{info.interview}</p>
+                {drive.placement_decision && <PlacementResult value={drive.placement_decision} compact/>}
                 <div className="drive-card-meta"><span>{humanize(drive.job_type || "Job type not set")}</span><span>{info.compensation}</span></div>
                 {drive.main_resume_available === false && <p className="drive-resume-prompt">Upload your Main Resume in <Link to="/profile">My Profile</Link> before starting an interview.</p>}
                 <button
@@ -691,6 +688,7 @@ export function Placements() {
           {busy && <p className="opportunity-loading" role="status">Checking your interview assignment…</p>}
           {error && <div className="opportunity-error"><ErrorMessage message={error}/></div>}
           {context?.main_resume_available === false && <div className="placement-resume-callout" role="status"><strong>A Main Resume is required for every placement interview.</strong><span>Upload or select your Main Resume in My Profile. You can return here afterward and continue with the same resume.</span><Link className="button secondary" to="/profile">Go to My Profile</Link></div>}
+          {selected.placement_decision && <div className="opportunity-outcome"><PlacementResult value={selected.placement_decision}/></div>}
           <div className="opportunity-layout">
             <main className="opportunity-main">
               {(context?.company_description || selected.company_description || companyWebsite || companyLinkedIn) && <section className="opportunity-section" aria-labelledby="company-about-heading">
@@ -739,6 +737,7 @@ export function Placements() {
 
 export function Reports() {
   const resource = useResource<{ reports: Report[] }>("/api/student/reports");
+  const [view, setView] = useState<"cards" | "table">("cards");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const reports = resource.data?.reports || [];
@@ -768,10 +767,11 @@ export function Reports() {
             <article><span>TOP SCORE</span><strong>{latestScore == null ? "—" : score(latestScore)}</strong><small>Across released reports</small></article>
           </section>
           <section className="student-reports-toolbar" aria-label="Find a report">
-            <label className="student-reports-search"><Search size={17}/><input aria-label="Search reports" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company, role, or feedback" /></label>
+            <label className="student-reports-search"><Search size={17}/><input aria-label="Search reports" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company or role" /></label>
             <label className="student-reports-filter"><select aria-label="Interview type" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All interviews</option><option value="placement">Placement interviews</option><option value="practice">Practice interviews</option></select></label>
+            <div className="placement-view-switcher" role="group" aria-label="Reports view"><button aria-pressed={view === "cards"} onClick={() => setView("cards")}><LayoutGrid size={15}/>Cards</button><button aria-pressed={view === "table"} onClick={() => setView("table")}><Table2 size={15}/>Table</button></div>
           </section>
-          {reports.length ? <ReportList reports={reports} search={search} filter={filter}/> : <section className="panel"><Empty title="Your feedback starts here" action>Your interview reports will appear here when an interview has been reviewed and the report is ready.</Empty></section>}
+          {reports.length ? <ReportList reports={reports} search={search} filter={filter} view={view}/> : <section className="panel"><Empty title="Your feedback starts here" action>Your interview reports will appear here when an interview has been reviewed and the report is ready.</Empty></section>}
         </>}
       </ResourceState>
     </div>
