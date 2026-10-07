@@ -182,7 +182,7 @@ test("overview is honest about missing data and is responsive", async ({
   await expect(
     page.getByRole("heading", { name: "Hello, Asha." }),
   ).toBeVisible();
-  await expect(page.getByTestId("overview-kpis").getByText("Not assessed", { exact: true })).toBeVisible();
+  await expect(page.getByTestId("overview-kpis").getByText("—", { exact: true })).toBeVisible();
   await expect(
     page.getByRole("heading", {
       name: "Your first insight is one interview away",
@@ -205,7 +205,7 @@ test("overview is honest about missing data and is responsive", async ({
     documentWidth: document.documentElement.scrollWidth,
     content: (() => {
       const main = document.querySelector<HTMLElement>(".dashboard-content")!;
-      const actions = main.querySelector<HTMLElement>(".latest-drive-card")!;
+      const actions = main.querySelector<HTMLElement>(".welcome-banner")!;
       const button = actions.querySelector<HTMLElement>(".button")!;
       return { main: main.getBoundingClientRect().toJSON(), actions: actions.getBoundingClientRect().toJSON(), button: button.getBoundingClientRect().toJSON(), display: getComputedStyle(actions).display, grid: getComputedStyle(actions).gridTemplateColumns, width: getComputedStyle(actions).width, minWidth: getComputedStyle(actions).minWidth };
     })(),
@@ -257,14 +257,15 @@ test("overview follows the requested section order and keeps feedback percentage
   await expect(page.getByTestId("overview-feedback").locator(".feedback-score strong")).toHaveText("21%");
   const overviewContentStarts = await page.evaluate(() => [
     document.querySelector(".page-heading")!,
-    document.querySelector(".latest-drive-card")!,
+    document.querySelector(".overview-drives")!,
     document.querySelector(".stats-grid")!,
   ].map(node => Math.round(node.getBoundingClientRect().left)));
   expect(Math.max(...overviewContentStarts) - Math.min(...overviewContentStarts)).toBeLessThanOrEqual(1);
   const order = await page.evaluate(() => [
     document.querySelector(".page-heading")!,
-    document.querySelector("[data-testid='overview-latest-drive']")!,
+    document.querySelector("[data-testid='overview-hero']")!,
     document.querySelector("[data-testid='overview-kpis']")!,
+    document.querySelector("[data-testid='overview-latest-drive']")!,
     document.querySelector("[data-testid='overview-feedback']")!,
     document.querySelector("[data-testid='overview-next-steps']")!,
   ].map(node => Array.from(document.querySelectorAll(".dashboard-content > *")).indexOf(node.parentElement?.classList.contains("overview-columns") ? node.parentElement : node)));
@@ -278,21 +279,21 @@ test("overview follows the requested section order and keeps feedback percentage
     return Math.abs((value.left + value.right) / 2 - (bounds.left + bounds.right) / 2) < 2;
   });
   expect(scoreIsCentered).toBe(true);
-  await page.screenshot({path:"/root/voicedots/artifacts/student-ui-20261007/student-overview-corrected.png",fullPage:false});
+  await page.screenshot({path:"/root/voicedots/artifacts/overview-step/student-overview-corrected.png",fullPage:false});
   await page.evaluate(()=>window.scrollTo(0,document.querySelector('.overview-columns')!.getBoundingClientRect().top+window.scrollY-105));
-  await page.screenshot({path:"/root/voicedots/artifacts/student-ui-20261007/student-overview-feedback-corrected.png"});
+  await page.screenshot({path:"/root/voicedots/artifacts/overview-step/student-overview-feedback-corrected.png"});
   await page.getByRole('button',{name:'Close navigation'}).click();
-  await page.screenshot({path:"/root/voicedots/artifacts/student-ui-20261007/student-overview-sidebar-closed.png"});
+  await page.screenshot({path:"/root/voicedots/artifacts/overview-step/student-overview-sidebar-closed.png"});
   await page.getByRole('button',{name:'Open navigation'}).click();
   await expect(page.getByTestId("overview-latest-drive").getByRole("link", { name: /Start AI Interview/ })).toHaveAttribute("href", /\/practice\?drive=drive-1/);
   const resumableKpi = page.locator(".stat-card").filter({ hasText: "Interviews to resume" });
   await expect(resumableKpi.locator("strong")).toHaveText("1");
   await expect(page.getByRole("heading", { name: "Ready when you are" })).toBeVisible();
   await expect(page.getByRole("button", { name: "Resume" })).toBeVisible();
-  await expect(page.getByRole("link", { name: "Train weak areas with AI Coach" })).toHaveAttribute("href", "/coach");
+  await expect(page.getByRole("link", { name: "Practice your focus areas" })).toHaveAttribute("href", "/coach");
   const quickActions = page.getByTestId("overview-next-steps").getByRole("link");
-  await expect(quickActions).toHaveCount(3);
-  await expect(page.getByTestId("overview-hero")).toHaveCount(0);
+  await expect(quickActions).toHaveCount(5);
+  await expect(page.getByTestId("overview-hero")).toBeVisible();
   await page.getByTestId("overview-latest-drive").getByRole("link", { name: /^AI Coach/ }).click();
   await expect(page.getByRole("heading", { name: "AI Coach" })).toBeVisible();
   await expect(page.getByLabel("Placement opportunity")).toBeVisible();
@@ -694,8 +695,7 @@ test("overview never offers interview actions for a closed drive", async ({ page
   } }));
   await page.goto("/");
   const latest = page.getByTestId("overview-latest-drive");
-  await expect(latest).toContainText("Closed");
-  await expect(latest.getByRole("link", { name: "View placements" })).toHaveAttribute("href", "/placements");
+  await expect(latest).toHaveCount(0);
   await expect(latest.getByRole("link", { name: /Start AI Interview|Resume interview/ })).toHaveCount(0);
   await expect(latest.getByRole("link", { name: /^AI Coach/ })).toHaveCount(0);
 });
@@ -1735,4 +1735,44 @@ test('locked placement keeps compact badges and disables resume even with a stal
  await page.getByRole('button',{name:'View opportunity'}).click();
  await expect(page.getByRole('button',{name:/Resume interview|Start.*interview/i})).toHaveCount(0);
  await page.screenshot({path:'/root/voicedots/artifacts/student-ui-20261007/student-placement-modal-corrected.png'});
+});
+
+
+test("overview shows up to four active drives and balanced feedback with compact paused rows", async ({ page }) => {
+  await mockStudent(page);
+  await page.setViewportSize({width:1706,height:960});
+  const drives = Array.from({length:6},(_,i)=>({id:`drive-${i}`,company_name:["Razorpay","Netflix","Zoho","Freshworks","Example","Old Co"][i],role_title:["Backend Developer","Senior Analyst","Data Analyst","Software Engineer","Project Manager","Designer"][i],status:i===5?"closed":"active",window_start_at:`2026-10-${String(10-i).padStart(2,"0")}T10:00:00Z`,location:"Chennai",interview_action:"start",is_locked:i===2}));
+  const report = {evaluation_id:"report-1",session_id:"session-1",status:"released",company_name:"Razorpay",target_role:"Backend Developer",drive_id:"drive-0",created_at:"2026-10-01T10:00:00Z",attempt_number:1,report:{overall_score:46,status:"released",readiness:"developing",priority_improvement_areas:[{focus:"Communication"},{focus:"Resume ownership"}]}};
+  const attempts = Array.from({length:3},(_,i)=>({submission_id:`sub-${i}`,session_id:`session-${i}`,target_role:"Forward Deployed Engineer – Enterprise AI",company_name:"AetherGrid Technologies",duration_minutes:30,submitted_at:"2026-10-07T10:00:00Z"}));
+  await page.route("**/api/student/dashboard",route=>route.fulfill({json:{reports:[report],drives,attempts,readiness:{...readiness,overall_score:31}}}));
+  await page.route("**/api/student/readiness",route=>route.fulfill({json:{...readiness,overall_score:31,axis_scores:{interview_readiness:31,resume_readiness:86}}}));
+  await page.goto("/");
+  await expect(page.locator(".overview-drive")).toHaveCount(4);
+  await expect(page.locator(".overview-drive").first()).toContainText("Razorpay");
+  await expect(page.getByTestId("overview-latest-drive").getByRole("link",{name:"View all"})).toHaveAttribute("href","/placements");
+  await expect(page.locator(".overview-drive").filter({hasText:"Zoho"}).getByRole("link",{name:/Start AI Interview|AI Coach/})).toHaveCount(0);
+  await expect(page.getByTestId("overview-kpis").locator(".stat-card")).toHaveCount(4);
+  const ringCenter = await page.locator(".feedback-score").evaluate(node=>getComputedStyle(node,"::before").backgroundColor);
+  expect(ringCenter).toBe("rgb(255, 255, 255)");
+  const heights = await page.locator(".overview-columns>.panel").evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
+  expect(Math.abs(heights[0]-heights[1])).toBeLessThanOrEqual(1);
+  const rows = await page.locator(".overview-paused .record").evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
+  expect(rows.every(h=>h<90)).toBe(true);
+  await page.screenshot({path:"/root/voicedots/artifacts/overview-step/overview-desktop.png",fullPage:true});
+  await page.getByRole("button",{name:"Close navigation"}).click();
+  await page.waitForTimeout(400);
+  await page.screenshot({path:"/root/voicedots/artifacts/overview-step/overview-sidebar-closed.png",fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  await page.screenshot({path:"/root/voicedots/artifacts/overview-step/overview-mobile.png",fullPage:true});
+  await page.setViewportSize({width:1706,height:960});
+  await page.route("**/api/student/dashboard",route=>route.fulfill({json:{reports:[{...report,status:"completed",report:{status:"awaiting_release"}}],drives:[],attempts:[],readiness}}));
+  await page.reload();
+  await expect(page.getByTestId("overview-latest-drive")).toHaveCount(0);
+  await expect(page.getByTestId("overview-feedback")).toContainText("Your feedback is on its way");
+  await expect(page.locator(".feedback-score")).toHaveCount(0);
+  await expect(page.getByTestId("overview-feedback")).not.toContainText("Not assessed");
+  await page.screenshot({path:"/root/voicedots/artifacts/overview-step/overview-pending-feedback.png",fullPage:true});
+  await page.getByTestId("overview-hero").getByRole("link",{name:"Start an interview"}).click();
+  await expect(page).toHaveURL(/\/practice$/);
 });
