@@ -2106,10 +2106,19 @@ async function uploadRecordingPart(chunks) {
   const authorize = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/parts/${encodeURIComponent(recordingSegmentId)}/${partNumber}/authorize`, { method: "POST" });
   const authData = await authorize.json().catch(() => ({}));
   if (!authorize.ok || !authData.url) throw new Error(authData.detail || "Recording part upload could not be authorized.");
-  const uploaded = await fetch(authData.url, { method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob, credentials: "omit" });
-  if (!uploaded.ok) throw new Error(`Direct recording upload failed (${uploaded.status}).`);
-  const etag = uploaded.headers.get("ETag") || uploaded.headers.get("etag");
-  if (!etag) throw new Error("Storage did not confirm the recording part. Check the bucket CORS expose headers.");
+  let etag;
+  try {
+    const uploaded = await fetch(authData.url, { method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob, credentials: "omit" });
+    if (uploaded.ok) etag = uploaded.headers.get("ETag");
+  } catch (_) { /* Storage CORS can prevent direct upload. */ }
+  if (!etag) {
+    const uploaded = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/parts/${encodeURIComponent(recordingSegmentId)}/${partNumber}`, {
+      method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob,
+    });
+    const result = await uploaded.json().catch(() => ({}));
+    if (!uploaded.ok || !result.ETag) throw new Error(result.detail || "Recording part upload was not confirmed. Please retry.");
+    etag = result.ETag;
+  }
   const part = { PartNumber: partNumber, ETag: etag };
   const nextParts = [...recordingPartMetadata, part];
   const nextPartNumber = partNumber + 1;

@@ -70,7 +70,6 @@ function ReportList({ reports, search = "", filter = "all" }: { reports: Report[
       {visible.map((report) => {
         const pending = report.report?.status === "awaiting_release";
         const assessed = report.report?.overall_score != null && !pending;
-        const focus = improvementLabels(report)[0];
         return <article className="student-report-card" key={report.evaluation_id}>
           <div className="student-report-card__icon"><FileText size={19} /></div>
           <div className="student-report-card__main">
@@ -81,17 +80,15 @@ function ReportList({ reports, search = "", filter = "all" }: { reports: Report[
             <h2>{report.company_name ? `${report.company_name} · ` : ""}{report.target_role || "Interview report"}</h2>
             <p className="student-report-meta">{date(report.completed_at || report.created_at)}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</p>
             {report.report?.executive_summary && <p className="student-report-summary">{report.report.executive_summary}</p>}
-            {focus && <p className="student-report-focus"><span>Next focus</span>{focus}</p>}
+
           </div>
           <div className="student-report-card__result">
             {pending ? <><strong className="student-report-pending">In review</strong><span>Your placement team will share feedback here.</span></> : <><strong>{report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</strong><span>{humanize(report.report?.readiness || "Not assessed")}</span></>}
             {report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
-            {report.status === "released" && !pending && <div className="report-actions"><a
+            {report.status === "released" && !pending && <div className="report-actions"><Link
               aria-label={`Open report for ${report.target_role || "interview"}`}
-              href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.html`)}
-              target="_blank"
-              rel="noreferrer"
-            ><ChevronRight size={17} /> View report</a><a aria-label={`Download PDF report for ${report.target_role || "interview"}`} href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.pdf`)}><Download size={15}/> PDF</a></div>}
+              to={`/reports/${encodeURIComponent(report.session_id)}`}
+            ><ChevronRight size={17} /> View report</Link><a aria-label={`Download PDF report for ${report.target_role || "interview"}`} href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.pdf`)}><Download size={15}/> PDF</a></div>}
           </div>
         </article>;
       })}
@@ -271,7 +268,7 @@ export function Overview() {
                 {data.reports.length ? (
                   <>
                     <div className="feedback-spotlight">
-                      <div className="feedback-score"><strong>{score(data.reports[0].report?.overall_score)}</strong><span>Latest score</span></div>
+                      <div className="feedback-score"><strong>{score(data.reports[0].report?.overall_score)}</strong><span>{data.reports[0].report?.overall_score == null ? "Assessment pending" : "Latest score"}</span></div>
                       <div><strong>Focus before your next attempt</strong><div className="focus-chips">{improvementLabels(data.reports[0]).map(item => <span className="pill" key={item}>{item}</span>)}</div>{!improvementLabels(data.reports[0]).length && <p>Your detailed feedback is being prepared.</p>}</div>
                     </div>
                     {data.reports[0].drive_id && data.reports[0].report?.status !== "awaiting_release" && <Link className="button primary" to="/coach">Train weak areas with AI Coach <ArrowRight size={16}/></Link>}
@@ -422,7 +419,7 @@ function safeExternalUrl(value?: string) {
 }
 
 function attemptSummaryText(state: StudentAttemptState) {
-  return `${state.completed} completed · ${state.remaining} remaining`;
+  return `${state.completed} completed${state.current != null ? ` · Attempt ${state.current} in progress` : ""} · ${state.remaining} remaining`;
 }
 
 function compensationLabel(drive: Drive) {
@@ -619,7 +616,7 @@ export function Placements() {
               <article className="panel drive-card" key={drive.id}>
                 {(() => {
                   const interviewStatus = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
-                  const statusLabel = interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
+                  const statusLabel = drive.interview_action === "blocked" ? "Locked" : interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
                   const state = studentAttemptState(drive);
                   const attemptProgress = interviewStatus === "closed"
                     ? "Interview closed"
@@ -631,6 +628,7 @@ export function Placements() {
                   </span>
                   <span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span>
                 </div>
+                {drive.is_locked && <span className="pill">Locked</span>}
                 <span className="eyebrow">{drive.company_name}</span>
                 <h2>{drive.role_title}</h2>
                 <p>

@@ -3,6 +3,7 @@ import { test, expect, type Page } from "@playwright/test";
 const identity = { student: { id: "student-calendar", full_name: "Asha Kumar", email: "asha@example.edu", roll_number: "CS001", college_name: "Example College", program: "B.Tech", department_code: "CSE", graduation_year: 2027, cgpa: 8.6 } };
 
 async function mockStudent(page: Page, options: { withEvents?: boolean } = {}) {
+  await page.clock.setFixedTime(new Date("2026-10-06T08:00:00+05:30"));
   const personalEvents: any[] = [];
   const drives = options.withEvents === false ? [] : [{
     id: "drive-1", company_name: "Razorpay", role_title: "Backend Developer", status: "active",
@@ -107,7 +108,6 @@ test.describe("Student Calendar", () => {
   });
 
   test("personal event creates, persists on reload, edits and deletes with confirmation", async ({ page }) => {
-    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page, { withEvents: false });
     await page.goto("/calendar");
     await page.getByRole("button", { name: "Create Event" }).click();
@@ -134,8 +134,24 @@ test.describe("Student Calendar", () => {
     await expect(page.locator('.calendar-card-main[aria-label="View Review Postgres indexes"]')).toHaveCount(0);
   });
 
+  test("all-day events hide times and submit an all-day date span", async ({ page }) => {
+    await mockStudent(page, { withEvents: false });
+    let created: any;
+    page.on("request", request => { if (request.url().endsWith("/api/student/calendar/personal-events") && request.method() === "POST") created = request.postDataJSON(); });
+    await page.goto("/calendar");
+    await page.getByRole("button", { name: "Create Event" }).click();
+    await page.getByLabel("Event title *").fill("Full day workshop");
+    await page.getByLabel("Date *").fill("2026-10-06");
+    await page.getByLabel("All day").check();
+    await expect(page.getByLabel("Start time *")).toHaveCount(0);
+    await expect(page.getByLabel("End time *")).toHaveCount(0);
+    await page.getByRole("button", { name: "Create event", exact: true }).click();
+    await expect.poll(() => created?.all_day).toBe(true);
+    expect(created.start_at).toBe("2026-10-05T18:30:00.000Z");
+    expect(created.end_at).toBe("2026-10-06T18:30:00.000Z");
+  });
+
   test("interview and Coach events are read-only and use the existing action flows", async ({ page }) => {
-    await page.clock.install({ time: new Date("2026-10-06T12:00:00+05:30") });
     await mockStudent(page);
     await page.goto("/calendar");
     await expect(page.locator('.calendar-event-card.placement button[aria-label^="More actions"]')).toHaveCount(0);

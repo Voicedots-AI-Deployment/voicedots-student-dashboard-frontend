@@ -58,17 +58,13 @@ export function Practice() {
   });
   const selectedDrive = availableDrives.find((drive) => drive.id === driveId) || null;
   const key = `vd_preparation_${identity!.student.id}_${driveId || coachCycleId || "practice"}`;
+  const draftKey = `vd_practice_draft_${identity!.student.id}_${driveId || coachCycleId || "practice"}`;
   const [file, setFile] = useState<File | null>(null);
   const [resumePreview, setResumePreview] = useState<File | null>(null);
-  const [role, setRole] = useState("");
-  const [duration, setDuration] = useState("30");
-  const [difficulty, setDifficulty] = useState<"beginner" | "intermediate" | "advanced">(() => {
-    const graduationYear = identity!.student.graduation_year;
-    if (!graduationYear) return "intermediate";
-    const academicYear = Math.max(1, 4 - (graduationYear - new Date().getFullYear()));
-    return academicYear === 1 ? "beginner" : academicYear === 2 ? "intermediate" : "advanced";
-  });
-  const [jd, setJd] = useState("");
+  const [role, setRole] = useState(() => sessionStorage.getItem(`${draftKey}:role`) || "");
+  const [duration, setDuration] = useState(() => sessionStorage.getItem(`${draftKey}:duration`) || "30");
+  const [difficulty, setDifficulty] = useState<"dynamic" | "beginner" | "intermediate" | "advanced">("dynamic");
+  const [jd, setJd] = useState(() => sessionStorage.getItem(`${draftKey}:jd`) || "");
   const [jdBusy, setJdBusy] = useState(false);
   const [jdError, setJdError] = useState("");
   const [context, setContext] = useState<DriveContext | null>(null);
@@ -87,6 +83,11 @@ export function Practice() {
   const [pollVersion, setPollVersion] = useState(0);
   const [pollError, setPollError] = useState("");
   const [resumeBusy, setResumeBusy] = useState(false);
+  useEffect(() => {
+    sessionStorage.setItem(`${draftKey}:role`, role);
+    sessionStorage.setItem(`${draftKey}:duration`, duration);
+    sessionStorage.setItem(`${draftKey}:jd`, jd);
+  }, [draftKey, role, duration, jd]);
   const alive = useRef(true);
   const library = useResource<{ resumes: Resume[] }>(
     "/api/student/resume-library",
@@ -198,12 +199,18 @@ export function Practice() {
   },[coachCycleId]);
 
   function remember(result: Preparation) {
+    sessionStorage.removeItem(`${draftKey}:role`);
+    sessionStorage.removeItem(`${draftKey}:duration`);
+    sessionStorage.removeItem(`${draftKey}:jd`);
     sessionStorage.setItem(key, JSON.stringify(result));
     setPreparation(result);
   }
   function reset() {
     sessionStorage.removeItem(key);
     sessionStorage.removeItem(`${key}_upload`);
+    sessionStorage.removeItem(`${draftKey}:role`);
+    sessionStorage.removeItem(`${draftKey}:duration`);
+    sessionStorage.removeItem(`${draftKey}:jd`);
     setPreparation(null);
     setPollError("");
     setError("");
@@ -546,7 +553,7 @@ export function Practice() {
                   </label>
                   <label>Interview difficulty
                     <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
-                      <option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
+                      <option value="dynamic">Dynamic · based on resume experience</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
                     </select>
                   </label>
                 </div>

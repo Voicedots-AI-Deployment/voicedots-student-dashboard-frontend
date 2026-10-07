@@ -57,6 +57,7 @@ export type Report = {
   } | null;
 };
 export type Drive = {
+  is_locked?: boolean;
   id: string;
   company_name: string;
   company_description?: string;
@@ -70,6 +71,7 @@ export type Drive = {
   window_start_at?: string;
   window_end_at?: string;
   application_deadline?: string;
+  application_deadline_at?: string;
   status: string;
   eligibility_status?: "eligible" | "ineligible";
   criteria_min_cgpa?: number | null;

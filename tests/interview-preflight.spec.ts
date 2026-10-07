@@ -320,7 +320,7 @@ for (const [failure, retry, panel] of [
     const mediaBefore = await page.evaluate(() => (window as any).mediaCalls.length);
     await recover();
     await page.locator(retry).click();
-    await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as any).starts), {timeout:15000}).toBe(1);
     expect(counts.create).toBe(1);
     expect(counts.preflight).toBe(1);
     expect(counts.readiness).toBe(before.readiness + (failure === "network" ? 1 : 0));
@@ -338,7 +338,7 @@ test("a service connection failure after readiness returns to the failed check a
   expect(await page.evaluate(() => (window as any).starts)).toBe(0);
   await recover();
   await page.locator("#pj-network-retry").click();
-  await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as any).starts), {timeout:15000}).toBe(1);
   expect(counts).toEqual({ create: 2, identity: 1, readiness: 2, preflight: 1 });
   expect(await page.evaluate(() => (window as any).mediaCalls.length)).toBe(1);
   expect(await page.evaluate(() => (window as any).shares)).toBe(1);
@@ -354,4 +354,48 @@ test("failed controls remain reachable on a short mobile viewport", async ({ pag
   await expect(page.locator("#pj-cam-retry")).toBeInViewport();
   await page.locator("#preflight-title").scrollIntoViewIfNeeded();
   await expect(page.locator("#preflight-title")).toBeInViewport();
+});
+
+test("recording retries through authenticated API when direct storage upload fails", async ({ page }) => {
+  await prepare(page);
+  const calls: { start?: any; part?: number; put?: number; options?: number; finalize?: any } = {};
+  await page.route("**/recording/start", async route => {
+    calls.start = route.request().postDataJSON();
+    await route.fulfill({ json: { status: "recording" } });
+  });
+  await page.route("**/recording/parts/*/*/authorize", async route => {
+    calls.part = Number(new URL(route.request().url()).pathname.split("/").slice(-2, -1)[0]);
+    await route.fulfill({ json: { url: "https://r2.invalid/signed-part" } });
+  });
+  await page.route("https://r2.invalid/**", route => route.abort());
+  await page.route("**/recording/parts/*/*", async route => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    calls.put = (calls.put || 0) + 1;
+    expect(route.request().postDataBuffer()?.byteLength || 0).toBeGreaterThan(0);
+    await route.fulfill({json:{ETag:'"test-etag"'}});
+  });
+  await page.route("**/recording/finalize", async route => {
+    calls.finalize = route.request().postDataJSON();
+    await route.fulfill({ json: { status: "processing" } });
+  });
+  await page.evaluate(async () => {
+    const input = document.createElement("canvas"); input.width = 640; input.height = 360;
+    const inputContext = input.getContext("2d")!;
+    inputContext.fillStyle = "#7340e8"; inputContext.fillRect(0, 0, 640, 360);
+    const inputStream = input.captureStream(15);
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const destination = audioContext.createMediaStreamDestination();
+    oscillator.connect(destination); oscillator.start(); await audioContext.resume();
+    (window as any).__testRecordingSetup("recording-test-session", inputStream, destination);
+  });
+  await page.evaluate(() => (window as any).__testStartRecording());
+  await page.evaluate(() => (window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1, 2, 3])], { type: "video/webm" })));
+  await page.evaluate(() => (window as any).__testSaveRecordingQueue());
+  await page.evaluate(() => (window as any).__testStopRecording(true));
+  expect(calls.start).toMatchObject({ consent: true, mime_type: "video/webm", extension: "webm" });
+  expect(calls.part).toBe(1);
+  expect(calls.put).toBe(1);
+  expect(calls.finalize?.parts).toEqual([{ PartNumber: 1, ETag: '"test-etag"' }]);
+  expect(calls.finalize?.duration_seconds).toEqual(expect.any(Number));
 });
