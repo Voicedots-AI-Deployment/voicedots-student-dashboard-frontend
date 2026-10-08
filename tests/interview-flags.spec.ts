@@ -53,3 +53,21 @@ test('camera quality reminders never add strikes and phone warnings still do',as
   await page.evaluate(()=>(window as any).qualityHarness.warn('phone_usage_detected','Put your phone away',{}));
   expect(await page.evaluate(()=>(window as any).qualityHarness.strikes())).toBe(1);
 });
+
+
+test('partial crop detections of the candidate are not counted as a second person', async ({page}) => {
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'student-1'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.personBoxAudit={same:samePersonBox,iou:boxIoU};`});});
+ await page.goto('/interview.html?id=sub-1');
+ await expect.poll(()=>page.evaluate(()=>!!(window as any).personBoxAudit)).toBe(true);
+ const results=await page.evaluate(()=>{
+  const h=(window as any).personBoxAudit;
+  const candidate={originX:100,originY:20,width:300,height:440};
+  const croppedTorso={originX:260,originY:150,width:120,height:200};
+  const backgroundPerson={originX:420,originY:30,width:70,height:170};
+  return {partialIoU:h.iou(candidate,croppedTorso),same:h.same(candidate,croppedTorso),distinct:h.same(candidate,backgroundPerson)};
+ });
+ expect(results.partialIoU).toBeLessThan(.3);
+ expect(results.same).toBe(true);
+ expect(results.distinct).toBe(false);
+});

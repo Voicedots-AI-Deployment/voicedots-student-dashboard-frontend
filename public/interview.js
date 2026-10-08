@@ -1181,6 +1181,16 @@ function boxIoU(a, b) {
   return union > 0 ? inter / union : 0;
 }
 
+// A crop can detect only the candidate's shoulder/torso. IoU is small
+// for a contained partial box, so compare overlap with the smaller box too.
+function samePersonBox(a, b) {
+  if (boxIoU(a, b) > 0.3) return true;
+  const overlapWidth = Math.max(0, Math.min(a.originX+a.width,b.originX+b.width)-Math.max(a.originX,b.originX));
+  const overlapHeight = Math.max(0, Math.min(a.originY+a.height,b.originY+b.height)-Math.max(a.originY,b.originY));
+  const smallerArea = Math.min(a.width*a.height,b.width*b.height);
+  return smallerArea > 0 && overlapWidth*overlapHeight/smallerArea >= 0.7;
+}
+
 function frameLighting(video) {
   const canvas = frameLighting.canvas || (frameLighting.canvas = document.createElement("canvas"));
   canvas.width = 160;
@@ -1319,7 +1329,11 @@ async function analyzeCameraFrame() {
     // model, no extra load), so detections must be split by category rather
     // than counted as a flat length, or a phone in frame would inflate the
     // person count.
-    const personDetections = detections.filter((d) => (d.categories || [])[0]?.categoryName === "person");
+    const personDetections = [];
+    for (const detection of detections) {
+      if ((detection.categories || [])[0]?.categoryName === "person" &&
+          !personDetections.some(known => samePersonBox(detection.boundingBox, known.boundingBox))) personDetections.push(detection);
+    }
     const phoneDetections = detections.filter((d) => (d.categories || [])[0]?.categoryName === "cell phone");
     const scores = personDetections.flatMap((detection) =>
       (detection.categories || []).map((category) => Number(category.score)).filter(Number.isFinite)
@@ -1339,22 +1353,21 @@ async function analyzeCameraFrame() {
       ? { x: 0, y: 0, w: 0.55, h: 1 }
       : { x: 0.45, y: 0, w: 0.55, h: 1 };
     const crop = await cropDetectPersons(objectFrame, region);
-    let extraPeople = 0;
     if (crop) {
       for (const det of crop.detections) {
         const category = (det.categories || [])[0]?.categoryName;
         if (category !== "person" && category !== "cell phone") continue;
         const box = translateCropBox(det.boundingBox, crop);
         const knownList = category === "person" ? personDetections : phoneDetections;
-        const overlapsKnown = knownList.some((known) => boxIoU(box, known.boundingBox) > 0.3);
+        const overlapsKnown = knownList.some((known) => category === "person" ? samePersonBox(box, known.boundingBox) : boxIoU(box, known.boundingBox) > 0.3);
         if (overlapsKnown) continue;
-        if (category === "person") extraPeople += 1;
+        if (category === "person") { personDetections.push({ boundingBox: box }); }
         else lastPhoneDetectedAt = now;
       }
     }
     const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
     if (phoneCrop?.detections.some(det => (det.categories || []).some(category => category.categoryName === "cell phone"))) lastPhoneDetectedAt = now;
-    personBoxCountDetected = personDetections.length + extraPeople;
+    personBoxCountDetected = personDetections.length;
     if (personBoxCountDetected > 1) lastMultiplePeopleDetectedAt = now;
   }
   // Same hold-over reasoning as multi-person below: a single missed 800ms
@@ -2488,6 +2501,10 @@ function handleControlMessage(payload) {
       clearTimeout(initialConnectionTimer);
       interviewHasStarted = true;
       proctoringActive = true;
+      absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
+      lastMultiplePeopleDetectedAt = 0;
+      personBoxCountDetected = 0;
+      lastPersonDetectionAt = 0;
       photoVerifier.start();
       _flushPendingIntegrityEvents();
       void startInterviewRecording();
