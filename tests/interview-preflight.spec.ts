@@ -104,6 +104,7 @@ async function prepare(page: Page, failure = "") {
       window.__testStartRecording = startInterviewRecording;
       window.__testStopRecording = stopInterviewRecording;
       window.__testControlMessage = handleControlMessage;
+      window.__testFinalizeRecording = finalizePendingInterviewRecording;
       window.__testEmitRecordingChunk = blob => interviewRecorder?.ondataavailable?.({ data: blob });
       window.__testSaveRecordingQueue = () => recordingPersistenceQueue;
       window.__testFlushRecordingQueue = () => retryRecordingFlush(true);
@@ -420,4 +421,26 @@ test("video finalization retries an ended-status race without discarding uploade
   await page.evaluate(()=>(window as any).__testSaveRecordingQueue());
   await page.evaluate(()=>(window as any).__testStopRecording(true));
   expect(attempts).toBe(2);expect(failed).toBe(0);
+});
+
+test('temporary finalization failure retries automatically without reuploading confirmed video parts',async({page})=>{
+  await prepare(page);let finalized=0,uploads=0;
+  await page.route('**/recording/start',route=>route.fulfill({json:{status:'recording'}}));
+  await page.route('**/recording/parts/*/*/authorize',route=>route.fulfill({json:{url:'https://r2.invalid/retry'}}));
+  await page.route('https://r2.invalid/**',route=>route.abort());
+  await page.route(/\/recording\/parts\/[^/]+\/\d+$/,route=>{uploads++;return route.fulfill({json:{ETag:'retry-etag'}});});
+  await page.route('**/recording/finalize',route=>{finalized++;return finalized===1?route.fulfill({status:503,json:{detail:'Temporary storage error'}}):route.fulfill({json:{status:'processing'}});});
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+    const audio=new AudioContext(),destination=audio.createMediaStreamDestination(),oscillator=audio.createOscillator();oscillator.connect(destination);oscillator.start();await audio.resume();
+    (window as any).__testRecordingSetup('auto-retry-session',canvas.captureStream(15),destination);
+  });
+  await page.evaluate(()=>(window as any).__testStartRecording());
+  await page.evaluate(()=>(window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1,2,3])],{type:'video/webm'})));
+  await page.evaluate(()=>(window as any).__testSaveRecordingQueue());
+  await page.evaluate(()=>(window as any).__testStopRecording(true));
+  expect(finalized).toBe(1);
+  await expect.poll(()=>finalized,{timeout:22000}).toBe(2);
+  expect(uploads).toBe(1);
+  expect(await page.evaluate(()=>(window as any).__testPendingRecordingCount())).toBe(0);
 });

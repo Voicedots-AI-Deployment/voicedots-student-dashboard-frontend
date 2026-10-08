@@ -2242,6 +2242,8 @@ async function startInterviewRecording() {
   recordingStartedAt = Date.now();
   recordingFinalDuration = null;
   recordingFinalizePending = false;
+  recordingFinalizeRetries = 0;
+  if (recordingFinalizeRetryTimer) { clearTimeout(recordingFinalizeRetryTimer); recordingFinalizeRetryTimer = null; }
   try {
     const mimeType = selectInterviewRecordingMimeType();
     if (!mimeType) throw new Error("This browser does not expose a supported video recording format.");
@@ -2349,7 +2351,17 @@ function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}
 
 let recordingFinalDuration = null;
 let recordingFinalizePending = false;
-async function finalizePendingInterviewRecording() {
+let recordingFinalizeTask = null;
+let recordingFinalizeRetryTimer = null;
+let recordingFinalizeRetries = 0;
+function finalizePendingInterviewRecording() {
+  if (recordingFinalizeTask) return recordingFinalizeTask;
+  if (recordingFinalizeRetryTimer) { clearTimeout(recordingFinalizeRetryTimer); recordingFinalizeRetryTimer = null; }
+  recordingFinalizeTask = savePendingInterviewRecording().finally(() => { recordingFinalizeTask = null; });
+  return recordingFinalizeTask;
+}
+async function savePendingInterviewRecording() {
+  const savingSession = currentSessionId;
   recordingFinalizePending = true;
   recordingFinalDuration ??= Math.floor((Date.now() - recordingStartedAt) / 1000);
   try {
@@ -2365,7 +2377,7 @@ async function finalizePendingInterviewRecording() {
       await new Promise(resolve=>setTimeout(resolve,1000));
     }
     if (!response?.ok) throw new Error((await response?.json().catch(()=>({})))?.detail || "Recording finalization failed.");
-    await clearRecordingQueue();recordingFinalizePending=false;
+    await clearRecordingQueue();recordingFinalizePending=false;recordingFinalizeRetries=0;
     setRecordingStatus("Interview ended · securely processing the recording.");
   } catch(error) {
     // Keep both the upload and IndexedDB chunks retryable after a transient error.
@@ -2374,6 +2386,13 @@ async function finalizePendingInterviewRecording() {
       const retry=document.createElement("button");retry.type="button";retry.textContent="Retry video save";
       retry.className="btn btn-secondary";retry.style.marginLeft="12px";
       retry.onclick=()=>{retry.disabled=true;void finalizePendingInterviewRecording();};recordingStatusEl.appendChild(retry);
+    }
+    if (recordingFinalizeRetries < 3 && !recordingFinalizeRetryTimer) {
+      recordingFinalizeRetries += 1;
+      recordingFinalizeRetryTimer = setTimeout(() => {
+        recordingFinalizeRetryTimer = null;
+        if (recordingFinalizePending && currentSessionId === savingSession && !interviewRecorder) void finalizePendingInterviewRecording();
+      }, 15000);
     }
     console.warn("Recording save remains retryable",error);
   }
