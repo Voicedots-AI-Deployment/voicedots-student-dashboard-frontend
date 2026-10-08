@@ -460,14 +460,17 @@ test("silent default microphone starts automatically without a device picker", a
 test("setup and microphone recovery stay aligned on desktop and mobile",async({page})=>{
  await page.setViewportSize({width:1280,height:800});await prepare(page,"microphone");
  await expect(page.locator('.recording-consent')).toHaveCSS('display','flex');
- await page.screenshot({path:'/root/voicedots/artifacts/proctor-startup-fix-20261008/setup-desktop.png',fullPage:true});
+ await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/setup-desktop.png',fullPage:true});
  await page.getByRole('button',{name:'Start AI Interview',exact:true}).click();
  await expect(page.locator('#pj-mic-retry')).toBeEnabled();
+ await expect(page.locator('#lobby-video')).toHaveCSS('object-fit','contain');
+ const preview=await page.locator('#cam-preview').boundingBox();
+ expect(Math.abs(preview!.width-preview!.height)).toBeLessThanOrEqual(1);
  await expect(page.locator('#mic-select')).toHaveValue('');
- await page.screenshot({path:'/root/voicedots/artifacts/proctor-startup-fix-20261008/microphone-desktop.png',fullPage:true});
+ await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/microphone-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});
  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
- await page.screenshot({path:'/root/voicedots/artifacts/proctor-startup-fix-20261008/microphone-mobile.png',fullPage:true});
+ await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/microphone-mobile.png',fullPage:true});
 });
 
 test('practice start and reconnect never start video recording', async ({page}) => {

@@ -47,11 +47,11 @@ h3,
 #preflight-title { font-weight: 600 !important; margin-bottom: 8px !important; }
 #preflight-status { font-size: .9rem; }
 #preflight-loading { height: 24px; margin: 12px 0; }
-.cam-preview { margin: 16px 0; }
+.cam-preview { margin: 16px auto; }
 .pj-panel select { margin: 8px 0 !important; border-width: 1px !important; }
 @media(max-width:600px) { .pj-panel { padding: 20px; } #prejoin-screen { padding: 16px 12px; } }
 
-.prejoin-card:has(.pj-panel[id].active) #cam-preview { max-height: 180px; }
+.prejoin-card:has(.pj-panel[id].active) #cam-preview { max-height: none; }
 .prejoin-card:has(.pj-panel[id].active) #preflight-requirements,
 .prejoin-card:has(.pj-panel[id].active) .recording-consent { display: none !important; }
 .pj-btn-ghost:not(:disabled) { color: var(--text); background: var(--surf2); }
