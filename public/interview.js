@@ -11,6 +11,7 @@ const WS_BASE = _HTTP_BASE.replace(/^http/, "ws");
 
 const STT_SAMPLE_RATE = 16000;
 const TTS_SAMPLE_RATE = 48000;
+let currentTTSSampleRate = TTS_SAMPLE_RATE;
 const PREBUFFER_SECONDS = 0.25;
 // app.js's login flow only ever caches the logged-in student's profile under
 // "vd_student_data" (set right after /api/auth/student-me succeeds). The
@@ -1933,7 +1934,7 @@ function schedulePCMChunk(pcmBytes, epoch = currentAudioEpoch) {
     float32[i] = int16[i] / 32768;
   }
 
-  const buffer = playbackAudioContext.createBuffer(1, float32.length, TTS_SAMPLE_RATE);
+  const buffer = playbackAudioContext.createBuffer(1, float32.length, currentTTSSampleRate);
   buffer.getChannelData(0).set(float32);
 
   const source = playbackAudioContext.createBufferSource();
@@ -2025,7 +2026,7 @@ function handleBinaryFrame(data) {
   if (data.byteLength < 4) return;
   const view = new DataView(data);
   const epoch = view.getUint32(0, false);
-  if (epoch < currentAudioEpoch) return;
+  if (epoch !== currentAudioEpoch) return;
 
   const pcm = data.slice(4);
 
@@ -2468,6 +2469,7 @@ function handleControlMessage(payload) {
     // cleared instead by schedulePCMChunk's own playback-completion timer
     // below, which is keyed to actual scheduled playback finishing.
     case "tts_begin":
+      currentTTSSampleRate = [24000, 48000].includes(Number(payload.sample_rate)) ? Number(payload.sample_rate) : TTS_SAMPLE_RATE;
       clearProcessingStatus();
       currentSpeakerIsProctor = payload.speaker === "proctor";
       currentAudioEpoch = Number(payload.audio_epoch || currentAudioEpoch);
