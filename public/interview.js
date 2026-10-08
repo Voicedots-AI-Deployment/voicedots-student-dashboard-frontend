@@ -258,7 +258,7 @@ let phoneDetected = false;
 // Integrity signals are intentionally debounced to avoid false positives,
 // but must still be visible quickly to the placement team.
 const CANDIDATE_ABSENT_THRESHOLD_MS = 3000;
-const MULTIPLE_PEOPLE_THRESHOLD_MS = 1500;
+const MULTIPLE_PEOPLE_THRESHOLD_MS = 5000;
 const POOR_LIGHTING_THRESHOLD_MS = 3500;
 const GAZE_AWAY_THRESHOLD_MS = 3500;
 const PHONE_VISIBLE_THRESHOLD_MS = 2000;
@@ -713,7 +713,7 @@ async function runPreflight() {
   preflightStarted = true;
   renderPreflight();
   document.getElementById("cam-preview").hidden = false;
-  preflightStatus("Checking your camera, microphone and interview connection…");
+  preflightStatus("Checking your default camera and microphone. Say a few words while we verify your connection.");
   const devices = first ? initCameraCheck() : Promise.resolve();
   try {
     const cameraCheck = checkPreflightItem("camera", async () => {
@@ -727,10 +727,11 @@ async function runPreflight() {
       networkCheck,
       checkPreflightItem("microphone", async () => {
         await devices;
-        if (!hasLiveTrack("audio")) throw new Error("Allow microphone access or select a working microphone.");
+        await waitForPreflight(() => hasLiveTrack("audio"), "Your default microphone is unavailable. Allow access or select a working microphone.", 5000);
         startMicLevelTest();
-        await waitForPreflight(() => hasLiveTrack("audio") && micLevelDetected,
-          "No microphone audio was detected. Select a microphone, retry and speak briefly.", 10000);
+        await micTestContext?.resume();
+        await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running",
+          "Your default microphone could not start. Allow access or select another microphone.", 10000);
       }),
       Promise.all([cameraCheck, networkCheck]).then(async () => {
         if (preflightChecks.camera === "passed" && preflightId) {
@@ -808,7 +809,7 @@ async function populateDeviceSelects() {
       if (!select) return;
       const current = select.value;
       select.innerHTML = list.length
-        ? list.map((d, i) => `<option value="${d.deviceId}">${d.label || (kind + " " + (i + 1))}</option>`).join("")
+        ? (kind === "Microphone" ? '<option value="">System default microphone</option>' : "") + list.map((d, i) => `<option value="${d.deviceId}">${d.label || (kind + " " + (i + 1))}</option>`).join("")
         : `<option value="">No ${kind} found</option>`;
       if (current && list.some((d) => d.deviceId === current)) select.value = current;
     };
@@ -985,13 +986,11 @@ async function loadFaceDetector() {
             baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
             runningMode: "VIDEO",
             numFaces: 2,
-            // Defaults (~0.5) miss a second, smaller/angled face sitting
-            // further back (e.g. someone behind the candidate) since it's
-            // farther from camera and partially off-angle. Lowered so a
-            // background face is still reported instead of silently dropped.
-            minFaceDetectionConfidence: 0.3,
-            minFacePresenceConfidence: 0.3,
-            minTrackingConfidence: 0.3,
+            // Favor clear face evidence over low-confidence patterns in
+            // clothing/furniture; uncertain body evidence remains review-only.
+            minFaceDetectionConfidence: 0.65,
+            minFacePresenceConfidence: 0.65,
+            minTrackingConfidence: 0.6,
             outputFaceBlendshapes: false,
             outputFacialTransformationMatrixes: false,
           });
@@ -1240,9 +1239,9 @@ function landmarkGazeOffCamera(landmarks) {
 function warnVisionSignal(type, message, details) {
   if (!proctoringActive || integrityEndRequested || sessionCompletedCleanly || lastVisionWarningAt[type] !== undefined) return;
   lastVisionWarningAt[type] = Date.now();
-  if (["poor_lighting", "camera_blurry"].includes(type)) {
+  if (["poor_lighting", "camera_blurry", "multiple_people_unconfirmed"].includes(type)) {
     _sendIntegrityEvent(type, "info", details);
-    showIntegrityNotice(message + " Adjust your camera. This does not count as misconduct.");
+    showIntegrityNotice(type === "multiple_people_unconfirmed" ? message : message + " Adjust your camera. This does not count as misconduct.");
     return;
   }
   recordIntegrityViolation(type, message, details);
@@ -1385,7 +1384,7 @@ async function analyzeCameraFrame() {
   );
 
   const exactlyOneFace = faceCountDetected === 1;
-  const exactlyOnePerson = peopleCountDetected === 1;
+  const exactlyOnePerson = faceCountDetected === 1;
   const fullPersonCheckReady = !!objectDetector && lastPersonDetectionAt > 0;
   framingPassing = faceCountDetected === 1 && (!landmarks || !landmarkGazeOffCamera(landmarks));
   let personCheckState = "fail";
@@ -1398,7 +1397,7 @@ async function analyzeCameraFrame() {
     personCheckText = "Scanning full frame for people…";
   } else if (peopleCountDetected === 0) {
     personCheckText = "No person detected";
-  } else if (peopleCountDetected > 1) {
+  } else if (faceCountDetected > 1) {
     personCheckText = "Multiple people detected";
   } else if (phoneDetected) {
     // Live-call phone tracking (phoneVisibleSince/warnVisionSignal, further
@@ -1453,17 +1452,22 @@ async function analyzeCameraFrame() {
       }
     }
 
-    if (clearVisionSignal("multiple_people_visible", !objectDetectorUnavailable && fullPersonCheckReady && peopleCountDetected === 1, now)) {
+    if (clearVisionSignal("multiple_people_visible", !visionCheckUnavailable && faceCountDetected === 1, now)) {
       _sendIntegrityEvent("multiple_people_cleared", "info", { people_count: peopleCountDetected });
     }
-    multipleFaceSince = _trackSince(multipleFaceSince, !objectDetectorUnavailable && fullPersonCheckReady && peopleCountDetected > 1, now);
+    // Body/crop detections can mistake furniture or clothing for a person.
+    // Preserve them for review, but only sustained second-face evidence counts.
+    if (faceCountDetected === 1 && personBoxCountDetected > 1) {
+      warnVisionSignal("multiple_people_unconfirmed", "The camera check is uncertain. Keep your face clearly visible. This is not a misconduct warning.", { face_count: faceCountDetected, body_count: personBoxCountDetected });
+    } else clearVisionSignal("multiple_people_unconfirmed", personBoxCountDetected <= 1, now);
+    multipleFaceSince = _trackSince(multipleFaceSince, !visionCheckUnavailable && faceCountDetected > 1, now);
     if (multipleFaceSince !== null) {
       const ms = now - multipleFaceSince;
       if (ms >= MULTIPLE_PEOPLE_THRESHOLD_MS) {
         warnVisionSignal(
           "multiple_people_visible",
           `More than one person detected for ${Math.round(ms / 1000)}s. Only the candidate may be visible.`,
-          { confidence: personDetectionConfidence, duration_ms: ms, people_count: peopleCountDetected },
+          { confidence: personDetectionConfidence, duration_ms: ms, people_count: faceCountDetected, face_count: faceCountDetected, confirmed_by: "face_sequence" },
         );
       }
     }
@@ -1545,10 +1549,9 @@ function startMicLevelTest() {
       if (!micAnalyser) return;
       micAnalyser.getByteFrequencyData(dataArray);
 
-      let sum = 0;
+      let sum = dataArray.reduce((total,value) => total+value,0);
       bars.forEach((bar, idx) => {
         const val = dataArray[idx % dataArray.length] || 0;
-        sum += val;
         const height = Math.max(4, Math.min(44, (val / 255) * 44));
         bar.style.height = `${height}px`;
       });

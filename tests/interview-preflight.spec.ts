@@ -66,12 +66,14 @@ async function prepare(page: Page, failure = "") {
         const oscillator = context.createOscillator();
         oscillator.frequency.value = 440;
         const gain = context.createGain();
-        gain.gain.value = w.failure === "microphone" ? 0 : .8;
+        gain.gain.value = ["microphone", "silent"].includes(w.failure) ? 0 : .8;
         const destination = context.createMediaStreamDestination();
         oscillator.connect(gain).connect(destination);
         oscillator.start();
         await context.resume();
-        tracks.push(...destination.stream.getAudioTracks());
+        const audioTracks = destination.stream.getAudioTracks();
+        for (const track of audioTracks) Object.defineProperty(track, 'muted', {get:()=>w.failure === "microphone"});
+        tracks.push(...audioTracks);
       }
       return new MediaStream(tracks);
     };
@@ -443,4 +445,27 @@ test('temporary finalization failure retries automatically without reuploading c
   await expect.poll(()=>finalized,{timeout:22000}).toBe(2);
   expect(uploads).toBe(1);
   expect(await page.evaluate(()=>(window as any).__testPendingRecordingCount())).toBe(0);
+});
+
+
+test("silent default microphone starts automatically without a device picker", async ({page})=>{
+ await prepare(page,"silent");
+ await page.getByRole("button",{name:"Start AI Interview",exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>(window as any).starts),{timeout:15000}).toBe(1);
+ await expect(page.locator("#pj-panel-2")).toBeHidden();
+ const calls=await page.evaluate(()=>(window as any).mediaCalls);
+ expect(calls).toHaveLength(1);expect(calls[0].audio.deviceId).toBeUndefined();
+});
+
+test("setup and microphone recovery stay aligned on desktop and mobile",async({page})=>{
+ await page.setViewportSize({width:1280,height:800});await prepare(page,"microphone");
+ await expect(page.locator('.recording-consent')).toHaveCSS('display','flex');
+ await page.screenshot({path:'/root/voicedots/artifacts/proctor-startup-fix-20261008/setup-desktop.png',fullPage:true});
+ await page.getByRole('button',{name:'Start AI Interview',exact:true}).click();
+ await expect(page.locator('#pj-mic-retry')).toBeEnabled();
+ await expect(page.locator('#mic-select')).toHaveValue('');
+ await page.screenshot({path:'/root/voicedots/artifacts/proctor-startup-fix-20261008/microphone-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
+ await page.screenshot({path:'/root/voicedots/artifacts/proctor-startup-fix-20261008/microphone-mobile.png',fullPage:true});
 });

@@ -71,3 +71,27 @@ test('partial crop detections of the candidate are not counted as a second perso
  expect(results.same).toBe(true);
  expect(results.distinct).toBe(false);
 });
+
+test('one face and ambiguous body detections stay review-only throughout the call',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'student-1'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`
+ window.visionAudit={setup:async()=>{
+  const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;
+  const ctx=canvas.getContext('2d');ctx.fillRect(0,0,640,480);
+  userMediaStream=canvas.captureStream(20);lobbyVideoEl.srcObject=userMediaStream;await lobbyVideoEl.play();cameraTrackLive=true;
+  faceLandmarker={detectForVideo:()=>({faceLandmarks:[null]})};frameLighting=()=>120;frameSharpness=()=>40;
+  objectDetector={detectForVideo:async()=>({detections:[{categories:[{categoryName:'person',score:.9}],boundingBox:{originX:120,originY:20,width:260,height:450}},{categories:[{categoryName:'person',score:.8}],boundingBox:{originX:430,originY:200,width:100,height:200}}]})};
+  window.visionEvents=[];ws={readyState:WebSocket.OPEN,send:value=>window.visionEvents.push(JSON.parse(value))};proctoringActive=true;callScreen.style.display='flex';
+ },faces:count=>{faceLandmarker={detectForVideo:()=>({faceLandmarks:Array(count).fill(null)})};},tick:analyzeCameraFrame,passing:()=>cameraAnalysisPassing};`});});
+ await page.goto('/interview.html?id=sub-1');await expect.poll(()=>page.evaluate(()=>!!(window as any).visionAudit)).toBe(true);
+ await page.evaluate(()=>(window as any).visionAudit.setup());
+ for(let i=0;i<8;i++){await page.evaluate(()=>(window as any).visionAudit.tick());await page.waitForTimeout(850);}
+ const events=await page.evaluate(()=>(window as any).visionEvents);
+ expect(events.filter((e:any)=>e.event_type==='multiple_people_visible')).toHaveLength(0);
+ expect(events.some((e:any)=>e.event_type==='multiple_people_unconfirmed'&&e.severity==='info')).toBe(true);
+ expect(await page.evaluate(()=>(window as any).visionAudit.passing())).toBe(true);
+ await page.evaluate(()=>(window as any).visionAudit.faces(2));
+ for(let i=0;i<8;i++){await page.evaluate(()=>(window as any).visionAudit.tick());await page.waitForTimeout(850);}
+ const confirmed=await page.evaluate(()=>(window as any).visionEvents.filter((e:any)=>e.event_type==='multiple_people_visible'));
+ expect(confirmed).toHaveLength(1);expect(confirmed[0].details.face_count).toBe(2);expect(confirmed[0].details.duration_ms).toBeGreaterThanOrEqual(5000);
+});
