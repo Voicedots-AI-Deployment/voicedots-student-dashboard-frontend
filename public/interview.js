@@ -2289,7 +2289,9 @@ function describeInterviewRecordingFormat(mimeType) {
   };
 }
 
+let interviewRecordingEnabled = true;
 async function startInterviewRecording() {
+  if (!interviewRecordingEnabled) return;
   if (interviewRecorder || !currentSessionId || !userMediaStream || !recordingConsentEl?.checked) return;
   if (typeof MediaRecorder === "undefined" || !recordingAudioDestination) {
     setRecordingStatus("This browser cannot record the interview. Your interview can continue, but its recording will be unavailable.", true);
@@ -2483,6 +2485,7 @@ function handleControlMessage(payload) {
     // never send this. Only from here on does a flag actually count, and
     // only from here on do queued pending events get flushed.
     case "interview_started":
+      interviewRecordingEnabled = payload.recording_enabled !== false;
       if (Array.isArray(payload.agents) && payload.agents.length) {
         const animations = new Map(panelAnimations);
         panelAnimations.clear();

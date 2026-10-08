@@ -469,3 +469,19 @@ test("setup and microphone recovery stay aligned on desktop and mobile",async({p
  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
  await page.screenshot({path:'/root/voicedots/artifacts/proctor-startup-fix-20261008/microphone-mobile.png',fullPage:true});
 });
+
+test('practice start and reconnect never start video recording', async ({page}) => {
+  await prepare(page);
+  let starts=0;
+  await page.route('**/recording/start',route=>{starts++;return route.fulfill({json:{status:'recording'}});});
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;
+    const context=new AudioContext();const destination=context.createMediaStreamDestination();
+    (window as any).__testRecordingSetup('practice-session',canvas.captureStream(15),destination);
+    (window as any).__testControlMessage({type:'interview_started',recording_enabled:false,total_rounds:1});
+    (window as any).__testControlMessage({type:'resume_state',completed_rounds:[],turns_completed:1});
+    await (window as any).__testStartRecording();
+  });
+  await expect.poll(()=>page.evaluate(()=>(window as any).__testRecordingState().active)).toBe(false);
+  expect(starts).toBe(0);
+});
