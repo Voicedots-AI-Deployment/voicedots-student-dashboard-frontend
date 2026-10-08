@@ -39,3 +39,17 @@ for (const type of ['candidate_not_visible', 'multiple_people_visible', 'phone_u
   expect(await page.evaluate(() => (window as any).flagEvents.length)).toBe(2);
  });
 }
+
+test('camera quality reminders never add strikes and phone warnings still do',async({page})=>{
+  await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'student-1'},csrf_token:'test'}}));
+  await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`
+    window.qualityHarness={activate:()=>{proctoringActive=true;ws={readyState:WebSocket.OPEN,send:value=>(window.qualityEvents||(window.qualityEvents=[])).push(JSON.parse(value))}},warn:warnVisionSignal,strikes:()=>integrityStrikeCount};
+  `});});
+  await page.goto('/interview.html?id=sub-1');
+  await expect.poll(()=>page.evaluate(()=>!!(window as any).qualityHarness)).toBe(true);
+  await page.evaluate(()=>{const h=(window as any).qualityHarness;h.activate();h.warn('poor_lighting','Add light',{});h.warn('camera_blurry','Clean your camera',{});});
+  expect(await page.evaluate(()=>(window as any).qualityHarness.strikes())).toBe(0);
+  expect(await page.evaluate(()=>(window as any).qualityEvents.map((e:any)=>e.severity))).toEqual(['info','info']);
+  await page.evaluate(()=>(window as any).qualityHarness.warn('phone_usage_detected','Put your phone away',{}));
+  expect(await page.evaluate(()=>(window as any).qualityHarness.strikes())).toBe(1);
+});

@@ -1149,6 +1149,19 @@ function frameLighting(video) {
   return samples ? total / samples : 0;
 }
 
+function frameSharpness(video) {
+  const canvas = frameSharpness.canvas || (frameSharpness.canvas = document.createElement("canvas"));
+  canvas.width = canvas.height = 160;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(video, video.videoWidth*.25, video.videoHeight*.15, video.videoWidth*.5, video.videoHeight*.7, 0, 0, 160, 160);
+  const pixels = context.getImageData(0, 0, 160, 160).data;
+  const gray = index => pixels[index*4]*.2126 + pixels[index*4+1]*.7152 + pixels[index*4+2]*.0722;
+  let sum=0, squares=0, count=0;
+  for(let y=1;y<159;y+=2) for(let x=1;x<159;x+=2){const i=y*160+x;const value=4*gray(i)-gray(i-1)-gray(i+1)-gray(i-160)-gray(i+160);sum+=value;squares+=value*value;count++;}
+  return count?squares/count-(sum/count)**2:0;
+}
+let cameraQualityIssue = null;
+let lastCameraQualityNoticeAt = 0;
 function landmarkGazeOffCamera(landmarks) {
   if (!landmarks || landmarks.length < 478) return false;
   const ratio = (iris, a, b) => {
@@ -1169,6 +1182,11 @@ function landmarkGazeOffCamera(landmarks) {
 function warnVisionSignal(type, message, details) {
   if (!proctoringActive || integrityEndRequested || sessionCompletedCleanly || lastVisionWarningAt[type] !== undefined) return;
   lastVisionWarningAt[type] = Date.now();
+  if (["poor_lighting", "camera_blurry"].includes(type)) {
+    _sendIntegrityEvent(type, "info", details);
+    showIntegrityNotice(message + " Adjust your camera. This does not count as misconduct.");
+    return;
+  }
   recordIntegrityViolation(type, message, details);
 }
 
@@ -1201,6 +1219,30 @@ async function analyzeCameraFrame() {
     lightingPassing ? "✓ Lighting is clear" : (luminance < 45 ? "More light needed" : "Reduce backlight"),
   );
 
+  const sharpness = frameSharpness(lobbyVideoEl);
+  const qualityIssue = !lightingPassing ? "poor_lighting" : sharpness < 12 ? "camera_blurry" : null;
+  if (qualityIssue) {
+    cameraAnalysisPassing = false;
+    absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
+    lastPhoneDetectedAt = lastMultiplePeopleDetectedAt = 0;
+    const guidance = qualityIssue === "poor_lighting" ? "Camera lighting is too low or strongly backlit. Add light in front of you and avoid a bright light behind you." : "Your camera image looks blurry. Clean the lens, focus the camera and keep your face clearly visible.";
+    setVisionCheck(lightingCheckEl, "warn", guidance);
+    updatePrejoinReadiness();
+    if (proctoringActive && (cameraQualityIssue !== qualityIssue || Date.now()-lastCameraQualityNoticeAt > 15000)) {
+      _sendIntegrityEvent(qualityIssue, "info", { luminance: Math.round(luminance), sharpness: Math.round(sharpness), message: guidance });
+      showIntegrityNotice(guidance + " This is a camera quality reminder, not a misconduct warning.");
+      lastCameraQualityNoticeAt = Date.now();
+    }
+    cameraQualityIssue = qualityIssue;
+    return;
+  }
+  if (cameraQualityIssue) {
+    if (proctoringActive) _sendIntegrityEvent("camera_quality_restored", "info", {});
+    cameraQualityIssue = null;
+    absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
+    delete lastVisionWarningAt.candidate_not_visible;
+    delete lastVisionWarningAt.gaze_off_camera;
+  }
   let landmarks = null;
   if (faceLandmarker) {
     const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
@@ -1257,6 +1299,8 @@ async function analyzeCameraFrame() {
         else lastPhoneDetectedAt = now;
       }
     }
+    const phoneCrop = cropDetectPersons(lobbyVideoEl, { x: .2, y: .2, w: .6, h: .8 });
+    if (phoneCrop?.detections.some(det => (det.categories || []).some(category => category.categoryName === "cell phone"))) lastPhoneDetectedAt = now;
     personBoxCountDetected = personDetections.length + extraPeople;
     if (personBoxCountDetected > 1) lastMultiplePeopleDetectedAt = now;
   }
