@@ -49,17 +49,17 @@ test('scheduled reports show release time and do not label publication as assess
  await expect(page.getByRole('table').getByRole('link',{name:/Open report/})).toHaveCount(0);
 });
 
-test('question bookmarks open the matching feedback and seek the video without separate audio',async({page})=>{
+test('compact placement video keeps answer playback without a bookmark row',async({page})=>{
  await setup(page);
  await page.route('**/api/interview/s1/evaluation',route=>route.fulfill({json:{overall_score:65,question_reviews:[{answer_id:1,question:'Tell us about your project.',answer:'I built the service.',answer_started_at:'2026-10-08T10:00:05Z',evidence_status:'answered'},{answer_id:2,question:'How did you test it?',answer:'I tested failed inputs.',answer_started_at:'2026-10-08T10:00:25Z',evidence_status:'answered'}]}}));
  await page.route('**/api/student/interview/s1/recording',route=>route.fulfill({json:{status:'ready',playback_url:'https://media.example/bookmarks.webm',started_at:'2026-10-08T10:00:00Z',duration_seconds:120,segment_count:1}}));
  await page.route('https://media.example/**',route=>route.abort());
  await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (2)'}).click();
- const video=page.getByLabel('Interview video');await expect(video).toBeVisible();
+ const video=page.getByLabel('Interview video');await expect(video).toBeVisible();await expect(page.getByRole('navigation',{name:'Question bookmarks'})).toHaveCount(0);expect((await page.locator('.report-video-review').boundingBox())!.width).toBeLessThanOrEqual(640);
  const videoBox=await page.locator('.report-video-review').boundingBox(),answersBox=await page.locator('.report-answer-review').boundingBox();expect(videoBox!.y+videoBox!.height).toBeLessThanOrEqual(answersBox!.y);
  expect(await page.locator('.report-question-content').first().evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(2);
  await video.evaluate((element:any)=>{Object.defineProperty(element,'readyState',{value:4});Object.defineProperty(element,'currentTime',{value:0,writable:true});element.play=()=>{element.dataset.played='true';return Promise.resolve();};});
- await page.getByRole('navigation',{name:'Question bookmarks'}).getByRole('button',{name:'Q2 0:25'}).click();
+ await page.locator('#question-1 summary').click();await page.locator('#question-1').getByRole('button',{name:'Watch this answer · 0:25'}).click();
  await expect(page.locator('#question-1')).toHaveAttribute('open','');
  await expect(page.locator('#question-1')).toContainText('I tested failed inputs.');
  expect(await video.evaluate((element:any)=>element.currentTime)).toBe(25);await expect(video).toHaveAttribute('data-played','true');
@@ -69,7 +69,7 @@ test('question bookmarks open the matching feedback and seek the video without s
 });
 
 
-test('the embedded video decodes and a question bookmark seeks real playback',async({page})=>{
+test('the compact embedded video decodes and answer playback seeks correctly',async({page})=>{
  await setup(page);
  await page.route('**/api/interview/s1/evaluation',route=>route.fulfill({json:{overall_score:65,question_reviews:[{answer_id:1,question:'How did you test it?',answer:'I tested failed inputs.',answer_started_at:'2026-10-08T10:00:25Z',evidence_status:'answered'}]}}));
  await page.route('**/api/student/interview/s1/recording',route=>route.fulfill({json:{status:'ready',playback_url:'https://media.example/real-recording.mp4',started_at:'2026-10-08T10:00:00Z',duration_seconds:40,segment_count:1}}));
@@ -81,11 +81,25 @@ test('the embedded video decodes and a question bookmark seeks real playback',as
  });
  await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
  const video=page.getByLabel('Interview video');await expect.poll(()=>video.evaluate((element:HTMLVideoElement)=>element.readyState)).toBeGreaterThanOrEqual(1);
- await page.getByRole('navigation',{name:'Question bookmarks'}).getByRole('button',{name:'Q1 0:25'}).click();
+ await page.getByRole('button',{name:'Watch this answer · 0:25'}).click();
  await expect.poll(()=>video.evaluate((element:HTMLVideoElement)=>element.currentTime)).toBeGreaterThanOrEqual(25);
  await expect.poll(()=>video.evaluate((element:HTMLVideoElement)=>element.paused)).toBe(false);
  await video.evaluate((element:HTMLVideoElement)=>element.pause());
  await page.evaluate(()=>{window.scrollTo(0,0);document.querySelectorAll('*').forEach(e=>e.scrollTop=0);});
  await page.setViewportSize({width:1440,height:960});await page.screenshot({path:'/root/voicedots/artifacts/report-review-redesign-20261008/student-report-video-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);await page.screenshot({path:'/root/voicedots/artifacts/report-review-redesign-20261008/student-report-video-mobile.png',fullPage:true});
+});
+
+
+test('self-practice report shows questions and feedback without fetching or warning about recordings',async({page})=>{
+ await setup(page);
+ await page.route('**/api/student/reports',route=>route.fulfill({json:{reports:[{...base,drive_id:null,company_name:null}]}}));
+ let recordingRequests=0;await page.route('**/api/student/interview/s1/recording',route=>{recordingRequests++;return route.fulfill({json:{status:'failed',message:'Video upload failed'}});});
+ await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
+ await expect(page.getByRole('heading',{name:'Questions & feedback',exact:true})).toBeVisible();
+ await expect(page.getByText('I used a join.',{exact:true})).toBeVisible();
+ await expect(page.getByRole('heading',{name:'Interview video'})).toHaveCount(0);
+ await expect(page.getByText('Video upload failed')).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Refresh video'})).toHaveCount(0);
+ expect(recordingRequests).toBe(0);
 });
