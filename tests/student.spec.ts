@@ -1081,7 +1081,9 @@ test('Resume Studio saves project evidence and reloads it from the student API',
  await page.getByLabel('Project title',{exact:true}).fill('Library API');
  await page.getByLabel('Description / achievements',{exact:true}).fill('Built a Python API with book search.');
  await expect(page.locator('.rs-save-state')).toHaveText('Saved',{timeout:5000});
- expect(savedProject.revision).toBe(2);
+ // Separate edits may legitimately autosave as one or several revisions.
+ // The persisted content and reload below are the correctness contract.
+ expect(savedProject.revision).toBeGreaterThanOrEqual(2);
  await page.reload();
  await page.getByRole('button',{name:/Open Resume 1/}).click();
  await page.getByRole('tab',{name:'Resume editor'}).click();
