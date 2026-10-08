@@ -217,6 +217,7 @@ let integrityEndRequested = false;
 let lastIntegrityEvent = { key: "", at: 0 };
 let faceLandmarker = null;
 let nativeFaceDetector = null;
+let workerObjectFailed = false;
 let objectDetector = null; // person-count backstop: catches a body facing away
                             // from the camera, which no face detector can see
 let objectDetectorUnavailable = false;
@@ -275,6 +276,7 @@ function setRequiredInterviewRounds(value) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > TOTAL_INTERVIEW_ROUNDS) return;
   requiredInterviewRounds = parsed;
+  document.querySelector(".interview-grid")?.setAttribute("data-panel-count", String(requiredInterviewRounds));
   panelAgentEls.forEach((element) => {
     const round = Number(element.dataset.panelRound || 0);
     element.hidden = round < 1 || round > requiredInterviewRounds;
@@ -287,7 +289,7 @@ function setRequiredInterviewRounds(value) {
 const VISION_MODULE_URL = "/vendor/mediapipe/vision_bundle.mjs";
 const VISION_WASM_URL = "/vendor/mediapipe/wasm";
 const FACE_MODEL_URL = "/vendor/mediapipe/face_landmarker.task";
-const OBJECT_MODEL_URL = "/vendor/mediapipe/efficientdet_lite0.tflite";
+const OBJECT_MODEL_URL = "/vendor/mediapipe/efficientdet_lite0.tflite"; // Fast fallback for browsers without worker inference.
 const VISION_RETRY_INTERVAL_MS = 15000;
 const PERSON_DETECTION_INTERVAL_MS = 800;
 const MULTIPLE_PERSON_HOLD_MS = 3000;
@@ -1023,11 +1025,57 @@ async function loadFaceDetector() {
 // mouth visible and cannot see a person whose back is turned to the camera
 // (e.g. someone crouched behind the candidate). This runs a general "person"
 // object detector so a body is still counted even with no face visible.
+async function createWorkerObjectDetector() {
+  if (workerObjectFailed || !window.Worker || !window.createImageBitmap || !window.OffscreenCanvas) return null;
+  const worker = new Worker("/proctor-object-worker.js");
+  const pending = new Map();
+  let sequence = 0;
+  const fail = error => {
+    for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
+    pending.clear();
+  };
+  worker.onerror = () => {
+    workerObjectFailed = true; objectDetector = null; lastPersonDetectionAt = 0; cameraAnalysisPassing = false;
+    worker.terminate(); fail(new Error("Object inference worker failed."));
+  };
+  worker.onmessage = ({data}) => {
+    const request = pending.get(data.id);
+    if (!request) return;
+    pending.delete(data.id); clearTimeout(request.timer);
+    if (data.error) request.reject(new Error(data.error)); else request.resolve(data.result);
+  };
+  const request = (type, extra = {}, transfer = []) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error("Object inference timed out.")); }, type === "init" ? 60000 : 15000);
+    pending.set(id, {resolve, reject, timer});
+    try { worker.postMessage({id, type, ...extra}, transfer); }
+    catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }
+  });
+  try { await request("init"); }
+  catch (error) { worker.terminate(); fail(error); throw error; }
+  return {
+    async detectForVideo(source, timestamp) {
+      const frame = await createImageBitmap(source);
+      try { return await request("detect", {frame, timestamp}, [frame]); }
+      catch (error) {
+        worker.terminate(); fail(error); workerObjectFailed = true;
+        objectDetector = null; lastPersonDetectionAt = 0; cameraAnalysisPassing = false;
+        throw error; // Next analysis tick loads the fast fallback, never stale passing data.
+      }
+    },
+    close() { worker.terminate(); fail(new Error("Object detector closed.")); },
+  };
+}
+
 async function loadPersonDetector() {
   if (objectDetector || objectDetectorUnavailable) return !!objectDetector;
   if (personDetectorLoadPromise) return personDetectorLoadPromise;
   personDetectorLoadPromise = (async () => {
     try {
+      try {
+        objectDetector = await createWorkerObjectDetector();
+        if (objectDetector) return true;
+      } catch (error) { workerObjectFailed = true; console.warn("Worker object check unavailable; using the fast detector.", error); }
       const vision = await import(VISION_MODULE_URL);
       const fileset = await vision.FilesetResolver.forVisionTasks(VISION_WASM_URL);
       let lastError = null;
@@ -1036,7 +1084,7 @@ async function loadPersonDetector() {
           objectDetector = await vision.ObjectDetector.createFromOptions(fileset, {
             baseOptions: { modelAssetPath: OBJECT_MODEL_URL, delegate },
             runningMode: "VIDEO",
-            maxResults: 8,
+            maxResults: 20,
             // Keep the body backstop sensitive to a smaller or partly turned
             // away person; the face detector remains authoritative for entry.
             // "cell phone" is a native COCO class on this same model, so a
@@ -1048,7 +1096,7 @@ async function loadPersonDetector() {
             // below instead of using a high single-frame confidence cutoff.
             // Lowered further (was 0.12) after reports of a clearly-visible
             // background person and a held-up phone both going undetected —
-            // efficientdet_lite0 (fast, small, downscales the frame to 320x320)
+            // The fast fallback keeps older browsers responsive; worker-capable browsers use Lite2.
             // has weak recall on small/partly-occluded objects; recall matters
             // more than precision for a proctoring backstop that already
             // requires 1.5-3s of temporal stability before it warns.
@@ -1085,12 +1133,12 @@ function nextObjectDetectorTimestamp() {
 // double the effective resolution, which is what actually recovers them.
 // Alternates halves each tick (rather than scanning both every tick) to
 // keep the extra inference cost to one pass instead of two.
-function cropDetectPersons(video, region) {
+async function cropDetectPersons(video, region) {
   const canvas = cropDetectPersons.canvas || (cropDetectPersons.canvas = document.createElement("canvas"));
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
+  const vw = video.videoWidth || video.width;
+  const vh = video.videoHeight || video.height;
   if (!vw || !vh) return null;
-  const outSize = 320;
+  const outSize = 448;
   canvas.width = outSize;
   canvas.height = outSize;
   const sx = region.x * vw;
@@ -1099,7 +1147,7 @@ function cropDetectPersons(video, region) {
   const sh = region.h * vh;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, outSize, outSize);
-  const detections = objectDetector.detectForVideo(canvas, nextObjectDetectorTimestamp()).detections || [];
+  const detections = (await objectDetector.detectForVideo(canvas, nextObjectDetectorTimestamp())).detections || [];
   return { detections, sx, sy, sw, sh, outSize };
 }
 
@@ -1261,7 +1309,12 @@ async function analyzeCameraFrame() {
   // signal saw more people this frame.
   const now = Date.now();
   if (objectDetector && now - lastPersonDetectionAt >= PERSON_DETECTION_INTERVAL_MS) {
-    const detections = objectDetector.detectForVideo(lobbyVideoEl, nextObjectDetectorTimestamp()).detections || [];
+    // Every crop uses the same captured frame. Asynchronous inference must not
+    // count a moving person twice by comparing snapshots from different times.
+    const objectFrame = analyzeCameraFrame.objectFrame || (analyzeCameraFrame.objectFrame = document.createElement("canvas"));
+    objectFrame.width = lobbyVideoEl.videoWidth; objectFrame.height = lobbyVideoEl.videoHeight;
+    objectFrame.getContext("2d").drawImage(lobbyVideoEl, 0, 0);
+    const detections = (await objectDetector.detectForVideo(objectFrame, nextObjectDetectorTimestamp())).detections || [];
     // categoryAllowlist now includes "cell phone" alongside "person" (same
     // model, no extra load), so detections must be split by category rather
     // than counted as a flat length, or a phone in frame would inflate the
@@ -1285,7 +1338,7 @@ async function analyzeCameraFrame() {
     const region = personCropToggle === 0
       ? { x: 0, y: 0, w: 0.55, h: 1 }
       : { x: 0.45, y: 0, w: 0.55, h: 1 };
-    const crop = cropDetectPersons(lobbyVideoEl, region);
+    const crop = await cropDetectPersons(objectFrame, region);
     let extraPeople = 0;
     if (crop) {
       for (const det of crop.detections) {
@@ -1299,7 +1352,7 @@ async function analyzeCameraFrame() {
         else lastPhoneDetectedAt = now;
       }
     }
-    const phoneCrop = cropDetectPersons(lobbyVideoEl, { x: .2, y: .2, w: .6, h: .8 });
+    const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
     if (phoneCrop?.detections.some(det => (det.categories || []).some(category => category.categoryName === "cell phone"))) lastPhoneDetectedAt = now;
     personBoxCountDetected = personDetections.length + extraPeople;
     if (personBoxCountDetected > 1) lastMultiplePeopleDetectedAt = now;
@@ -1712,10 +1765,10 @@ function showFatalError(detail) {
   const toast = document.getElementById("error-toast");
   const text = document.getElementById("error-toast-text");
   if (text) {
-    text.textContent = `We hit a connection issue and had to stop the interview early: ${detail} Your answers so far were saved.`;
+    text.textContent = `The interview service stopped unexpectedly: ${detail} Your saved answers are available when you resume this attempt.`;
   }
   if (toast) toast.classList.add("show");
-  if (rndStatus) rndStatus.textContent = "Disconnected";
+  if (rndStatus) rndStatus.textContent = "Interview service interrupted";
 }
 
 // ============================================================

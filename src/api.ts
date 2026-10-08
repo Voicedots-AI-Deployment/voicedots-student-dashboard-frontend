@@ -322,7 +322,7 @@ export type QuestionReview = {
 };
 export type ReportFeedback = { text?: string; focus?: string; area?: string; cites_answer_id?: number };
 export type InterviewReportView = {
-  overall_score?: number | null; status?: string; readiness?: string; executive_summary?: string;
+  release_scheduled_for?: string | null; overall_score?: number | null; status?: string; readiness?: string; executive_summary?: string;
   score_breakdown?: Record<string, number | null>;
   core_dimensions?: Array<{dimension: string; percentage?: number | null; band?: number; reason?: string}>;
   domain_dimensions?: Array<{dimension: string; percentage?: number | null; band?: number; reason?: string}>;

@@ -38,3 +38,12 @@ test('placement cards and table show a released formal result',async({page})=>{
  await setup(page,'shortlist');await page.goto('/placements');await expect(page.locator('.drive-card').getByText('Shortlisted',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Table',exact:true}).click();await expect(page.getByRole('table').getByText('Shortlisted',{exact:true})).toBeVisible();
 });
+
+test('scheduled reports show release time and do not label publication as assessment review',async({page})=>{
+ await setup(page);
+ await page.route('**/api/student/reports',route=>route.fulfill({json:{reports:[{...base,status:'released',report:{status:'awaiting_release',release_scheduled_for:'2026-10-10T10:00:00Z'}}]}}));
+ await page.goto('/reports');await expect(page.getByText('Release scheduled',{exact:true})).toBeVisible();
+ await expect(page.getByText('In review',{exact:true})).toHaveCount(0);
+ await page.getByRole('button',{name:'Table',exact:true}).click();await expect(page.getByRole('table')).toContainText('Scheduled');
+ await expect(page.getByRole('table').getByRole('link',{name:/Open report/})).toHaveCount(0);
+});

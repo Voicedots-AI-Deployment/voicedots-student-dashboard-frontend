@@ -328,7 +328,7 @@ test("an unreleased placement report never offers an export", async ({
   ).toBeVisible();
   await expect(page.getByRole("link", { name: /Open report/ })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /Download PDF report/ })).toHaveCount(0);
-  await expect(page.locator(".student-report-card__result strong")).toHaveText("In review");
+  await expect(page.locator(".student-report-card__result strong")).toHaveText("Awaiting release");
 });
 
 test("a released placement report identifies the company and offers web and PDF views", async ({page}) => {
