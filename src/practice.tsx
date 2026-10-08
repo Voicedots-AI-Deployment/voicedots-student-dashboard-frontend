@@ -554,7 +554,7 @@ export function Practice() {
                 <div className="interview-field-row">
                   <label>Interview duration
                     <select value={duration} onChange={(e) => setDuration(e.target.value)}>
-                      {[30, 45].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
+                      {[5, 10, 30, 45].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
                     </select>
                   </label>
                   <label>Interview difficulty

@@ -59,6 +59,10 @@ test("Practice mode uses editable setup, one Main Resume and the standard four-p
   await expect(page.getByRole("tab", { name: "Practice Interview" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("Target role", { exact: true })).toBeEditable();
   await expect(page.getByLabel("Interview duration")).toBeEnabled();
+  for (const minutes of [5, 10, 30, 45]) {
+    await page.getByLabel("Interview duration").selectOption(String(minutes));
+    await expect(page.getByLabel("Interview duration")).toHaveValue(String(minutes));
+  }
   await expect(page.getByLabel("Interview difficulty")).toBeEnabled();
   await expect(page.getByLabel("Interview difficulty").locator("option:checked")).toHaveText("Personalized");
   await expect(page.getByLabel("Interview difficulty")).toHaveValue("dynamic");
