@@ -676,7 +676,7 @@ test("overview never offers interview actions for a closed drive", async ({ page
 test("placement opportunity shows full details and a truthful unassigned attempt state", async ({ page }) => {
   await mockStudent(page);
   await page.route("**/api/student/drives", route => route.fulfill({ json: [
-    { id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", criteria_min_cgpa: 7.5, criteria_department_codes: ["CSE"], criteria_graduation_years: [2027], criteria_required_skills: ["SQL", "Python"], criteria_min_skill_matches: 1, criteria_require_resume: true, location: "Chennai", job_type: "full_time", window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30", application_deadline: "2026-09-30T17:00:00+05:30", interview_duration_minutes: 30, difficulty_tier: "intermediate", agent_selection: [{ track: "hr", agent_id: "private-persona-id" }, { track: "domain", agent_id: "private-persona-id-2" }], salary_type: "range", salary_min_amount: 500000, salary_max_amount: 700000, salary_currency: "INR", salary_period: "annual" },
+    { id: "zoho", company_name: "Zoho", company_description: "A product company", role_title: "Data Analyst", status: "active", eligibility_status: "eligible", criteria_min_cgpa: 7.5, criteria_department_codes: ["CSE"], criteria_graduation_years: [2027], criteria_required_skills: ["SQL", "Python"], criteria_min_skill_matches: 1, criteria_require_resume: true, location: "Chennai", job_type: "full_time", window_start_at: "2026-10-01T09:00:00+05:30", window_end_at: "2026-10-05T17:00:00+05:30", application_deadline: "2026-09-30T17:00:00+05:30", application_deadline_at: "2026-09-30T17:00:00+05:30", interview_duration_minutes: 30, difficulty_tier: "intermediate", agent_selection: [{ track: "hr", agent_id: "private-persona-id" }, { track: "domain", agent_id: "private-persona-id-2" }], salary_type: "range", salary_min_amount: 500000, salary_max_amount: 700000, salary_currency: "INR", salary_period: "annual" },
   ] }));
   await page.route("**/api/student/drives/zoho/interview-context", route => route.fulfill({ json: {
     drive_id: "zoho", company_name: "Zoho", company_description: "A product company", company_website: "https://zoho.example", company_linkedin: "https://linkedin.com/company/zoho", role_title: "Data Analyst",
@@ -1453,6 +1453,7 @@ test("Career Coach uses owned resume and interests without a personal target rol
 
 test("profile upload becomes the single active resume and enables replacement", async ({ page }) => {
   await mockStudent(page);
+  await page.route("**/api/student/resume-library/identity-check", route => route.fulfill({json:{matches:true,candidate_name:"Asha Kumar",student_name:"Asha Kumar"}}));
   let active: any = null;
   await page.route("**/api/auth/student-me", route => route.fulfill({ json: { student: { ...identity.student, current_resume_submission_id: active?.submission_id || null } } }));
   await page.route("**/api/student/resume-library", async route => {
@@ -1548,20 +1549,15 @@ test("replacing the active resume with identical content remains the single pers
   await expect(page.locator(".saved-resume-row")).toHaveCount(1);
 });
 
-test("Career Coach labels an evidence fallback and remains readable on mobile with limited evidence", async ({ page }) => {
+test("Career Coach does not present a synthetic career report when the AI service fails", async ({ page }) => {
   await mockStudent(page);
   await page.setViewportSize({ width: 390, height: 844 });
   await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [
     { submission_id: "resume-limited", label: "Limited resume", original_filename: "resume.pdf", is_primary: true },
   ] } }));
   await page.route("**/api/student/career/reports", route => route.fulfill({ json: { reports: [] } }));
-  await page.route("**/api/student/career/finder", route => route.fulfill({ json: {
-    analysis_status: "evidence_fallback",
-    analysis_note: "The AI career analysis service is unavailable. These results are an evidence-only fallback, not a complete AI analysis.",
-    career_profile: "There is not enough specific evidence in this resume to identify a current-fit role yet.",
-    strongest_current_fit: "Not enough resume evidence yet",
-    strongest_growth_path: "Explore adjacent paths as you build more evidence.",
-    recommended_roles: [],
+  await page.route("**/api/student/career/finder", route => route.fulfill({ status: 503, json: {
+    detail: "The AI career analysis service could not complete the request. Please retry.",
   } }));
   await page.goto("/career");
   await expect(page.getByText(/Using active profile resume: Limited resume/)).toBeVisible();
@@ -1569,8 +1565,8 @@ test("Career Coach labels an evidence fallback and remains readable on mobile wi
   await page.getByRole("button", { name: "Next question" }).click();
   await page.getByRole("button", { name: "Next question" }).click();
   await page.getByRole("button", { name: "Explore career paths" }).click();
-  await expect(page.getByText("Evidence-only analysis")).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Not enough role-specific evidence yet" })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("AI career analysis service could not complete the request");
+  await expect(page.getByRole("heading", { name: "Your saved career analysis" })).toHaveCount(0);
   const dimensions = await page.evaluate(() => ({ scrollWidth: document.documentElement.scrollWidth, viewportWidth: innerWidth }));
   expect(dimensions.scrollWidth).toBeLessThanOrEqual(dimensions.viewportWidth);
 });

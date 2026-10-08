@@ -79,6 +79,7 @@ export function Calendar() {
   const [menuId, setMenuId] = useState("");
   const [saving, setSaving] = useState(false);
   const [mutationError, setMutationError] = useState("");
+  const [allDay, setAllDay] = useState(false);
 
   useEffect(() => {
     if (personalResource.data) setPersonalEvents(personalResource.data.events || []);
@@ -158,18 +159,18 @@ export function Calendar() {
     const start = days[0]; const end = days[days.length - 1];
     return `${start.toLocaleDateString(undefined, { month: "short", day: "numeric" })} – ${end.toLocaleDateString(undefined, { month: "short", day: "numeric", year: "numeric" })}`;
   }
-  function beginCreate() { setMutationError(""); setFormEvent(null); setCreating(true); }
-  function beginEdit(event: PersonalEvent) { setMutationError(""); setMenuId(""); setCreating(false); setFormEvent(event); setDetail(null); }
+  function beginCreate() { setMutationError(""); setFormEvent(null); setAllDay(false); setCreating(true); }
+  function beginEdit(event: PersonalEvent) { setMutationError(""); setMenuId(""); setCreating(false); setAllDay(event.all_day); setFormEvent(event); setDetail(null); }
   async function savePersonalEvent(event: FormEvent<HTMLFormElement>) {
     event.preventDefault(); setSaving(true); setMutationError("");
     const form = new FormData(event.currentTarget);
-    const date = String(form.get("date") || ""); const allDay = form.get("all_day") === "on";
-    const startTime = allDay ? "00:00" : String(form.get("start_time") || "");
-    const endTime = allDay ? "00:00" : String(form.get("end_time") || "");
-    const endDate = allDay ? plusOneDay(date) : date;
+    const date = String(form.get("date") || ""); const allDayValue = allDay;
+    const startTime = allDayValue ? "00:00" : String(form.get("start_time") || "");
+    const endTime = allDayValue ? "00:00" : String(form.get("end_time") || "");
+    const endDate = allDayValue ? plusOneDay(date) : date;
     const payload = {
       title: String(form.get("title") || "").trim(), category: String(form.get("category") || "personal"),
-      start_at: localIso(date, startTime), end_at: localIso(endDate, endTime), all_day: allDay,
+      start_at: localIso(date, startTime), end_at: localIso(endDate, endTime), all_day: allDayValue,
       location: String(form.get("location") || "").trim() || null,
       meeting_url: String(form.get("meeting_url") || "").trim() || null,
       description: String(form.get("description") || "").trim() || null,
@@ -283,9 +284,9 @@ export function Calendar() {
         {mutationError && <p className="calendar-form-error" role="alert">{mutationError}</p>}
         <label className="calendar-form-field full">Event title *<input name="title" required maxLength={160} defaultValue={formEvent?.title || ""} placeholder="What do you want to do?"/></label>
         <label className="calendar-form-field">Date *<input name="date" type="date" required defaultValue={formEvent ? indiaDateParts(new Date(formEvent.start_at)) : selectedDay || initialFormDate()}/></label>
-        <label className="calendar-form-field calendar-all-day"><span>All day</span><input name="all_day" type="checkbox" defaultChecked={formEvent?.all_day || false}/></label>
-        <label className="calendar-form-field">Start time *<input name="start_time" type="time" required defaultValue={formEvent && !formEvent.all_day ? indiaTime.format(new Date(formEvent.start_at)).replace(/\s/g, "").replace(/(\d+):(\d+)(am|pm)/i, (_m, h, m, half) => `${String((Number(h) % 12) + (half.toLowerCase() === "pm" ? 12 : 0)).padStart(2, "0")}:${m}`) : "18:30"}/></label>
-        <label className="calendar-form-field">End time *<input name="end_time" type="time" required defaultValue={formEvent && !formEvent.all_day ? indiaTime.format(new Date(formEvent.end_at)).replace(/\s/g, "").replace(/(\d+):(\d+)(am|pm)/i, (_m, h, m, half) => `${String((Number(h) % 12) + (half.toLowerCase() === "pm" ? 12 : 0)).padStart(2, "0")}:${m}`) : "19:30"}/></label>
+        <label className="calendar-form-field calendar-all-day"><span><strong>All day</strong><small>Hide times for an event that lasts the whole day</small></span><input name="all_day" type="checkbox" checked={allDay} onChange={(event) => setAllDay(event.target.checked)}/></label>
+        {!allDay && <label className="calendar-form-field">Start time *<input name="start_time" type="time" required defaultValue={formEvent && !formEvent.all_day ? indiaTime.format(new Date(formEvent.start_at)).replace(/\s/g, "").replace(/(\d+):(\d+)(am|pm)/i, (_m, h, m, half) => `${String((Number(h) % 12) + (half.toLowerCase() === "pm" ? 12 : 0)).padStart(2, "0")}:${m}`) : "18:30"}/></label>}
+        {!allDay && <label className="calendar-form-field">End time *<input name="end_time" type="time" required defaultValue={formEvent && !formEvent.all_day ? indiaTime.format(new Date(formEvent.end_at)).replace(/\s/g, "").replace(/(\d+):(\d+)(am|pm)/i, (_m, h, m, half) => `${String((Number(h) % 12) + (half.toLowerCase() === "pm" ? 12 : 0)).padStart(2, "0")}:${m}`) : "19:30"}/></label>}
         <label className="calendar-form-field">Category<select name="category" defaultValue={formEvent?.category || "personal"}><option value="personal">Personal</option><option value="study">Study</option><option value="reminder">Reminder</option></select></label>
         <label className="calendar-form-field">Reminder<select name="reminder_minutes" defaultValue={formEvent?.reminder_minutes ?? ""}><option value="">None</option><option value="10">10 minutes before</option><option value="30">30 minutes before</option><option value="60">1 hour before</option><option value="1440">1 day before</option></select></label>
         <label className="calendar-form-field full">Location<input name="location" maxLength={240} defaultValue={formEvent?.location || ""} placeholder="Location or room"/></label>

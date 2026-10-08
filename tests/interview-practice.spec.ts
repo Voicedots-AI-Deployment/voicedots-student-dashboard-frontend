@@ -94,6 +94,18 @@ test("Practice mode uses editable setup, one Main Resume and the standard four-p
   await expect(page).toHaveURL(/interview\.html\?id=practice-sub&session_id=practice-session/);
 });
 
+test("practice setup fields persist in session storage when returning to the section", async ({page})=>{
+  await mockPortal(page);
+  await page.goto("/practice");
+  await page.getByLabel("Target role",{exact:true}).fill("Platform Engineer");
+  await page.getByLabel("Job description").fill("Build dependable APIs for students.");
+  await page.getByRole("link",{name:"Calendar"}).click();
+  await page.getByRole("link",{name:"Interview practice"}).click();
+  await expect(page.getByLabel("Target role",{exact:true})).toHaveValue("Platform Engineer");
+  await expect(page.getByLabel("Job description")).toHaveValue("Build dependable APIs for students.");
+  expect(await page.evaluate(()=>Object.keys(sessionStorage).some(key=>key.startsWith("vd_practice_draft_student-1")))).toBe(true);
+});
+
 test("Placement mode filters unavailable drives and renders only its configured read-only panel", async ({ page }) => {
   await mockPortal(page, { drives: [
     activeDrive(),

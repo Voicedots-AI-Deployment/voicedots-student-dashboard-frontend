@@ -366,13 +366,13 @@ test("Build with AI chat opens the guided conversation after creating the projec
  await expect(page.getByText("What experience should we include?")).toBeVisible();
 });
 
-test("AI chat uses backend reply chips and added-to-resume evidence",async({page})=>{
+test("AI chat accepts free text and shows added-to-resume evidence",async({page})=>{
  await mockResumeStudio(page);
  await page.route("**/api/student/resume-studio/resumes/rs-1/interviews",route=>route.fulfill({json:{id:"chat-1",messages:[{role:"assistant",text:"What role are you targeting?",chips:["Software engineer","Data analyst"],kind:"text"},{role:"assistant",text:"✓ Added your experience.",chips:["Add education"],kind:"added"}],state:{stage:"experience"},document:baseProject.document,resume_revision:baseProject.revision}}));
  await page.goto("/resume-studio");await page.getByRole("button",{name:"Build with AI chat"}).click();
  await expect(page.getByRole("status").filter({hasText:"Added to your resume"})).toBeVisible();
- const suggestions=page.getByRole("group",{name:"Suggested replies"});await expect(suggestions).toBeVisible();
- await suggestions.getByRole("button",{name:"Add education"}).click();await expect(page.locator(".rs-chat-form textarea")).toHaveValue("Add education");
+ await expect(page.getByRole("group",{name:"Suggested replies"})).toHaveCount(0);
+ await page.locator(".rs-chat-form textarea").fill("Name: PG Sreekanth");await expect(page.locator(".rs-chat-form textarea")).toHaveValue("Name: PG Sreekanth");
 });
 
 test("choosing a design template applies its presentation settings and saves them",async({page})=>{

@@ -15,6 +15,7 @@ import {
   MapPin,
   Mic,
   RefreshCw,
+  Search,
   Sparkles,
   Target,
   TrendingUp,
@@ -58,41 +59,40 @@ function safeAttemptNumber(value: unknown, fallback = 1, maximum?: unknown): num
   return Number.isFinite(cap) && cap >= 1 ? Math.min(normalized, Math.floor(cap)) : normalized;
 }
 
-function ReportList({ reports }: { reports: Report[] }) {
+function ReportList({ reports, search = "", filter = "all" }: { reports: Report[]; search?: string; filter?: string }) {
+  const visible = reports.filter((report) => {
+    const category = report.drive_id ? "placement" : "practice";
+    const query = `${report.company_name || ""} ${report.target_role || ""} ${report.report?.executive_summary || ""}`.toLowerCase();
+    return (filter === "all" || filter === category) && query.includes(search.trim().toLowerCase());
+  });
   return (
-    <div className="record-list">
-      {reports.map((report) => (
-        <div className="record" key={report.evaluation_id}>
-          <span className="record-icon">
-            <FileText size={20} />
-          </span>
-          <div className="record-info">
-            <strong>{report.company_name ? `${report.company_name} · ` : ""}{report.target_role || "Interview report"}</strong>
-            <span>
-              {report.drive_id ? "Placement interview" : "Practice interview"} ·{" "}
-              {date(report.completed_at || report.created_at)}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}
-            </span>
+    <div className="student-report-list">
+      {visible.map((report) => {
+        const pending = report.report?.status === "awaiting_release";
+        const assessed = report.report?.overall_score != null && !pending;
+        return <article className="student-report-card" key={report.evaluation_id}>
+          <div className="student-report-card__icon"><FileText size={19} /></div>
+          <div className="student-report-card__main">
+            <div className="student-report-card__topline">
+              <span className={`student-report-kind ${report.drive_id ? "is-placement" : "is-practice"}`}>{report.drive_id ? "Placement interview" : "Practice interview"}</span>
+              <span className={`student-report-status ${pending ? "is-pending" : assessed ? "is-ready" : "is-neutral"}`}>{pending ? "Awaiting release" : assessed ? "Feedback ready" : humanize(report.status)}</span>
+            </div>
+            <h2>{report.company_name ? `${report.company_name} · ` : ""}{report.target_role || "Interview report"}</h2>
+            <p className="student-report-meta">{date(report.completed_at || report.created_at)}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</p>
+            {report.report?.executive_summary && <p className="student-report-summary">{report.report.executive_summary}</p>}
+
           </div>
-          {report.report?.status !== "awaiting_release" && <div className="record-result">
-            <strong>{report.report?.overall_score == null ? "Not assessed" : score(report.report.overall_score)}</strong>
-            <span>{humanize(report.report?.readiness || "Readiness pending")}</span>
-          </div>}{report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
-          {report.report?.status === "awaiting_release" ? (
-            <span className="pill">Awaiting release</span>
-          ) : report.status === "released" ? (
-            <div className="report-actions"><a
+          <div className="student-report-card__result">
+            {pending ? <><strong className="student-report-pending">In review</strong><span>Your placement team will share feedback here.</span></> : <><strong>{report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</strong><span>{humanize(report.report?.readiness || "Not assessed")}</span></>}
+            {report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
+            {report.status === "released" && !pending && <div className="report-actions"><Link
               aria-label={`Open report for ${report.target_role || "interview"}`}
-              href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.html`)}
-              target="_blank"
-              rel="noreferrer"
-            >
-              <ChevronRight size={17} /> View report
-            </a><a aria-label={`Download PDF report for ${report.target_role || "interview"}`} href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.pdf`)}><Download size={15}/> PDF</a></div>
-          ) : (
-            <span className="pill">{humanize(report.status)}</span>
-          )}
-        </div>
-      ))}
+              to={`/reports/${encodeURIComponent(report.session_id)}`}
+            ><ChevronRight size={17} /> View report</Link><a aria-label={`Download PDF report for ${report.target_role || "interview"}`} href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.pdf`)}><Download size={15}/> PDF</a></div>}
+          </div>
+        </article>;
+      })}
+      {!visible.length && <div className="student-report-filter-empty"><strong>No reports match this view.</strong><span>Try another search or choose a different interview type.</span></div>}
     </div>
   );
 }
@@ -268,7 +268,7 @@ export function Overview() {
                 {data.reports.length ? (
                   <>
                     <div className="feedback-spotlight">
-                      <div className="feedback-score"><strong>{score(data.reports[0].report?.overall_score)}</strong><span>Latest score</span></div>
+                      <div className="feedback-score"><strong>{score(data.reports[0].report?.overall_score)}</strong><span>{data.reports[0].report?.overall_score == null ? "Assessment pending" : "Latest score"}</span></div>
                       <div><strong>Focus before your next attempt</strong><div className="focus-chips">{improvementLabels(data.reports[0]).map(item => <span className="pill" key={item}>{item}</span>)}</div>{!improvementLabels(data.reports[0]).length && <p>Your detailed feedback is being prepared.</p>}</div>
                     </div>
                     {data.reports[0].drive_id && data.reports[0].report?.status !== "awaiting_release" && <Link className="button primary" to="/coach">Train weak areas with AI Coach <ArrowRight size={16}/></Link>}
@@ -419,7 +419,7 @@ function safeExternalUrl(value?: string) {
 }
 
 function attemptSummaryText(state: StudentAttemptState) {
-  return `${state.completed} completed · ${state.remaining} remaining`;
+  return `${state.completed} completed${state.current != null ? ` · Attempt ${state.current} in progress` : ""} · ${state.remaining} remaining`;
 }
 
 function compensationLabel(drive: Drive) {
@@ -616,7 +616,7 @@ export function Placements() {
               <article className="panel drive-card" key={drive.id}>
                 {(() => {
                   const interviewStatus = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
-                  const statusLabel = interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
+                  const statusLabel = drive.interview_action === "blocked" ? "Locked" : interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
                   const state = studentAttemptState(drive);
                   const attemptProgress = interviewStatus === "closed"
                     ? "Interview closed"
@@ -628,6 +628,7 @@ export function Placements() {
                   </span>
                   <span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span>
                 </div>
+                {drive.is_locked && <span className="pill">Locked</span>}
                 <span className="eyebrow">{drive.company_name}</span>
                 <h2>{drive.role_title}</h2>
                 <p>
@@ -742,11 +743,17 @@ export function Placements() {
 
 export function Reports() {
   const resource = useResource<{ reports: Report[] }>("/api/student/reports");
+  const [search, setSearch] = useState("");
+  const [filter, setFilter] = useState("all");
+  const reports = resource.data?.reports || [];
+  const ready = reports.filter((report) => report.report?.status !== "awaiting_release" && report.report?.overall_score != null);
+  const pending = reports.filter((report) => report.report?.status === "awaiting_release");
+  const latestScore = ready.reduce<number | null>((best, report) => best == null || report.report!.overall_score! > best ? report.report!.overall_score! : best, null);
   return (
-    <>
+    <div className="student-reports-page">
       <PageHeading
-        eyebrow="REFLECT. LEARN. IMPROVE."
-        title="My interview reports"
+        eyebrow="YOUR INTERVIEW PROGRESS"
+        title="Reports & feedback"
         action={
           <button className="button secondary" onClick={resource.reload}>
             <RefreshCw size={16} />
@@ -754,22 +761,24 @@ export function Reports() {
           </button>
         }
       >
-        Personal feedback from your interviews. Placement results appear when
-        your placement team releases them.
+        Review what went well, see what to practice next, and keep track of feedback shared by your placement team.
       </PageHeading>
       <ResourceState resource={resource}>
-        <section className="panel">
-          {resource.data?.reports.length ? (
-            <ReportList reports={resource.data.reports} />
-          ) : (
-            <Empty title="A fresh start, full of potential" action>
-              Your feedback will appear here after you complete an interview and
-              the report is ready.
-            </Empty>
-          )}
-        </section>
+        {resource.data && <>
+          <section className="student-reports-overview" aria-label="Report overview">
+            <article><span>INTERVIEWS</span><strong>{reports.length}</strong><small>Practice and placement</small></article>
+            <article><span>FEEDBACK READY</span><strong>{ready.length}</strong><small>Reports you can review</small></article>
+            <article><span>IN REVIEW</span><strong>{pending.length}</strong><small>Waiting for placement team</small></article>
+            <article><span>TOP SCORE</span><strong>{latestScore == null ? "—" : score(latestScore)}</strong><small>Across released reports</small></article>
+          </section>
+          <section className="student-reports-toolbar" aria-label="Find a report">
+            <label className="student-reports-search"><Search size={17}/><input aria-label="Search reports" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company, role, or feedback" /></label>
+            <label className="student-reports-filter"><select aria-label="Interview type" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All interviews</option><option value="placement">Placement interviews</option><option value="practice">Practice interviews</option></select></label>
+          </section>
+          {reports.length ? <ReportList reports={reports} search={search} filter={filter}/> : <section className="panel"><Empty title="Your feedback starts here" action>Your interview reports will appear here when an interview has been reviewed and the report is ready.</Empty></section>}
+        </>}
       </ResourceState>
-    </>
+    </div>
   );
 }
 

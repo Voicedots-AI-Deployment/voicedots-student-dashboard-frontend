@@ -31,6 +31,7 @@ import {
 import { api, ApiError, json } from "./api";
 import { useAuth } from "./auth";
 import { Brand, ErrorMessage, Loading } from "./ui";
+import { InterviewReport } from "./interview-report";
 import { Overview, Placements, Profile, Reports } from "./pages";
 import { Academics } from "./academics";
 import { StudentErp } from "./student-erp";
@@ -462,6 +463,7 @@ export function App() {
             <Route path="/placements" element={<Placements />} />
             <Route path="/calendar" element={<Calendar />} />
             <Route path="/reports" element={<Reports />} />
+            <Route path="/reports/:sessionId" element={<InterviewReport />} />
             <Route path="/growth" element={<Navigate to="/" replace />} />
             <Route path="/academics" element={<Academics />} />
             <Route path="/erp" element={<StudentErp />} />
