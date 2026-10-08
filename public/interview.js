@@ -255,6 +255,10 @@ let poorLightingSince = null;
 let gazeOffCameraSince = null;
 let phoneVisibleSince = null;
 let phoneDetected = false;
+let phoneEvidence = null;
+const PHONE_EVIDENCE_MIN_SCORE = .75;
+const PHONE_EVIDENCE_MIN_MS = 4000;
+let cameraReminderTimes = {};
 // Integrity signals are intentionally debounced to avoid false positives,
 // but must still be visible quickly to the placement team.
 const CANDIDATE_ABSENT_THRESHOLD_MS = 3000;
@@ -1236,12 +1240,27 @@ function landmarkGazeOffCamera(landmarks) {
   return left < 0.16 || left > 0.84 || right < 0.16 || right > 0.84 || faceRatio < 0.32 || faceRatio > 0.68;
 }
 
+function updatePhoneEvidence(detections, corroborating, now) {
+  const strong = detections.filter(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_EVIDENCE_MIN_SCORE) && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8);
+  const match = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
+  if (!match) { phoneEvidence = null; return false; }
+  if (!phoneEvidence || now - phoneEvidence.last > 1800 || boxIoU(phoneEvidence.box, match.boundingBox) < .2) {
+    phoneEvidence = {since:now,last:now,count:1,box:match.boundingBox,confidence:Number(match.categories[0].score)};
+  } else {
+    phoneEvidence.last=now;phoneEvidence.count++;phoneEvidence.box=match.boundingBox;
+    phoneEvidence.confidence=Math.min(phoneEvidence.confidence,Number(match.categories[0].score));
+  }
+  return phoneEvidence.count >= 4 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
+}
+
 function warnVisionSignal(type, message, details) {
   if (!proctoringActive || integrityEndRequested || sessionCompletedCleanly || lastVisionWarningAt[type] !== undefined) return;
   lastVisionWarningAt[type] = Date.now();
   if (["poor_lighting", "camera_blurry", "multiple_people_unconfirmed"].includes(type)) {
+    if (Date.now() - (cameraReminderTimes[type] || 0) < 60000) return;
+    cameraReminderTimes[type] = Date.now();
     _sendIntegrityEvent(type, "info", details);
-    showIntegrityNotice(type === "multiple_people_unconfirmed" ? message : message + " Adjust your camera. This does not count as misconduct.");
+    showIntegrityNotice(type === "multiple_people_unconfirmed" ? message : message + " Adjust your camera. This does not count as misconduct.", true);
     return;
   }
   recordIntegrityViolation(type, message, details);
@@ -1287,7 +1306,7 @@ async function analyzeCameraFrame() {
     updatePrejoinReadiness();
     if (proctoringActive && (cameraQualityIssue !== qualityIssue || Date.now()-lastCameraQualityNoticeAt > 15000)) {
       _sendIntegrityEvent(qualityIssue, "info", { luminance: Math.round(luminance), sharpness: Math.round(sharpness), message: guidance });
-      showIntegrityNotice(guidance + " This is a camera quality reminder, not a misconduct warning.");
+      showIntegrityNotice(guidance + " This is a camera quality reminder, not a misconduct warning.", true);
       lastCameraQualityNoticeAt = Date.now();
     }
     cameraQualityIssue = qualityIssue;
@@ -1339,7 +1358,7 @@ async function analyzeCameraFrame() {
     );
     personDetectionConfidence = scores.length ? Math.max(...scores) : null;
     lastPersonDetectionAt = now;
-    if (phoneDetections.length > 0) lastPhoneDetectedAt = now;
+    const corroboratingPhones = [];
 
     // Supplementary zoomed-in pass on one half of the frame (alternating
     // sides each tick) — see cropDetectPersons above for why this is what
@@ -1357,21 +1376,27 @@ async function analyzeCameraFrame() {
         const category = (det.categories || [])[0]?.categoryName;
         if (category !== "person" && category !== "cell phone") continue;
         const box = translateCropBox(det.boundingBox, crop);
-        const knownList = category === "person" ? personDetections : phoneDetections;
-        const overlapsKnown = knownList.some((known) => category === "person" ? samePersonBox(box, known.boundingBox) : boxIoU(box, known.boundingBox) > 0.3);
+        if (category === "cell phone") {
+          if (Number(det.categories?.[0]?.score) >= .65) corroboratingPhones.push(box);
+          continue;
+        }
+        const overlapsKnown = personDetections.some(known => samePersonBox(box, known.boundingBox));
         if (overlapsKnown) continue;
-        if (category === "person") { personDetections.push({ boundingBox: box }); }
-        else lastPhoneDetectedAt = now;
+        personDetections.push({ boundingBox: box });
       }
     }
     const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
-    if (phoneCrop?.detections.some(det => (det.categories || []).some(category => category.categoryName === "cell phone"))) lastPhoneDetectedAt = now;
+    for (const det of phoneCrop?.detections || []) {
+      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= .65) corroboratingPhones.push(translateCropBox(det.boundingBox, phoneCrop));
+    }
+    phoneDetected = updatePhoneEvidence(phoneDetections, corroboratingPhones, now);
+    if (phoneDetected) lastPhoneDetectedAt = now;
     personBoxCountDetected = personDetections.length;
     if (personBoxCountDetected > 1) lastMultiplePeopleDetectedAt = now;
   }
-  // Same hold-over reasoning as multi-person below: a single missed 800ms
-  // tick must not zero out phoneDetected and reset the accumulation timer.
-  phoneDetected = lastPhoneDetectedAt > 0 && now - lastPhoneDetectedAt < PHONE_DETECTION_HOLD_MS;
+  // Only a corroborated sequence can indicate a phone; an isolated detection
+  // or a stale worker result never accumulates into a misconduct warning.
+  phoneDetected = !!phoneEvidence && phoneEvidence.count >= 4 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 1500;
   // Do not flash back to "one person" when the smaller background detection
   // drops for a frame. Keep the multi-person result briefly so the candidate
   // must present a consistently clear single-person frame before proceeding.
@@ -1477,7 +1502,7 @@ async function analyzeCameraFrame() {
     if (phoneVisibleSince !== null) {
       const ms = now - phoneVisibleSince;
       if (ms >= PHONE_VISIBLE_THRESHOLD_MS) {
-        warnVisionSignal("phone_usage_detected", `A phone has been visible on camera for ${Math.round(ms / 1000)}s.`, { duration_ms: ms });
+        warnVisionSignal("phone_usage_detected", `A phone has been visible on camera for ${Math.round(ms / 1000)}s.`, { duration_ms: now - phoneEvidence.since, confirmed_by: "phone_sequence", observation_count: phoneEvidence.count, confidence: phoneEvidence.confidence });
       }
     }
 
@@ -1829,9 +1854,9 @@ function _flushPendingIntegrityEvents() {
   queued.forEach((message) => ws.send(JSON.stringify(message)));
 }
 
-function showIntegrityNotice(message) {
+function showIntegrityNotice(message, reminder = false) {
   if (integrityToastTextEl) integrityToastTextEl.textContent = message;
-  if (integrityStrikesEl) integrityStrikesEl.textContent = `${integrityStrikeCount} warning${integrityStrikeCount === 1 ? "" : "s"}`;
+  if (integrityStrikesEl) { integrityStrikesEl.hidden = reminder; integrityStrikesEl.textContent = `${integrityStrikeCount} warning${integrityStrikeCount === 1 ? "" : "s"}`; }
   if (integrityToastEl) {
     integrityToastEl.classList.add("show");
     clearTimeout(showIntegrityNotice._timer);
@@ -2511,13 +2536,14 @@ function handleControlMessage(payload) {
       lastMultiplePeopleDetectedAt = 0;
       personBoxCountDetected = 0;
       lastPersonDetectionAt = 0;
+      phoneEvidence = null; phoneDetected = false; lastPhoneDetectedAt = 0; cameraReminderTimes = {};
       photoVerifier.start();
       _flushPendingIntegrityEvents();
       void startInterviewRecording();
       break;
 
     case "integrity_event_recorded":
-      integrityStrikeCount = Number(payload.total_flags) || integrityStrikeCount;
+      if (Number.isFinite(Number(payload.total_flags)) && Number(payload.total_flags) >= 0) integrityStrikeCount = Number(payload.total_flags);
       if (integrityStrikesEl) integrityStrikesEl.textContent = `${integrityStrikeCount} warning${integrityStrikeCount === 1 ? "" : "s"}`;
       break;
 

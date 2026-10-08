@@ -31,6 +31,7 @@ for (const type of ['candidate_not_visible', 'multiple_people_visible', 'phone_u
    h.warn(type,'A brief recovery must not split the event',{});
   },type);
   expect(await page.evaluate(() => (window as any).flagEvents.length)).toBe(1);
+  if (type === 'poor_lighting') await page.clock.runFor(31000);
   await page.evaluate(type => {
    const h=(window as any).flagHarness;
    h.clear(type,true,3000);
@@ -94,4 +95,29 @@ test('one face and ambiguous body detections stay review-only throughout the cal
  for(let i=0;i<8;i++){await page.evaluate(()=>(window as any).visionAudit.tick());await page.waitForTimeout(850);}
  const confirmed=await page.evaluate(()=>(window as any).visionEvents.filter((e:any)=>e.event_type==='multiple_people_visible'));
  expect(confirmed).toHaveLength(1);expect(confirmed[0].details.face_count).toBe(2);expect(confirmed[0].details.duration_ms).toBeGreaterThanOrEqual(5000);
+});
+
+test('phone evidence rejects single, weak and inconsistent detections and confirms a sustained corroborated phone', async ({page}) => {
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'s1'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.phoneAudit={update:updatePhoneEvidence,reset:()=>{phoneEvidence=null}};`});});
+ await page.goto('/interview.html?id=sub-1');await expect.poll(()=>page.evaluate(()=>!!(window as any).phoneAudit)).toBe(true);
+ const result=await page.evaluate(()=>{
+  const h=(window as any).phoneAudit;const box={originX:200,originY:100,width:50,height:90};
+  const detection=(score:number)=>({categories:[{categoryName:'cell phone',score}],boundingBox:box});
+  const weak=Array.from({length:10},(_,i)=>h.update([detection(.4)],[box],i*800));h.reset();
+  const isolated=[h.update([detection(.95)],[box],100),h.update([],[],900)];h.reset();
+  const noCorroboration=Array.from({length:10},(_,i)=>h.update([detection(.95)],[],i*800));h.reset();
+  const strong=Array.from({length:7},(_,i)=>h.update([detection(.95)],[box],i*800));
+  return {weak,isolated,noCorroboration,strong};
+ });
+ expect(result.weak.some(Boolean)).toBe(false);expect(result.isolated.some(Boolean)).toBe(false);expect(result.noCorroboration.some(Boolean)).toBe(false);
+ expect(result.strong.slice(0,5).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
+});
+
+test('camera reminders hide the misconduct badge and server zero clears optimistic warnings',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'s1'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.noticeAudit={remind:()=>{integrityStrikeCount=3;showIntegrityNotice('Camera check uncertain. This is not misconduct.',true)},reply:handleControlMessage,count:()=>integrityStrikeCount};`});});
+ await page.goto('/interview.html?id=sub-1');await expect.poll(()=>page.evaluate(()=>!!(window as any).noticeAudit)).toBe(true);
+ const result=await page.evaluate(()=>{const h=(window as any).noticeAudit;h.remind();const badgeHidden=(document.getElementById('integrity-strikes') as HTMLElement)?.hidden;h.reply({type:'integrity_event_recorded',total_flags:0});return {badgeHidden,count:h.count()};});
+ expect(result.badgeHidden).toBe(true);expect(result.count).toBe(0);
 });
