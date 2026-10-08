@@ -23,9 +23,8 @@ test('released report uses native sections with question feedback and a private 
   await expect(page.getByText('I validated incoming data.')).toBeVisible();
   await expect(page.getByText('Include an error response example.')).toBeVisible();
   await expect(page.getByText('From your answer:',{exact:false})).toBeVisible();
-  await page.getByRole('button',{name:'Listen to your answer'}).click();
-  await expect(page.getByLabel('Your recorded answer')).toHaveAttribute('src',/^blob:/);
-  await page.getByRole('button',{name:'Recording & audio'}).click();
+  await expect(page.locator('audio')).toHaveCount(0);
+  await expect(page.getByRole('button',{name:'Recording & audio'})).toHaveCount(0);
   await expect(page.getByText('The recording retention period has ended.')).toBeVisible();
   await page.setViewportSize({width:390,height:844});
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);

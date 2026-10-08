@@ -65,3 +65,6 @@
 .report-community{flex-wrap:wrap}.report-community>*{min-width:0;max-width:100%;overflow-wrap:anywhere}
 
 .profile-panel .profile-date-form>label{margin:0}
+
+/* Keep the existing question/feedback cards, with the video above them. */
+.report-review-layout{display:grid;grid-template-columns:1fr;gap:22px;align-items:start}.report-video-review{position:static;min-width:0}.report-video-review .report-video{display:block;width:100%;max-height:420px;aspect-ratio:16/9;object-fit:contain;background:#111827;border-radius:10px}.report-video-review h3{margin:22px 0 8px;font-size:14px;font-weight:500}.report-video-review>.button{margin-top:12px}.report-question-bookmarks{display:flex;flex-wrap:wrap;gap:8px}.report-question-bookmarks button{display:grid;gap:4px;min-width:72px;padding:10px;border:1px solid var(--border);border-radius:9px;background:var(--card);color:var(--text);font:inherit;cursor:pointer;text-align:left}.report-question-bookmarks button:hover{background:var(--soft)}.report-question-bookmarks button span:last-child,.report-bookmark-note{font-size:11px;color:var(--muted);line-height:1.6}.report-answer-review{min-width:0}.report-response>.button{margin-top:12px}.report-video-review .report-section-heading{margin-bottom:14px}

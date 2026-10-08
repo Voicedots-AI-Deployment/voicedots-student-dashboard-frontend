@@ -1,4 +1,5 @@
 import {test,expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
 const base={evaluation_id:'e1',session_id:'s1',status:'released',company_name:'Example',target_role:'Engineer',drive_id:'d1',created_at:'2026-10-07',report:{overall_score:46,status:'released',readiness:'Developing'}};
 async function setup(page:any,decision='hold',released=true){
  await page.route('**/api/**',(route:any)=>{const path=new URL(route.request().url()).pathname;
@@ -25,7 +26,7 @@ for(const [decision,label] of [['shortlist','Shortlisted'],['reject','Rejected']
  await setup(page,decision);await page.goto('/reports/s1');await expect(page.getByRole('heading',{name:label,exact:true})).toBeVisible();
  await expect(page.getByText('46%',{exact:true})).toBeVisible();
  await page.getByRole('button',{name:'Questions & feedback (1)'}).click();await expect(page.getByText(/No separate feedback was saved/)).toBeVisible();
- await page.getByRole('button',{name:'Recording & audio'}).click();await expect(page.getByLabel('Full interview audio')).toHaveAttribute('src',/recording.webm/);
+ await expect(page.getByLabel('Interview video')).toHaveAttribute('src',/recording.webm/);await expect(page.locator('audio')).toHaveCount(0);
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
  });
 }
@@ -46,4 +47,45 @@ test('scheduled reports show release time and do not label publication as assess
  await expect(page.getByText('In review',{exact:true})).toHaveCount(0);
  await page.getByRole('button',{name:'Table',exact:true}).click();await expect(page.getByRole('table')).toContainText('Scheduled');
  await expect(page.getByRole('table').getByRole('link',{name:/Open report/})).toHaveCount(0);
+});
+
+test('question bookmarks open the matching feedback and seek the video without separate audio',async({page})=>{
+ await setup(page);
+ await page.route('**/api/interview/s1/evaluation',route=>route.fulfill({json:{overall_score:65,question_reviews:[{answer_id:1,question:'Tell us about your project.',answer:'I built the service.',answer_started_at:'2026-10-08T10:00:05Z',evidence_status:'answered'},{answer_id:2,question:'How did you test it?',answer:'I tested failed inputs.',answer_started_at:'2026-10-08T10:00:25Z',evidence_status:'answered'}]}}));
+ await page.route('**/api/student/interview/s1/recording',route=>route.fulfill({json:{status:'ready',playback_url:'https://media.example/bookmarks.webm',started_at:'2026-10-08T10:00:00Z',duration_seconds:120,segment_count:1}}));
+ await page.route('https://media.example/**',route=>route.abort());
+ await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (2)'}).click();
+ const video=page.getByLabel('Interview video');await expect(video).toBeVisible();
+ const videoBox=await page.locator('.report-video-review').boundingBox(),answersBox=await page.locator('.report-answer-review').boundingBox();expect(videoBox!.y+videoBox!.height).toBeLessThanOrEqual(answersBox!.y);
+ expect(await page.locator('.report-question-content').first().evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(2);
+ await video.evaluate((element:any)=>{Object.defineProperty(element,'readyState',{value:4});Object.defineProperty(element,'currentTime',{value:0,writable:true});element.play=()=>{element.dataset.played='true';return Promise.resolve();};});
+ await page.getByRole('navigation',{name:'Question bookmarks'}).getByRole('button',{name:'Q2 0:25'}).click();
+ await expect(page.locator('#question-1')).toHaveAttribute('open','');
+ await expect(page.locator('#question-1')).toContainText('I tested failed inputs.');
+ expect(await video.evaluate((element:any)=>element.currentTime)).toBe(25);await expect(video).toHaveAttribute('data-played','true');
+ await expect(page.locator('audio')).toHaveCount(0);await expect(page.getByRole('button',{name:'Recording & audio'})).toHaveCount(0);
+ await page.setViewportSize({width:1440,height:960});await page.evaluate(()=>{window.scrollTo(0,0);document.querySelectorAll('*').forEach(e=>e.scrollTop=0);});await page.screenshot({path:'/root/voicedots/artifacts/report-review-redesign-20261008/student-questions-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);await page.screenshot({path:'/root/voicedots/artifacts/report-review-redesign-20261008/student-questions-mobile.png',fullPage:true});
+});
+
+
+test('the embedded video decodes and a question bookmark seeks real playback',async({page})=>{
+ await setup(page);
+ await page.route('**/api/interview/s1/evaluation',route=>route.fulfill({json:{overall_score:65,question_reviews:[{answer_id:1,question:'How did you test it?',answer:'I tested failed inputs.',answer_started_at:'2026-10-08T10:00:25Z',evidence_status:'answered'}]}}));
+ await page.route('**/api/student/interview/s1/recording',route=>route.fulfill({json:{status:'ready',playback_url:'https://media.example/real-recording.mp4',started_at:'2026-10-08T10:00:00Z',duration_seconds:40,segment_count:1}}));
+ await page.route('https://media.example/real-recording.mp4',route=>{
+ const bytes=readFileSync(new URL('./fixtures/report-recording.mp4', import.meta.url));
+ const range=route.request().headers()['range']?.match(/bytes=(\d+)-(\d*)/);
+ if(range){const start=Number(range[1]),end=range[2]?Math.min(Number(range[2]),bytes.length-1):bytes.length-1;return route.fulfill({status:206,contentType:'video/mp4',headers:{'accept-ranges':'bytes','content-range':`bytes ${start}-${end}/${bytes.length}`},body:bytes.subarray(start,end+1)});}
+ return route.fulfill({contentType:'video/mp4',headers:{'accept-ranges':'bytes'},body:bytes});
+ });
+ await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
+ const video=page.getByLabel('Interview video');await expect.poll(()=>video.evaluate((element:HTMLVideoElement)=>element.readyState)).toBeGreaterThanOrEqual(1);
+ await page.getByRole('navigation',{name:'Question bookmarks'}).getByRole('button',{name:'Q1 0:25'}).click();
+ await expect.poll(()=>video.evaluate((element:HTMLVideoElement)=>element.currentTime)).toBeGreaterThanOrEqual(25);
+ await expect.poll(()=>video.evaluate((element:HTMLVideoElement)=>element.paused)).toBe(false);
+ await video.evaluate((element:HTMLVideoElement)=>element.pause());
+ await page.evaluate(()=>{window.scrollTo(0,0);document.querySelectorAll('*').forEach(e=>e.scrollTop=0);});
+ await page.setViewportSize({width:1440,height:960});await page.screenshot({path:'/root/voicedots/artifacts/report-review-redesign-20261008/student-report-video-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);await page.screenshot({path:'/root/voicedots/artifacts/report-review-redesign-20261008/student-report-video-mobile.png',fullPage:true});
 });

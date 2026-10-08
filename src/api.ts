@@ -317,7 +317,7 @@ export function openInterview(submissionId?: string, sessionId?: string) {
 export type AnswerCoaching = {evidence_quote:string;what_worked:string;improve:string};
 export type QuestionReview = {
   answer_id?: number; turn_id?: string; has_audio?: boolean; question_ref?: string;
-  round?: string; kind?: string; question?: string; answer?: string; word_count?: number;
+  round?: string; asked_at?: string; answer_started_at?: string; kind?: string; question?: string; answer?: string; word_count?: number;
   evidence_status?: string; strength_feedback?: string[]; improvement_feedback?: string[];
 };
 export type ReportFeedback = { text?: string; focus?: string; area?: string; cites_answer_id?: number };
