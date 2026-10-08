@@ -41,22 +41,18 @@ export type Report = {
   status: string;
   created_at: string;
   completed_at?: string;
+  started_at?: string | null;
+  duration_minutes?: number | null;
+  placement_decided_at?: string | null;
   target_role?: string;
   drive_id?: string;
   company_name?: string | null;
   attempt_number?: number | null;
   placement_decision?: string | null;
-  report: {
-    overall_score?: number | null;
-    status?: string;
-    readiness?: string;
-    executive_summary?: string;
-    priority_improvement_areas?: Array<{ focus?: string; problem?: string }>;
-    weaknesses?: Array<string | { focus?: string; area?: string }>;
-    improvements?: Array<string | { focus?: string; area?: string }>;
-  } | null;
+  report: InterviewReportView | null;
 };
 export type Drive = {
+  placement_decision?: string | null;
   is_locked?: boolean;
   id: string;
   company_name: string;
@@ -115,6 +111,7 @@ export type ConfiguredInterviewAgent = {
   description: string;
 };
 export type DriveContext = {
+  is_locked?: boolean;
   drive_id: string;
   company_name: string;
   company_description: string;
@@ -316,3 +313,23 @@ export function openInterview(submissionId?: string, sessionId?: string) {
   if (sessionId) params.set("session_id", sessionId);
   window.location.assign(`/interview.html?${params}`);
 }
+
+export type AnswerCoaching = {evidence_quote:string;what_worked:string;improve:string};
+export type QuestionReview = {
+  answer_id?: number; turn_id?: string; has_audio?: boolean; question_ref?: string;
+  round?: string; asked_at?: string; answer_started_at?: string; kind?: string; question?: string; answer?: string; word_count?: number;
+  evidence_status?: string; strength_feedback?: string[]; improvement_feedback?: string[];
+};
+export type ReportFeedback = { text?: string; focus?: string; area?: string; cites_answer_id?: number };
+export type InterviewReportView = {
+  release_scheduled_for?: string | null; overall_score?: number | null; status?: string; readiness?: string; executive_summary?: string;
+  score_breakdown?: Record<string, number | null>;
+  core_dimensions?: Array<{dimension: string; percentage?: number | null; band?: number; reason?: string}>;
+  domain_dimensions?: Array<{dimension: string; percentage?: number | null; band?: number; reason?: string}>;
+  priority_improvement_areas?: Array<{focus?: string; problem?: string; actions?: string[]}>;
+  strengths?: ReportFeedback[]; weaknesses?: Array<string | ReportFeedback>; improvements?: Array<string | ReportFeedback>;
+  question_feedback?: Record<string,AnswerCoaching>;
+  question_reviews?: QuestionReview[]; assessment_coverage_percent?: number | null;
+  communication?: { speaking_speed_wpm?: number | null; pace_label?:string; filler_word_count?:number; top_filler_words?:string[]; measurement_note?:string; scores?: Record<string, number | null> };
+  interview_profile?: { difficulty_tier?: string; duration_minutes?: number };
+};

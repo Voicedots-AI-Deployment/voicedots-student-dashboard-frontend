@@ -33,3 +33,25 @@ h3,
 .prejoin-card {
   box-shadow: 0 24px 100px rgba(124, 58, 237, 0.12);
 }
+
+/* Keep setup, preview and recovery controls on one aligned surface. */
+#prejoin-screen { padding: 24px 16px; }
+.prejoin-card { max-width: 600px; }
+.pj-panel { padding: 24px; }
+.pj-panel.active ~ .pj-panel.active { padding-top: 18px; border-top: 1px solid var(--border); }
+.pj-panel p { line-height: 1.5; }
+.pj-panel h3 { margin-bottom: 8px; }
+.pj-panel label.recording-consent { display: flex; align-items: flex-start; gap: 10px; margin: 16px 0; }
+.recording-consent input { margin: 3px 0 0; width: 16px; height: 16px; }
+.recording-consent span { flex: 1; }
+#preflight-title { font-weight: 600 !important; margin-bottom: 8px !important; }
+#preflight-status { font-size: .9rem; }
+#preflight-loading { height: 24px; margin: 12px 0; }
+.cam-preview { margin: 16px auto; }
+.pj-panel select { margin: 8px 0 !important; border-width: 1px !important; }
+@media(max-width:600px) { .pj-panel { padding: 20px; } #prejoin-screen { padding: 16px 12px; } }
+
+.prejoin-card:has(.pj-panel[id].active) #cam-preview { max-height: none; }
+.prejoin-card:has(.pj-panel[id].active) #preflight-requirements,
+.prejoin-card:has(.pj-panel[id].active) .recording-consent { display: none !important; }
+.pj-btn-ghost:not(:disabled) { color: var(--text); background: var(--surf2); }

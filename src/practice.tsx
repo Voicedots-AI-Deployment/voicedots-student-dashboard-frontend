@@ -50,7 +50,7 @@ export function Practice() {
   const availableDrives = (drives.data || []).filter((drive) => {
     const actionable = ["start", "resume", "retry_preparation"].includes(drive.interview_action || "");
     const releasedResult = drive.interview_result_available === true;
-    return drive.status === "active"
+    return !drive.is_locked && drive.status === "active"
       && drive.eligibility_status === "eligible"
       && drive.main_resume_available === true
       && !["closed", "expired"].includes(drive.interview_status || "")
@@ -63,7 +63,10 @@ export function Practice() {
   const [resumePreview, setResumePreview] = useState<File | null>(null);
   const [role, setRole] = useState(() => sessionStorage.getItem(`${draftKey}:role`) || "");
   const [duration, setDuration] = useState(() => sessionStorage.getItem(`${draftKey}:duration`) || "30");
-  const [difficulty, setDifficulty] = useState<"dynamic" | "beginner" | "intermediate" | "advanced">("dynamic");
+  const [difficulty, setDifficulty] = useState<"dynamic" | "beginner" | "intermediate" | "advanced">(() => {
+    const saved = sessionStorage.getItem(`${draftKey}:difficulty`);
+    return saved === "beginner" || saved === "intermediate" || saved === "advanced" ? saved : "dynamic";
+  });
   const [jd, setJd] = useState(() => sessionStorage.getItem(`${draftKey}:jd`) || "");
   const [jdBusy, setJdBusy] = useState(false);
   const [jdError, setJdError] = useState("");
@@ -86,8 +89,9 @@ export function Practice() {
   useEffect(() => {
     sessionStorage.setItem(`${draftKey}:role`, role);
     sessionStorage.setItem(`${draftKey}:duration`, duration);
+    sessionStorage.setItem(`${draftKey}:difficulty`, difficulty);
     sessionStorage.setItem(`${draftKey}:jd`, jd);
-  }, [draftKey, role, duration, jd]);
+  }, [draftKey, role, duration, difficulty, jd]);
   const alive = useRef(true);
   const library = useResource<{ resumes: Resume[] }>(
     "/api/student/resume-library",
@@ -201,6 +205,7 @@ export function Practice() {
   function remember(result: Preparation) {
     sessionStorage.removeItem(`${draftKey}:role`);
     sessionStorage.removeItem(`${draftKey}:duration`);
+    sessionStorage.removeItem(`${draftKey}:difficulty`);
     sessionStorage.removeItem(`${draftKey}:jd`);
     sessionStorage.setItem(key, JSON.stringify(result));
     setPreparation(result);
@@ -210,6 +215,7 @@ export function Practice() {
     sessionStorage.removeItem(`${key}_upload`);
     sessionStorage.removeItem(`${draftKey}:role`);
     sessionStorage.removeItem(`${draftKey}:duration`);
+    sessionStorage.removeItem(`${draftKey}:difficulty`);
     sessionStorage.removeItem(`${draftKey}:jd`);
     setPreparation(null);
     setPollError("");
@@ -433,7 +439,7 @@ export function Practice() {
     preparation?.status === "ready" && preparation.submission_id && !pending;
   const driveCanStart = Boolean(context && context.can_start && context.main_resume_available === true
     && context.interview_window === "open" && !context.coach_gate_locked);
-  const driveCanResume = Boolean(context?.can_resume && context.session_id && context.submission_id);
+  const driveCanResume = Boolean(!context?.is_locked && context?.can_resume && context.session_id && context.submission_id);
   const releasedAttempt = context?.attempt_history?.slice().reverse().find((attempt) =>
     attempt.result_available && attempt.submission_id,
   ) || (context?.publication_status === "released" && context.submission_id
@@ -548,12 +554,12 @@ export function Practice() {
                 <div className="interview-field-row">
                   <label>Interview duration
                     <select value={duration} onChange={(e) => setDuration(e.target.value)}>
-                      {[30, 45].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
+                      {[5, 10, 30, 45].map((minutes) => <option key={minutes} value={minutes}>{minutes} minutes</option>)}
                     </select>
                   </label>
                   <label>Interview difficulty
                     <select value={difficulty} onChange={(e) => setDifficulty(e.target.value as typeof difficulty)}>
-                      <option value="dynamic">Dynamic · based on resume experience</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
+                      <option value="dynamic">Personalized</option><option value="beginner">Beginner</option><option value="intermediate">Intermediate</option><option value="advanced">Advanced</option>
                     </select>
                   </label>
                 </div>
@@ -575,7 +581,7 @@ export function Practice() {
                 <div><span className="eyebrow">PLACEMENT INTERVIEW</span><h2>Choose an active opportunity</h2><p>Official role, attempt and interview settings come from your placement team.</p></div>
               </div>
               <label className="placement-select-label">Select placement opportunity
-                <select aria-label="Select placement opportunity" value={selectedDriveId} onChange={(event) => { setSelectedDriveId(event.target.value); setPreparation(null); setContext(null); setError(""); }} disabled={drives.loading || availableDrives.length === 0}>
+                <select aria-label="Select placement opportunity" value={selectedDriveId} onChange={(event) => { if(event.target.value===driveId)return;setSelectedDriveId(event.target.value); setPreparation(null); setContext(null); setError(""); }} disabled={drives.loading || availableDrives.length === 0}>
                   {availableDrives.length === 0 && <option value="">No active placement interviews</option>}
                   {availableDrives.map((drive) => <option key={drive.id} value={drive.id}>{drive.company_name} · {drive.role_title}</option>)}
                 </select>
@@ -612,7 +618,7 @@ export function Practice() {
             {mode === "practice" ? practicePanel.map((person) => <div className="panel-person" key={person.n}><span>{person.n}</span><div><strong>{person.title}</strong><p>{person.text}</p></div></div>)
               : !selectedDrive ? <div className="interview-empty-state"><strong>Choose an active opportunity</strong><p>The placement panel will appear here after you select a drive.</p></div>
                 : contextLoading ? <p className="muted" role="status">Loading the configured panel…</p>
-                : panel.length ? panel.map((person) => <div className="panel-person placement-panel-person" key={`${person.order}-${person.track}`}><span>{String(person.order).padStart(2, "0")}</span><div><strong>{person.name}</strong><p className="placement-panel-role">{person.role}</p>{person.persona && <p>{person.persona} approach</p>}{person.description && <p className="placement-panel-description">{person.description}</p>}</div></div>)
+                : panel.length ? panel.map((person) => <div className="panel-person placement-panel-person" key={`${person.order}-${person.track}`}><span>{String(person.order).padStart(2, "0")}</span><div><strong className="placement-panel-role">{person.role}</strong></div></div>)
                   : <div className="interview-empty-state"><strong>Panel details unavailable</strong><p>The placement team has not provided interviewer details for this opportunity.</p></div>}
           </aside>
         </div>
@@ -631,7 +637,7 @@ export function Practice() {
           : attempts.error ? <ErrorMessage message={attempts.error}/>
             : practiceAttempts.length ? <div className="interview-session-list">{practiceAttempts.map((attempt) => <div className="interview-session-row" key={attempt.submission_id}><span className="record-icon"><Mic size={18}/></span><div><strong>{attempt.target_role || "Practice interview"}</strong><span>Practice Interview{attempt.submitted_at ? ` · Started ${formatDateTime(attempt.submitted_at)}` : ""}{attempt.duration_minutes ? ` · ${attempt.duration_minutes} minutes` : ""}</span></div><button className="button secondary small" onClick={() => attempt.session_id && openInterview(attempt.submission_id, attempt.session_id)}>Continue <ArrowRight size={15}/></button></div>)}</div>
               : <p className="muted">No interrupted practice interviews. You’re ready for a fresh start.</p>
-          : context?.can_resume && context.session_id && context.submission_id ? <div className="interview-session-row"><span className="record-icon"><Mic size={18}/></span><div><strong>{context.company_name} · {context.role_title}</strong><span>Placement Interview · Attempt {attemptNumber} · Interview in progress</span></div><button className="button secondary small" onClick={() => openInterview(context.submission_id!, context.session_id!)}>Continue interview <ArrowRight size={15}/></button></div>
+          : !context?.is_locked && context?.can_resume && context.session_id && context.submission_id ? <div className="interview-session-row"><span className="record-icon"><Mic size={18}/></span><div><strong>{context.company_name} · {context.role_title}</strong><span>Placement Interview · Attempt {attemptNumber} · Interview in progress</span></div><button className="button secondary small" onClick={() => openInterview(context.submission_id!, context.session_id!)}>Continue interview <ArrowRight size={15}/></button></div>
             : <p className="muted">{selectedDrive ? "There is no interrupted interview for this placement." : "When you select a placement with an interview in progress, it will appear here."}</p>}
       </section>
       {resumePreview && <ResumePreview file={resumePreview} onClose={() => setResumePreview(null)}/>}

@@ -59,7 +59,14 @@ test("Practice mode uses editable setup, one Main Resume and the standard four-p
   await expect(page.getByRole("tab", { name: "Practice Interview" })).toHaveAttribute("aria-selected", "true");
   await expect(page.getByLabel("Target role", { exact: true })).toBeEditable();
   await expect(page.getByLabel("Interview duration")).toBeEnabled();
+  for (const minutes of [5, 10, 30, 45]) {
+    await page.getByLabel("Interview duration").selectOption(String(minutes));
+    await expect(page.getByLabel("Interview duration")).toHaveValue(String(minutes));
+  }
   await expect(page.getByLabel("Interview difficulty")).toBeEnabled();
+  await expect(page.getByLabel("Interview difficulty").locator("option:checked")).toHaveText("Personalized");
+  await expect(page.getByLabel("Interview difficulty")).toHaveValue("dynamic");
+  for(const name of ["Interview duration","Interview difficulty"])expect(await page.getByLabel(name).evaluate(el=>getComputedStyle(el).fontWeight)).toBe("400");
   await expect(page.getByLabel("Job description")).toBeEditable();
   const fieldSpacing = await page.evaluate(() => {
     const role = document.querySelector('.interview-fields label');
@@ -98,10 +105,12 @@ test("practice setup fields persist in session storage when returning to the sec
   await mockPortal(page);
   await page.goto("/practice");
   await page.getByLabel("Target role",{exact:true}).fill("Platform Engineer");
+  await page.getByLabel("Interview difficulty").selectOption("advanced");
   await page.getByLabel("Job description").fill("Build dependable APIs for students.");
   await page.getByRole("link",{name:"Calendar"}).click();
   await page.getByRole("link",{name:"Interview practice"}).click();
   await expect(page.getByLabel("Target role",{exact:true})).toHaveValue("Platform Engineer");
+  await expect(page.getByLabel("Interview difficulty")).toHaveValue("advanced");
   await expect(page.getByLabel("Job description")).toHaveValue("Build dependable APIs for students.");
   expect(await page.evaluate(()=>Object.keys(sessionStorage).some(key=>key.startsWith("vd_practice_draft_student-1")))).toBe(true);
 });
@@ -126,8 +135,13 @@ test("Placement mode filters unavailable drives and renders only its configured 
   await expect(page.getByLabel("Interview difficulty")).toHaveCount(0);
   await expect(page.getByLabel("Job description")).toHaveCount(0);
   await expect(page.locator(".placement-panel-person")).toHaveCount(2);
+  await selector.selectOption("drive-active");
+  await expect(page.locator(".placement-panel-person")).toHaveCount(2);
   await expect(page.locator(".placement-panel-person").nth(0)).toContainText("Technical Interviewer");
   await expect(page.locator(".placement-panel-person").nth(1)).toContainText("Manager Round");
+  await expect(page.locator('.placement-panel-person p')).toHaveCount(0);
+  const panelHeights=await page.locator('.interview-setup-grid>.panel').evaluateAll(nodes=>nodes.map(n=>n.getBoundingClientRect().height));
+  expect(Math.abs(panelHeights[0]-panelHeights[1])).toBeLessThan(2);
   await expect(page.getByText("HR interviewer", { exact: true })).toHaveCount(0);
   const placementCardGap = await page.evaluate(() => {
     const setup = document.querySelector('.interview-setup-grid');

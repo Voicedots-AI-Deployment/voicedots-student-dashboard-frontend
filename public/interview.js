@@ -11,6 +11,7 @@ const WS_BASE = _HTTP_BASE.replace(/^http/, "ws");
 
 const STT_SAMPLE_RATE = 16000;
 const TTS_SAMPLE_RATE = 48000;
+let currentTTSSampleRate = TTS_SAMPLE_RATE;
 const PREBUFFER_SECONDS = 0.25;
 // app.js's login flow only ever caches the logged-in student's profile under
 // "vd_student_data" (set right after /api/auth/student-me succeeds). The
@@ -216,6 +217,7 @@ let integrityEndRequested = false;
 let lastIntegrityEvent = { key: "", at: 0 };
 let faceLandmarker = null;
 let nativeFaceDetector = null;
+let workerObjectFailed = false;
 let objectDetector = null; // person-count backstop: catches a body facing away
                             // from the camera, which no face detector can see
 let objectDetectorUnavailable = false;
@@ -253,10 +255,14 @@ let poorLightingSince = null;
 let gazeOffCameraSince = null;
 let phoneVisibleSince = null;
 let phoneDetected = false;
+let phoneEvidence = null;
+const PHONE_EVIDENCE_MIN_SCORE = .75;
+const PHONE_EVIDENCE_MIN_MS = 4000;
+let cameraReminderTimes = {};
 // Integrity signals are intentionally debounced to avoid false positives,
 // but must still be visible quickly to the placement team.
 const CANDIDATE_ABSENT_THRESHOLD_MS = 3000;
-const MULTIPLE_PEOPLE_THRESHOLD_MS = 1500;
+const MULTIPLE_PEOPLE_THRESHOLD_MS = 5000;
 const POOR_LIGHTING_THRESHOLD_MS = 3500;
 const GAZE_AWAY_THRESHOLD_MS = 3500;
 const PHONE_VISIBLE_THRESHOLD_MS = 2000;
@@ -274,6 +280,7 @@ function setRequiredInterviewRounds(value) {
   const parsed = Number(value);
   if (!Number.isInteger(parsed) || parsed < 1 || parsed > TOTAL_INTERVIEW_ROUNDS) return;
   requiredInterviewRounds = parsed;
+  document.querySelector(".interview-grid")?.setAttribute("data-panel-count", String(requiredInterviewRounds));
   panelAgentEls.forEach((element) => {
     const round = Number(element.dataset.panelRound || 0);
     element.hidden = round < 1 || round > requiredInterviewRounds;
@@ -286,7 +293,7 @@ function setRequiredInterviewRounds(value) {
 const VISION_MODULE_URL = "/vendor/mediapipe/vision_bundle.mjs";
 const VISION_WASM_URL = "/vendor/mediapipe/wasm";
 const FACE_MODEL_URL = "/vendor/mediapipe/face_landmarker.task";
-const OBJECT_MODEL_URL = "/vendor/mediapipe/efficientdet_lite0.tflite";
+const OBJECT_MODEL_URL = "/vendor/mediapipe/efficientdet_lite0.tflite"; // Fast fallback for browsers without worker inference.
 const VISION_RETRY_INTERVAL_MS = 15000;
 const PERSON_DETECTION_INTERVAL_MS = 800;
 const MULTIPLE_PERSON_HOLD_MS = 3000;
@@ -710,7 +717,7 @@ async function runPreflight() {
   preflightStarted = true;
   renderPreflight();
   document.getElementById("cam-preview").hidden = false;
-  preflightStatus("Checking your camera, microphone and interview connection…");
+  preflightStatus("Checking your default camera and microphone. Say a few words while we verify your connection.");
   const devices = first ? initCameraCheck() : Promise.resolve();
   try {
     const cameraCheck = checkPreflightItem("camera", async () => {
@@ -724,10 +731,11 @@ async function runPreflight() {
       networkCheck,
       checkPreflightItem("microphone", async () => {
         await devices;
-        if (!hasLiveTrack("audio")) throw new Error("Allow microphone access or select a working microphone.");
+        await waitForPreflight(() => hasLiveTrack("audio"), "Your default microphone is unavailable. Allow access or select a working microphone.", 5000);
         startMicLevelTest();
-        await waitForPreflight(() => hasLiveTrack("audio") && micLevelDetected,
-          "No microphone audio was detected. Select a microphone, retry and speak briefly.", 10000);
+        await micTestContext?.resume();
+        await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running",
+          "Your default microphone could not start. Allow access or select another microphone.", 10000);
       }),
       Promise.all([cameraCheck, networkCheck]).then(async () => {
         if (preflightChecks.camera === "passed" && preflightId) {
@@ -805,7 +813,7 @@ async function populateDeviceSelects() {
       if (!select) return;
       const current = select.value;
       select.innerHTML = list.length
-        ? list.map((d, i) => `<option value="${d.deviceId}">${d.label || (kind + " " + (i + 1))}</option>`).join("")
+        ? (kind === "Microphone" ? '<option value="">System default microphone</option>' : "") + list.map((d, i) => `<option value="${d.deviceId}">${d.label || (kind + " " + (i + 1))}</option>`).join("")
         : `<option value="">No ${kind} found</option>`;
       if (current && list.some((d) => d.deviceId === current)) select.value = current;
     };
@@ -982,13 +990,11 @@ async function loadFaceDetector() {
             baseOptions: { modelAssetPath: FACE_MODEL_URL, delegate },
             runningMode: "VIDEO",
             numFaces: 2,
-            // Defaults (~0.5) miss a second, smaller/angled face sitting
-            // further back (e.g. someone behind the candidate) since it's
-            // farther from camera and partially off-angle. Lowered so a
-            // background face is still reported instead of silently dropped.
-            minFaceDetectionConfidence: 0.3,
-            minFacePresenceConfidence: 0.3,
-            minTrackingConfidence: 0.3,
+            // Favor clear face evidence over low-confidence patterns in
+            // clothing/furniture; uncertain body evidence remains review-only.
+            minFaceDetectionConfidence: 0.65,
+            minFacePresenceConfidence: 0.65,
+            minTrackingConfidence: 0.6,
             outputFaceBlendshapes: false,
             outputFacialTransformationMatrixes: false,
           });
@@ -1022,11 +1028,57 @@ async function loadFaceDetector() {
 // mouth visible and cannot see a person whose back is turned to the camera
 // (e.g. someone crouched behind the candidate). This runs a general "person"
 // object detector so a body is still counted even with no face visible.
+async function createWorkerObjectDetector() {
+  if (workerObjectFailed || !window.Worker || !window.createImageBitmap || !window.OffscreenCanvas) return null;
+  const worker = new Worker("/proctor-object-worker.js");
+  const pending = new Map();
+  let sequence = 0;
+  const fail = error => {
+    for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
+    pending.clear();
+  };
+  worker.onerror = () => {
+    workerObjectFailed = true; objectDetector = null; lastPersonDetectionAt = 0; cameraAnalysisPassing = false;
+    worker.terminate(); fail(new Error("Object inference worker failed."));
+  };
+  worker.onmessage = ({data}) => {
+    const request = pending.get(data.id);
+    if (!request) return;
+    pending.delete(data.id); clearTimeout(request.timer);
+    if (data.error) request.reject(new Error(data.error)); else request.resolve(data.result);
+  };
+  const request = (type, extra = {}, transfer = []) => new Promise((resolve, reject) => {
+    const id = ++sequence;
+    const timer = setTimeout(() => { pending.delete(id); reject(new Error("Object inference timed out.")); }, type === "init" ? 60000 : 15000);
+    pending.set(id, {resolve, reject, timer});
+    try { worker.postMessage({id, type, ...extra}, transfer); }
+    catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }
+  });
+  try { await request("init"); }
+  catch (error) { worker.terminate(); fail(error); throw error; }
+  return {
+    async detectForVideo(source, timestamp) {
+      const frame = await createImageBitmap(source);
+      try { return await request("detect", {frame, timestamp}, [frame]); }
+      catch (error) {
+        worker.terminate(); fail(error); workerObjectFailed = true;
+        objectDetector = null; lastPersonDetectionAt = 0; cameraAnalysisPassing = false;
+        throw error; // Next analysis tick loads the fast fallback, never stale passing data.
+      }
+    },
+    close() { worker.terminate(); fail(new Error("Object detector closed.")); },
+  };
+}
+
 async function loadPersonDetector() {
   if (objectDetector || objectDetectorUnavailable) return !!objectDetector;
   if (personDetectorLoadPromise) return personDetectorLoadPromise;
   personDetectorLoadPromise = (async () => {
     try {
+      try {
+        objectDetector = await createWorkerObjectDetector();
+        if (objectDetector) return true;
+      } catch (error) { workerObjectFailed = true; console.warn("Worker object check unavailable; using the fast detector.", error); }
       const vision = await import(VISION_MODULE_URL);
       const fileset = await vision.FilesetResolver.forVisionTasks(VISION_WASM_URL);
       let lastError = null;
@@ -1035,7 +1087,7 @@ async function loadPersonDetector() {
           objectDetector = await vision.ObjectDetector.createFromOptions(fileset, {
             baseOptions: { modelAssetPath: OBJECT_MODEL_URL, delegate },
             runningMode: "VIDEO",
-            maxResults: 8,
+            maxResults: 20,
             // Keep the body backstop sensitive to a smaller or partly turned
             // away person; the face detector remains authoritative for entry.
             // "cell phone" is a native COCO class on this same model, so a
@@ -1047,7 +1099,7 @@ async function loadPersonDetector() {
             // below instead of using a high single-frame confidence cutoff.
             // Lowered further (was 0.12) after reports of a clearly-visible
             // background person and a held-up phone both going undetected —
-            // efficientdet_lite0 (fast, small, downscales the frame to 320x320)
+            // The fast fallback keeps older browsers responsive; worker-capable browsers use Lite2.
             // has weak recall on small/partly-occluded objects; recall matters
             // more than precision for a proctoring backstop that already
             // requires 1.5-3s of temporal stability before it warns.
@@ -1084,12 +1136,12 @@ function nextObjectDetectorTimestamp() {
 // double the effective resolution, which is what actually recovers them.
 // Alternates halves each tick (rather than scanning both every tick) to
 // keep the extra inference cost to one pass instead of two.
-function cropDetectPersons(video, region) {
+async function cropDetectPersons(video, region) {
   const canvas = cropDetectPersons.canvas || (cropDetectPersons.canvas = document.createElement("canvas"));
-  const vw = video.videoWidth;
-  const vh = video.videoHeight;
+  const vw = video.videoWidth || video.width;
+  const vh = video.videoHeight || video.height;
   if (!vw || !vh) return null;
-  const outSize = 320;
+  const outSize = 448;
   canvas.width = outSize;
   canvas.height = outSize;
   const sx = region.x * vw;
@@ -1098,7 +1150,7 @@ function cropDetectPersons(video, region) {
   const sh = region.h * vh;
   const ctx = canvas.getContext("2d");
   ctx.drawImage(video, sx, sy, sw, sh, 0, 0, outSize, outSize);
-  const detections = objectDetector.detectForVideo(canvas, nextObjectDetectorTimestamp()).detections || [];
+  const detections = (await objectDetector.detectForVideo(canvas, nextObjectDetectorTimestamp())).detections || [];
   return { detections, sx, sy, sw, sh, outSize };
 }
 
@@ -1132,6 +1184,16 @@ function boxIoU(a, b) {
   return union > 0 ? inter / union : 0;
 }
 
+// A crop can detect only the candidate's shoulder/torso. IoU is small
+// for a contained partial box, so compare overlap with the smaller box too.
+function samePersonBox(a, b) {
+  if (boxIoU(a, b) > 0.3) return true;
+  const overlapWidth = Math.max(0, Math.min(a.originX+a.width,b.originX+b.width)-Math.max(a.originX,b.originX));
+  const overlapHeight = Math.max(0, Math.min(a.originY+a.height,b.originY+b.height)-Math.max(a.originY,b.originY));
+  const smallerArea = Math.min(a.width*a.height,b.width*b.height);
+  return smallerArea > 0 && overlapWidth*overlapHeight/smallerArea >= 0.7;
+}
+
 function frameLighting(video) {
   const canvas = frameLighting.canvas || (frameLighting.canvas = document.createElement("canvas"));
   canvas.width = 160;
@@ -1148,6 +1210,19 @@ function frameLighting(video) {
   return samples ? total / samples : 0;
 }
 
+function frameSharpness(video) {
+  const canvas = frameSharpness.canvas || (frameSharpness.canvas = document.createElement("canvas"));
+  canvas.width = canvas.height = 160;
+  const context = canvas.getContext("2d", { willReadFrequently: true });
+  context.drawImage(video, video.videoWidth*.25, video.videoHeight*.15, video.videoWidth*.5, video.videoHeight*.7, 0, 0, 160, 160);
+  const pixels = context.getImageData(0, 0, 160, 160).data;
+  const gray = index => pixels[index*4]*.2126 + pixels[index*4+1]*.7152 + pixels[index*4+2]*.0722;
+  let sum=0, squares=0, count=0;
+  for(let y=1;y<159;y+=2) for(let x=1;x<159;x+=2){const i=y*160+x;const value=4*gray(i)-gray(i-1)-gray(i+1)-gray(i-160)-gray(i+160);sum+=value;squares+=value*value;count++;}
+  return count?squares/count-(sum/count)**2:0;
+}
+let cameraQualityIssue = null;
+let lastCameraQualityNoticeAt = 0;
 function landmarkGazeOffCamera(landmarks) {
   if (!landmarks || landmarks.length < 478) return false;
   const ratio = (iris, a, b) => {
@@ -1165,9 +1240,29 @@ function landmarkGazeOffCamera(landmarks) {
   return left < 0.16 || left > 0.84 || right < 0.16 || right > 0.84 || faceRatio < 0.32 || faceRatio > 0.68;
 }
 
+function updatePhoneEvidence(detections, corroborating, now) {
+  const strong = detections.filter(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_EVIDENCE_MIN_SCORE) && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8);
+  const match = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
+  if (!match) { phoneEvidence = null; return false; }
+  if (!phoneEvidence || now - phoneEvidence.last > 1800 || boxIoU(phoneEvidence.box, match.boundingBox) < .2) {
+    phoneEvidence = {since:now,last:now,count:1,box:match.boundingBox,confidence:Number(match.categories[0].score)};
+  } else {
+    phoneEvidence.last=now;phoneEvidence.count++;phoneEvidence.box=match.boundingBox;
+    phoneEvidence.confidence=Math.min(phoneEvidence.confidence,Number(match.categories[0].score));
+  }
+  return phoneEvidence.count >= 4 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
+}
+
 function warnVisionSignal(type, message, details) {
   if (!proctoringActive || integrityEndRequested || sessionCompletedCleanly || lastVisionWarningAt[type] !== undefined) return;
   lastVisionWarningAt[type] = Date.now();
+  if (["poor_lighting", "camera_blurry", "multiple_people_unconfirmed"].includes(type)) {
+    if (Date.now() - (cameraReminderTimes[type] || 0) < 60000) return;
+    cameraReminderTimes[type] = Date.now();
+    _sendIntegrityEvent(type, "info", details);
+    showIntegrityNotice(type === "multiple_people_unconfirmed" ? message : message + " Adjust your camera. This does not count as misconduct.", true);
+    return;
+  }
   recordIntegrityViolation(type, message, details);
 }
 
@@ -1200,6 +1295,30 @@ async function analyzeCameraFrame() {
     lightingPassing ? "✓ Lighting is clear" : (luminance < 45 ? "More light needed" : "Reduce backlight"),
   );
 
+  const sharpness = frameSharpness(lobbyVideoEl);
+  const qualityIssue = !lightingPassing ? "poor_lighting" : sharpness < 12 ? "camera_blurry" : null;
+  if (qualityIssue) {
+    cameraAnalysisPassing = false;
+    absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
+    lastPhoneDetectedAt = lastMultiplePeopleDetectedAt = 0;
+    const guidance = qualityIssue === "poor_lighting" ? "Camera lighting is too low or strongly backlit. Add light in front of you and avoid a bright light behind you." : "Your camera image looks blurry. Clean the lens, focus the camera and keep your face clearly visible.";
+    setVisionCheck(lightingCheckEl, "warn", guidance);
+    updatePrejoinReadiness();
+    if (proctoringActive && (cameraQualityIssue !== qualityIssue || Date.now()-lastCameraQualityNoticeAt > 15000)) {
+      _sendIntegrityEvent(qualityIssue, "info", { luminance: Math.round(luminance), sharpness: Math.round(sharpness), message: guidance });
+      showIntegrityNotice(guidance + " This is a camera quality reminder, not a misconduct warning.", true);
+      lastCameraQualityNoticeAt = Date.now();
+    }
+    cameraQualityIssue = qualityIssue;
+    return;
+  }
+  if (cameraQualityIssue) {
+    if (proctoringActive) _sendIntegrityEvent("camera_quality_restored", "info", {});
+    cameraQualityIssue = null;
+    absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
+    delete lastVisionWarningAt.candidate_not_visible;
+    delete lastVisionWarningAt.gaze_off_camera;
+  }
   let landmarks = null;
   if (faceLandmarker) {
     const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
@@ -1218,19 +1337,28 @@ async function analyzeCameraFrame() {
   // signal saw more people this frame.
   const now = Date.now();
   if (objectDetector && now - lastPersonDetectionAt >= PERSON_DETECTION_INTERVAL_MS) {
-    const detections = objectDetector.detectForVideo(lobbyVideoEl, nextObjectDetectorTimestamp()).detections || [];
+    // Every crop uses the same captured frame. Asynchronous inference must not
+    // count a moving person twice by comparing snapshots from different times.
+    const objectFrame = analyzeCameraFrame.objectFrame || (analyzeCameraFrame.objectFrame = document.createElement("canvas"));
+    objectFrame.width = lobbyVideoEl.videoWidth; objectFrame.height = lobbyVideoEl.videoHeight;
+    objectFrame.getContext("2d").drawImage(lobbyVideoEl, 0, 0);
+    const detections = (await objectDetector.detectForVideo(objectFrame, nextObjectDetectorTimestamp())).detections || [];
     // categoryAllowlist now includes "cell phone" alongside "person" (same
     // model, no extra load), so detections must be split by category rather
     // than counted as a flat length, or a phone in frame would inflate the
     // person count.
-    const personDetections = detections.filter((d) => (d.categories || [])[0]?.categoryName === "person");
+    const personDetections = [];
+    for (const detection of detections) {
+      if ((detection.categories || [])[0]?.categoryName === "person" &&
+          !personDetections.some(known => samePersonBox(detection.boundingBox, known.boundingBox))) personDetections.push(detection);
+    }
     const phoneDetections = detections.filter((d) => (d.categories || [])[0]?.categoryName === "cell phone");
     const scores = personDetections.flatMap((detection) =>
       (detection.categories || []).map((category) => Number(category.score)).filter(Number.isFinite)
     );
     personDetectionConfidence = scores.length ? Math.max(...scores) : null;
     lastPersonDetectionAt = now;
-    if (phoneDetections.length > 0) lastPhoneDetectedAt = now;
+    const corroboratingPhones = [];
 
     // Supplementary zoomed-in pass on one half of the frame (alternating
     // sides each tick) — see cropDetectPersons above for why this is what
@@ -1242,26 +1370,33 @@ async function analyzeCameraFrame() {
     const region = personCropToggle === 0
       ? { x: 0, y: 0, w: 0.55, h: 1 }
       : { x: 0.45, y: 0, w: 0.55, h: 1 };
-    const crop = cropDetectPersons(lobbyVideoEl, region);
-    let extraPeople = 0;
+    const crop = await cropDetectPersons(objectFrame, region);
     if (crop) {
       for (const det of crop.detections) {
         const category = (det.categories || [])[0]?.categoryName;
         if (category !== "person" && category !== "cell phone") continue;
         const box = translateCropBox(det.boundingBox, crop);
-        const knownList = category === "person" ? personDetections : phoneDetections;
-        const overlapsKnown = knownList.some((known) => boxIoU(box, known.boundingBox) > 0.3);
+        if (category === "cell phone") {
+          if (Number(det.categories?.[0]?.score) >= .65) corroboratingPhones.push(box);
+          continue;
+        }
+        const overlapsKnown = personDetections.some(known => samePersonBox(box, known.boundingBox));
         if (overlapsKnown) continue;
-        if (category === "person") extraPeople += 1;
-        else lastPhoneDetectedAt = now;
+        personDetections.push({ boundingBox: box });
       }
     }
-    personBoxCountDetected = personDetections.length + extraPeople;
+    const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
+    for (const det of phoneCrop?.detections || []) {
+      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= .65) corroboratingPhones.push(translateCropBox(det.boundingBox, phoneCrop));
+    }
+    phoneDetected = updatePhoneEvidence(phoneDetections, corroboratingPhones, now);
+    if (phoneDetected) lastPhoneDetectedAt = now;
+    personBoxCountDetected = personDetections.length;
     if (personBoxCountDetected > 1) lastMultiplePeopleDetectedAt = now;
   }
-  // Same hold-over reasoning as multi-person below: a single missed 800ms
-  // tick must not zero out phoneDetected and reset the accumulation timer.
-  phoneDetected = lastPhoneDetectedAt > 0 && now - lastPhoneDetectedAt < PHONE_DETECTION_HOLD_MS;
+  // Only a corroborated sequence can indicate a phone; an isolated detection
+  // or a stale worker result never accumulates into a misconduct warning.
+  phoneDetected = !!phoneEvidence && phoneEvidence.count >= 4 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 1500;
   // Do not flash back to "one person" when the smaller background detection
   // drops for a frame. Keep the multi-person result briefly so the candidate
   // must present a consistently clear single-person frame before proceeding.
@@ -1274,7 +1409,7 @@ async function analyzeCameraFrame() {
   );
 
   const exactlyOneFace = faceCountDetected === 1;
-  const exactlyOnePerson = peopleCountDetected === 1;
+  const exactlyOnePerson = faceCountDetected === 1;
   const fullPersonCheckReady = !!objectDetector && lastPersonDetectionAt > 0;
   framingPassing = faceCountDetected === 1 && (!landmarks || !landmarkGazeOffCamera(landmarks));
   let personCheckState = "fail";
@@ -1287,7 +1422,7 @@ async function analyzeCameraFrame() {
     personCheckText = "Scanning full frame for people…";
   } else if (peopleCountDetected === 0) {
     personCheckText = "No person detected";
-  } else if (peopleCountDetected > 1) {
+  } else if (faceCountDetected > 1) {
     personCheckText = "Multiple people detected";
   } else if (phoneDetected) {
     // Live-call phone tracking (phoneVisibleSince/warnVisionSignal, further
@@ -1342,17 +1477,22 @@ async function analyzeCameraFrame() {
       }
     }
 
-    if (clearVisionSignal("multiple_people_visible", !objectDetectorUnavailable && fullPersonCheckReady && peopleCountDetected === 1, now)) {
+    if (clearVisionSignal("multiple_people_visible", !visionCheckUnavailable && faceCountDetected === 1, now)) {
       _sendIntegrityEvent("multiple_people_cleared", "info", { people_count: peopleCountDetected });
     }
-    multipleFaceSince = _trackSince(multipleFaceSince, !objectDetectorUnavailable && fullPersonCheckReady && peopleCountDetected > 1, now);
+    // Body/crop detections can mistake furniture or clothing for a person.
+    // Preserve them for review, but only sustained second-face evidence counts.
+    if (faceCountDetected === 1 && personBoxCountDetected > 1) {
+      warnVisionSignal("multiple_people_unconfirmed", "The camera check is uncertain. Keep your face clearly visible. This is not a misconduct warning.", { face_count: faceCountDetected, body_count: personBoxCountDetected });
+    } else clearVisionSignal("multiple_people_unconfirmed", personBoxCountDetected <= 1, now);
+    multipleFaceSince = _trackSince(multipleFaceSince, !visionCheckUnavailable && faceCountDetected > 1, now);
     if (multipleFaceSince !== null) {
       const ms = now - multipleFaceSince;
       if (ms >= MULTIPLE_PEOPLE_THRESHOLD_MS) {
         warnVisionSignal(
           "multiple_people_visible",
           `More than one person detected for ${Math.round(ms / 1000)}s. Only the candidate may be visible.`,
-          { confidence: personDetectionConfidence, duration_ms: ms, people_count: peopleCountDetected },
+          { confidence: personDetectionConfidence, duration_ms: ms, people_count: faceCountDetected, face_count: faceCountDetected, confirmed_by: "face_sequence" },
         );
       }
     }
@@ -1362,7 +1502,7 @@ async function analyzeCameraFrame() {
     if (phoneVisibleSince !== null) {
       const ms = now - phoneVisibleSince;
       if (ms >= PHONE_VISIBLE_THRESHOLD_MS) {
-        warnVisionSignal("phone_usage_detected", `A phone has been visible on camera for ${Math.round(ms / 1000)}s.`, { duration_ms: ms });
+        warnVisionSignal("phone_usage_detected", `A phone has been visible on camera for ${Math.round(ms / 1000)}s.`, { duration_ms: now - phoneEvidence.since, confirmed_by: "phone_sequence", observation_count: phoneEvidence.count, confidence: phoneEvidence.confidence });
       }
     }
 
@@ -1434,10 +1574,9 @@ function startMicLevelTest() {
       if (!micAnalyser) return;
       micAnalyser.getByteFrequencyData(dataArray);
 
-      let sum = 0;
+      let sum = dataArray.reduce((total,value) => total+value,0);
       bars.forEach((bar, idx) => {
         const val = dataArray[idx % dataArray.length] || 0;
-        sum += val;
         const height = Math.max(4, Math.min(44, (val / 255) * 44));
         bar.style.height = `${height}px`;
       });
@@ -1667,10 +1806,10 @@ function showFatalError(detail) {
   const toast = document.getElementById("error-toast");
   const text = document.getElementById("error-toast-text");
   if (text) {
-    text.textContent = `We hit a connection issue and had to stop the interview early: ${detail} Your answers so far were saved.`;
+    text.textContent = `The interview service stopped unexpectedly: ${detail} Your saved answers are available when you resume this attempt.`;
   }
   if (toast) toast.classList.add("show");
-  if (rndStatus) rndStatus.textContent = "Disconnected";
+  if (rndStatus) rndStatus.textContent = "Interview service interrupted";
 }
 
 // ============================================================
@@ -1715,9 +1854,9 @@ function _flushPendingIntegrityEvents() {
   queued.forEach((message) => ws.send(JSON.stringify(message)));
 }
 
-function showIntegrityNotice(message) {
+function showIntegrityNotice(message, reminder = false) {
   if (integrityToastTextEl) integrityToastTextEl.textContent = message;
-  if (integrityStrikesEl) integrityStrikesEl.textContent = `${integrityStrikeCount} warning${integrityStrikeCount === 1 ? "" : "s"}`;
+  if (integrityStrikesEl) { integrityStrikesEl.hidden = reminder; integrityStrikesEl.textContent = `${integrityStrikeCount} warning${integrityStrikeCount === 1 ? "" : "s"}`; }
   if (integrityToastEl) {
     integrityToastEl.classList.add("show");
     clearTimeout(showIntegrityNotice._timer);
@@ -1933,7 +2072,7 @@ function schedulePCMChunk(pcmBytes, epoch = currentAudioEpoch) {
     float32[i] = int16[i] / 32768;
   }
 
-  const buffer = playbackAudioContext.createBuffer(1, float32.length, TTS_SAMPLE_RATE);
+  const buffer = playbackAudioContext.createBuffer(1, float32.length, currentTTSSampleRate);
   buffer.getChannelData(0).set(float32);
 
   const source = playbackAudioContext.createBufferSource();
@@ -2025,7 +2164,7 @@ function handleBinaryFrame(data) {
   if (data.byteLength < 4) return;
   const view = new DataView(data);
   const epoch = view.getUint32(0, false);
-  if (epoch < currentAudioEpoch) return;
+  if (epoch !== currentAudioEpoch) return;
 
   const pcm = data.slice(4);
 
@@ -2106,10 +2245,19 @@ async function uploadRecordingPart(chunks) {
   const authorize = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/parts/${encodeURIComponent(recordingSegmentId)}/${partNumber}/authorize`, { method: "POST" });
   const authData = await authorize.json().catch(() => ({}));
   if (!authorize.ok || !authData.url) throw new Error(authData.detail || "Recording part upload could not be authorized.");
-  const uploaded = await fetch(authData.url, { method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob, credentials: "omit" });
-  if (!uploaded.ok) throw new Error(`Direct recording upload failed (${uploaded.status}).`);
-  const etag = uploaded.headers.get("ETag") || uploaded.headers.get("etag");
-  if (!etag) throw new Error("Storage did not confirm the recording part. Check the bucket CORS expose headers.");
+  let etag;
+  try {
+    const uploaded = await fetch(authData.url, { method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob, credentials: "omit", signal: AbortSignal.timeout(30000) });
+    if (uploaded.ok) etag = uploaded.headers.get("ETag");
+  } catch (_) { /* Storage CORS can prevent direct upload. */ }
+  if (!etag) {
+    const uploaded = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/parts/${encodeURIComponent(recordingSegmentId)}/${partNumber}`, {
+      method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob,
+    });
+    const result = await uploaded.json().catch(() => ({}));
+    if (!uploaded.ok || !result.ETag) throw new Error(result.detail || "Recording part upload was not confirmed. Please retry.");
+    etag = result.ETag;
+  }
   const part = { PartNumber: partNumber, ETag: etag };
   const nextParts = [...recordingPartMetadata, part];
   const nextPartNumber = partNumber + 1;
@@ -2166,7 +2314,9 @@ function describeInterviewRecordingFormat(mimeType) {
   };
 }
 
+let interviewRecordingEnabled = true;
 async function startInterviewRecording() {
+  if (!interviewRecordingEnabled) return;
   if (interviewRecorder || !currentSessionId || !userMediaStream || !recordingConsentEl?.checked) return;
   if (typeof MediaRecorder === "undefined" || !recordingAudioDestination) {
     setRecordingStatus("This browser cannot record the interview. Your interview can continue, but its recording will be unavailable.", true);
@@ -2186,6 +2336,10 @@ async function startInterviewRecording() {
   recordingUploadFailed = false;
   recordingDataDropped = false;
   recordingStartedAt = Date.now();
+  recordingFinalDuration = null;
+  recordingFinalizePending = false;
+  recordingFinalizeRetries = 0;
+  if (recordingFinalizeRetryTimer) { clearTimeout(recordingFinalizeRetryTimer); recordingFinalizeRetryTimer = null; }
   try {
     const mimeType = selectInterviewRecordingMimeType();
     if (!mimeType) throw new Error("This browser does not expose a supported video recording format.");
@@ -2286,24 +2440,60 @@ function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}
       setRecordingStatus("The interview ended, but the local recording queue could not save every media chunk.", true);
       return;
     }
-    try {
-      await retryRecordingFlush(true);
-      setRecordingStatus("Interview ended · finalizing the secure recording…");
-      const response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ duration_seconds: Math.floor((Date.now() - recordingStartedAt) / 1000), parts: recordingPartMetadata }),
-      });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording finalization failed.");
-      await clearRecordingQueue();
-      setRecordingStatus("Interview ended · securely processing the recording.");
-    } catch (error) {
-      await markRecordingFailed();
-      setRecordingStatus("The interview ended, but its recording could not be finalized. Placement staff will see it as unavailable.", true);
-      console.error("Interview recording finalization failed", error);
-    }
+    await finalizePendingInterviewRecording();
   })().finally(() => { recordingStopTask = null; });
   return recordingStopTask;
 }
+
+let recordingFinalDuration = null;
+let recordingFinalizePending = false;
+let recordingFinalizeTask = null;
+let recordingFinalizeRetryTimer = null;
+let recordingFinalizeRetries = 0;
+function finalizePendingInterviewRecording() {
+  if (recordingFinalizeTask) return recordingFinalizeTask;
+  if (recordingFinalizeRetryTimer) { clearTimeout(recordingFinalizeRetryTimer); recordingFinalizeRetryTimer = null; }
+  recordingFinalizeTask = savePendingInterviewRecording().finally(() => { recordingFinalizeTask = null; });
+  return recordingFinalizeTask;
+}
+async function savePendingInterviewRecording() {
+  const savingSession = currentSessionId;
+  recordingFinalizePending = true;
+  recordingFinalDuration ??= Math.floor((Date.now() - recordingStartedAt) / 1000);
+  try {
+    await retryRecordingFlush(true);
+    setRecordingStatus("Interview ended · finalizing the secure recording…");
+    let response;
+    for (let attempt=0;attempt<6;attempt++) {
+      response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({duration_seconds:recordingFinalDuration,parts:recordingPartMetadata}),
+      });
+      if (response.status!==409) break;
+      await new Promise(resolve=>setTimeout(resolve,1000));
+    }
+    if (!response?.ok) throw new Error((await response?.json().catch(()=>({})))?.detail || "Recording finalization failed.");
+    await clearRecordingQueue();recordingFinalizePending=false;recordingFinalizeRetries=0;
+    setRecordingStatus("Interview ended · securely processing the recording.");
+  } catch(error) {
+    // Keep both the upload and IndexedDB chunks retryable after a transient error.
+    setRecordingStatus("Interview ended · video save is delayed. Keep this page open and retry when connected.",true);
+    if(recordingStatusEl) {
+      const retry=document.createElement("button");retry.type="button";retry.textContent="Retry video save";
+      retry.className="btn btn-secondary";retry.style.marginLeft="12px";
+      retry.onclick=()=>{retry.disabled=true;void finalizePendingInterviewRecording();};recordingStatusEl.appendChild(retry);
+    }
+    if (recordingFinalizeRetries < 3 && !recordingFinalizeRetryTimer) {
+      recordingFinalizeRetries += 1;
+      recordingFinalizeRetryTimer = setTimeout(() => {
+        recordingFinalizeRetryTimer = null;
+        if (recordingFinalizePending && currentSessionId === savingSession && !interviewRecorder) void finalizePendingInterviewRecording();
+      }, 15000);
+    }
+    console.warn("Recording save remains retryable",error);
+  }
+}
+window.addEventListener("online",()=>{if(recordingFinalizePending&&!recordingStopTask)void finalizePendingInterviewRecording();});
 
 // ============================================================
 // CONTROL MESSAGES
@@ -2320,6 +2510,7 @@ function handleControlMessage(payload) {
     // never send this. Only from here on does a flag actually count, and
     // only from here on do queued pending events get flushed.
     case "interview_started":
+      interviewRecordingEnabled = payload.recording_enabled !== false;
       if (Array.isArray(payload.agents) && payload.agents.length) {
         const animations = new Map(panelAnimations);
         panelAnimations.clear();
@@ -2341,13 +2532,18 @@ function handleControlMessage(payload) {
       clearTimeout(initialConnectionTimer);
       interviewHasStarted = true;
       proctoringActive = true;
+      absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
+      lastMultiplePeopleDetectedAt = 0;
+      personBoxCountDetected = 0;
+      lastPersonDetectionAt = 0;
+      phoneEvidence = null; phoneDetected = false; lastPhoneDetectedAt = 0; cameraReminderTimes = {};
       photoVerifier.start();
       _flushPendingIntegrityEvents();
       void startInterviewRecording();
       break;
 
     case "integrity_event_recorded":
-      integrityStrikeCount = Number(payload.total_flags) || integrityStrikeCount;
+      if (Number.isFinite(Number(payload.total_flags)) && Number(payload.total_flags) >= 0) integrityStrikeCount = Number(payload.total_flags);
       if (integrityStrikesEl) integrityStrikesEl.textContent = `${integrityStrikeCount} warning${integrityStrikeCount === 1 ? "" : "s"}`;
       break;
 
@@ -2438,6 +2634,7 @@ function handleControlMessage(payload) {
     // cleared instead by schedulePCMChunk's own playback-completion timer
     // below, which is keyed to actual scheduled playback finishing.
     case "tts_begin":
+      currentTTSSampleRate = [24000, 48000].includes(Number(payload.sample_rate)) ? Number(payload.sample_rate) : TTS_SAMPLE_RATE;
       clearProcessingStatus();
       currentSpeakerIsProctor = payload.speaker === "proctor";
       currentAudioEpoch = Number(payload.audio_epoch || currentAudioEpoch);

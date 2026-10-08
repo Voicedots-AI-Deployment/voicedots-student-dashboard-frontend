@@ -103,6 +103,11 @@ test.describe("Student Calendar", () => {
     await expect(page.locator(".calendar-grid.week")).toBeVisible();
     await page.getByRole("button", { name: "Day", exact: true }).click();
     await expect(page.locator(".calendar-grid.day")).toBeVisible();
+    const badge = page.locator(".calendar-grid.day .calendar-day-number");
+    const shape = await badge.evaluate(node => {const b=node.getBoundingClientRect();return {width:b.width,height:b.height,weight:Number(getComputedStyle(node).fontWeight)};});
+    expect(shape.width).toBeGreaterThanOrEqual(32);
+    expect(shape.width).toBe(shape.height);
+    expect(shape.weight).toBeLessThanOrEqual(500);
     await page.getByRole("button", { name: "Agenda", exact: true }).click();
     await expect(page.locator(".calendar-agenda-view")).toBeVisible();
   });
@@ -116,6 +121,7 @@ test.describe("Student Calendar", () => {
     await page.getByLabel("Start time *").fill("19:00");
     await page.getByLabel("End time *").fill("20:00");
     await page.getByLabel("Category").selectOption("study");
+    await page.getByText("Location, meeting link & notes",{exact:true}).click();
     await page.getByLabel("Location").fill("Library");
     await page.getByRole("button", { name: "Create event", exact: true }).click();
     await expect(page.locator('.calendar-card-main[aria-label="View Review database indexing"]')).toBeVisible();
@@ -181,3 +187,5 @@ test.describe("Student Calendar", () => {
     await expect(page.getByRole("button", { name: "Create Event" })).toBeVisible();
   });
 });
+
+ test('expanded optional event fields stay compact and aligned',async({page})=>{await mockStudent(page);await page.goto('/calendar');await page.getByRole('button',{name:'Create Event',exact:true}).click();await page.getByText('Location, meeting link & notes',{exact:true}).click();const fields=page.locator('.calendar-event-extras label');await expect(fields).toHaveCount(3);const boxes=await fields.evaluateAll(nodes=>nodes.map(n=>({top:n.getBoundingClientRect().top,bottom:n.getBoundingClientRect().bottom,margin:getComputedStyle(n).marginTop})));for(let i=1;i<boxes.length;i++)expect(boxes[i].top-boxes[i-1].bottom).toBeLessThanOrEqual(14);for(const box of boxes)expect(box.margin).toBe('0px');await page.getByLabel('Location',{exact:true}).fill('Library');await page.getByLabel('Meeting link',{exact:true}).fill('https://example.com/meeting');await page.getByLabel('Description / notes',{exact:true}).fill('Prepare');await expect(page.getByRole('button',{name:'Create event',exact:true})).toBeEnabled();});

@@ -1,7 +1,7 @@
-import { AcademicOverview } from "./academics";
+import { PlacementResult } from "./report-result";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type CSSProperties } from "react";
 import {
   ArrowRight,
   BriefcaseBusiness,
@@ -13,6 +13,8 @@ import {
   Download,
   FileText,
   MapPin,
+  LayoutGrid,
+  Table2,
   Mic,
   RefreshCw,
   Search,
@@ -59,16 +61,19 @@ function safeAttemptNumber(value: unknown, fallback = 1, maximum?: unknown): num
   return Number.isFinite(cap) && cap >= 1 ? Math.min(normalized, Math.floor(cap)) : normalized;
 }
 
-function ReportList({ reports, search = "", filter = "all" }: { reports: Report[]; search?: string; filter?: string }) {
+function ReportList({ reports, search = "", filter = "all", view = "list" }: { reports: Report[]; search?: string; filter?: string; view?: "list" | "cards" | "table" }) {
   const visible = reports.filter((report) => {
     const category = report.drive_id ? "placement" : "practice";
-    const query = `${report.company_name || ""} ${report.target_role || ""} ${report.report?.executive_summary || ""}`.toLowerCase();
+    const query = `${report.company_name || ""} ${report.target_role || ""} ${report.report?.readiness || ""}`.toLowerCase();
     return (filter === "all" || filter === category) && query.includes(search.trim().toLowerCase());
   });
   return (
-    <div className="student-report-list">
-      {visible.map((report) => {
-        const pending = report.report?.status === "awaiting_release";
+    <div className={`student-report-list report-view-${view}`}>
+      {view === "table" && visible.length > 0 ? <div className="reports-table-scroll" role="region" aria-label="Interview reports table" tabIndex={0}><table className="reports-table"><thead><tr><th>Company & role</th><th>Interview</th><th>Date</th><th>Score</th><th>Feedback</th><th>Actions</th></tr></thead><tbody>{visible.map(report => {
+        const pending=report.report?.status === "awaiting_release" || report.status !== "released";
+        return <tr key={report.evaluation_id}><td><span>{report.company_name || "Self practice"}</span><strong>{report.target_role || "Interview report"}</strong></td><td>{report.drive_id ? "Placement" : "Practice"}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</td><td>{date(report.completed_at || report.created_at)}</td><td>{pending || report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</td><td>{pending ? (report.report?.release_scheduled_for ? `Scheduled · ${date(report.report.release_scheduled_for)}` : "Awaiting release") : "Feedback ready"}</td><td><div className="report-table-actions">{!pending && <><Link className="button secondary small" aria-label={`Open report for ${report.target_role || "interview"}`} to={`/reports/${encodeURIComponent(report.session_id)}`}>View report <ArrowRight size={14}/></Link><a className="button secondary small report-download-icon" aria-label={`Download report for ${report.target_role || "interview"}`} title="Download PDF" href={apiUrl(`/api/interview/${encodeURIComponent(report.session_id)}/evaluation/report.pdf`)}><Download size={16}/></a></>}</div></td></tr>;
+      })}</tbody></table></div> : visible.map((report) => {
+        const pending = report.report?.status === "awaiting_release" || report.status !== "released";
         const assessed = report.report?.overall_score != null && !pending;
         return <article className="student-report-card" key={report.evaluation_id}>
           <div className="student-report-card__icon"><FileText size={19} /></div>
@@ -79,12 +84,12 @@ function ReportList({ reports, search = "", filter = "all" }: { reports: Report[
             </div>
             <h2>{report.company_name ? `${report.company_name} · ` : ""}{report.target_role || "Interview report"}</h2>
             <p className="student-report-meta">{date(report.completed_at || report.created_at)}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</p>
-            {report.report?.executive_summary && <p className="student-report-summary">{report.report.executive_summary}</p>}
+
 
           </div>
           <div className="student-report-card__result">
-            {pending ? <><strong className="student-report-pending">In review</strong><span>Your placement team will share feedback here.</span></> : <><strong>{report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</strong><span>{humanize(report.report?.readiness || "Not assessed")}</span></>}
-            {report.placement_decision && <span className={`report-decision report-decision-${decisionTone(report.placement_decision)}`}>{humanize(report.placement_decision)}</span>}
+            {pending ? <><strong className="student-report-pending">{report.report?.release_scheduled_for ? "Release scheduled" : report.drive_id ? "Awaiting release" : "In review"}</strong><span>{report.report?.release_scheduled_for ? `Available ${new Date(report.report.release_scheduled_for).toLocaleString()}` : "Your feedback will appear here when released."}</span></> : <><strong>{report.report?.overall_score == null ? "—" : score(report.report.overall_score)}</strong><span>{report.report?.readiness ? humanize(report.report.readiness) : report.report?.overall_score == null ? "Assessment pending" : "Feedback ready"}</span></>}
+
             {report.status === "released" && !pending && <div className="report-actions"><Link
               aria-label={`Open report for ${report.target_role || "interview"}`}
               to={`/reports/${encodeURIComponent(report.session_id)}`}
@@ -138,10 +143,10 @@ export function Overview() {
   const { identity } = useAuth();
   const resource = useResource<Dashboard>("/api/student/dashboard");
   const data = resource.data;
-  const latestDrive = data?.drives?.find((drive) => ["active", "scheduled"].includes(drive.status)) || data?.drives?.[0];
-  const latestDriveAvailable = Boolean(latestDrive && ["active", "scheduled"].includes(latestDrive.status) && latestDrive.interview_status !== "closed");
-  const canStartLatestDrive = latestDriveAvailable && ["start", "retry_preparation"].includes(latestDrive?.interview_action || "");
-  const canResumeLatestDrive = latestDriveAvailable && latestDrive?.interview_action === "resume";
+  const resumableAttempts = (data?.attempts || []).filter(attempt => { const drive = data?.drives.find(item => item.id === attempt.drive_id); return !drive || !drive.is_locked && drive.status !== "closed" && drive.interview_action !== "blocked"; });
+  const recentDrives = [...(data?.drives || [])].filter(drive => drive.status === "active" && drive.interview_status !== "closed").sort((a, b) => (Date.parse(b.window_start_at || b.drive_date || "") || 0) - (Date.parse(a.window_start_at || a.drive_date || "") || 0)).slice(0, 4);
+  const latestReport = data?.reports[0];
+  const feedbackPending = latestReport?.report?.status === "awaiting_release" || latestReport?.report?.overall_score == null;
   return (
     <>
       <PageHeading
@@ -189,28 +194,6 @@ export function Overview() {
       <ResourceState resource={resource}>
         {data && (
           <>
-            {latestDrive ? (
-              <section className="panel latest-drive-card" data-testid="overview-latest-drive">
-                <div>
-                  <span className="eyebrow">LATEST PLACEMENT DRIVE</span>
-                  <h2>{latestDrive.role_title}</h2>
-                  <p>{latestDrive.company_name}{latestDrive.location ? ` · ${latestDrive.location}` : ""}</p>
-                  <span className="pill">{humanize(latestDrive.status)}</span>
-                </div>
-                <div className="career-actions">
-                  {latestDriveAvailable && <Link className="button secondary" to={`/coach?drive=${encodeURIComponent(latestDrive.id)}`}>AI Coach <ArrowRight size={16}/></Link>}
-                  {canResumeLatestDrive && <Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Resume interview <ArrowRight size={16}/></Link>}
-                  {canStartLatestDrive && <Link className="button primary" to={`/practice?drive=${encodeURIComponent(latestDrive.id)}`}>Start AI Interview <ArrowRight size={16}/></Link>}
-                  {!latestDriveAvailable && <Link className="button secondary" to="/placements">View placements <ArrowRight size={16}/></Link>}
-                  {latestDriveAvailable && !canResumeLatestDrive && !canStartLatestDrive && <Link className="button secondary" to="/placements">View opportunity <ArrowRight size={16}/></Link>}
-                </div>
-              </section>
-            ) : (
-              <section className="panel latest-drive-card latest-drive-empty" data-testid="overview-latest-drive">
-                <div><span className="eyebrow">LATEST PLACEMENT DRIVE</span><h2>No placement drive yet</h2><p>Your placement opportunities will appear here when your placement cell assigns them.</p></div>
-                <Link className="button secondary" to="/placements">View placements <ArrowRight size={16}/></Link>
-              </section>
-            )}
             <section className="stats-grid" data-testid="overview-kpis">
               {[
                 {
@@ -228,7 +211,7 @@ export function Overview() {
                 {
                   icon: TrendingUp,
                   label: "Placement readiness",
-                  value: score(data.readiness.overall_score),
+                  value: data.readiness.overall_score == null ? "—" : score(data.readiness.overall_score),
                   detail:
                     data.readiness.overall_score == null
                       ? "Complete a placement assessment"
@@ -237,7 +220,7 @@ export function Overview() {
                 {
                   icon: Target,
                   label: "Interviews to resume",
-                  value: data.attempts.length,
+                  value: resumableAttempts.length,
                   detail: "Pick up where you left off",
                 },
               ].map(({ icon: Icon, label, value, detail }) => (
@@ -251,9 +234,21 @@ export function Overview() {
                 </article>
                 ))}
             </section>
+            {recentDrives.length > 0 && <section className="panel overview-drives" data-testid="overview-latest-drive">
+              <div className="section-heading"><div><span className="eyebrow">LATEST PLACEMENT DRIVES</span><h2>Explore your next opportunity</h2></div><Link to="/placements">View all <ArrowRight size={15}/></Link></div>
+              <div className="overview-drive-grid">{recentDrives.map(drive => {
+                const available = !drive.is_locked && drive.interview_action !== "blocked" && drive.eligibility_status !== "ineligible";
+                const action = drive.interview_action === "resume" ? "Resume interview" : ["start", "retry_preparation"].includes(drive.interview_action || "") ? "Start AI Interview" : null;
+                return <article className="overview-drive" key={drive.id}>
+                  <div className="overview-drive-company"><span className="record-icon"><BriefcaseBusiness size={19}/></span><span>{drive.company_name}</span><span className="pill">{drive.is_locked ? "Locked" : "Active"}</span></div>
+                  <h3>{drive.role_title}</h3>
+                  <p><MapPin size={14}/>{drive.location || "Location to be announced"}</p>
+                  {drive.window_start_at && <p><CalendarDays size={14}/>{date(drive.window_start_at)}</p>}
+                  <div className="overview-drive-actions">{available && <Link to={`/coach?drive=${encodeURIComponent(drive.id)}`}>AI Coach <ArrowRight size={14}/></Link>}{available && action ? <Link className="button secondary small" to={`/practice?drive=${encodeURIComponent(drive.id)}`}>{action}<ArrowRight size={14}/></Link> : <Link className="button secondary small" to="/placements">View opportunity <ArrowRight size={14}/></Link>}</div>
+                </article>;
+              })}</div>
+            </section>}
             <Growth />
-            <AcademicOverview />
-            <section className="panel"><div className="section-heading"><div><span className="eyebrow">YOUR INSTITUTION RECORDS</span><h2>My ERP</h2><p>View your timetable, marks, fees, homework and campus attendance.</p></div><Link className="button secondary" to="/erp">Open My ERP <ArrowRight size={15}/></Link></div></section>
             <div className="overview-columns">
               <section className="panel" data-testid="overview-feedback">
                 <div className="section-heading">
@@ -267,12 +262,12 @@ export function Overview() {
                 </div>
                 {data.reports.length ? (
                   <>
-                    <div className="feedback-spotlight">
-                      <div className="feedback-score"><strong>{score(data.reports[0].report?.overall_score)}</strong><span>{data.reports[0].report?.overall_score == null ? "Assessment pending" : "Latest score"}</span></div>
-                      <div><strong>Focus before your next attempt</strong><div className="focus-chips">{improvementLabels(data.reports[0]).map(item => <span className="pill" key={item}>{item}</span>)}</div>{!improvementLabels(data.reports[0]).length && <p>Your detailed feedback is being prepared.</p>}</div>
+                    <div className={`feedback-spotlight ${feedbackPending ? "is-pending" : ""}`}>
+                      {feedbackPending ? <div className="feedback-pending-icon"><Clock3 size={28}/></div> : <div className="feedback-score" style={{"--feedback-progress": `${Math.max(0, Math.min(100, latestReport!.report!.overall_score!))}%`} as CSSProperties}><strong>{score(latestReport!.report!.overall_score)}</strong><span>Latest score</span></div>}
+                      <div><strong>{feedbackPending ? "Your feedback is on its way" : "Focus before your next attempt"}</strong>{feedbackPending ? <p>{latestReport?.report?.status === "awaiting_release" ? "Your placement team will share your assessment here once it is released." : "Your interview is complete. We’re preparing your assessment."}</p> : <><div className="focus-chips">{improvementLabels(latestReport).map(item => <span className="pill" key={item}>{item}</span>)}</div>{!improvementLabels(latestReport).length && <p>Open your report to review your strengths and next steps.</p>}</>}</div>
                     </div>
-                    {data.reports[0].drive_id && data.reports[0].report?.status !== "awaiting_release" && <Link className="button primary" to="/coach">Train weak areas with AI Coach <ArrowRight size={16}/></Link>}
-                    <ReportList reports={data.reports.slice(0, 2)} />
+                    {!feedbackPending && latestReport?.drive_id && <Link className="button secondary feedback-coach-action" to="/coach">Practice your focus areas <ArrowRight size={16}/></Link>}
+                    <ReportList reports={data.reports.slice(0, 1)} />
                   </>
                 ) : (
                   <Empty
@@ -306,18 +301,8 @@ export function Overview() {
                     text: "Build a plan for your next opportunity.",
                     to: "/coach",
                   },
-                  {
-                    n: "04",
-                    title: "Build your resume",
-                    text: "Create and improve it in Resume Studio.",
-                    to: "/resume-studio",
-                  },
-                  {
-                    n: "05",
-                    title: "Explore Career Coach",
-                    text: "Get guidance for your career next steps.",
-                    to: "/career",
-                  },
+                  { n: "04", title: "Polish your resume", text: "Make your skills and experience stand out.", to: "/resume-studio" },
+                  { n: "05", title: "Explore your career path", text: "Find roles that fit your strengths and goals.", to: "/career" },
                 ].map((step) => (
                   <Link key={step.n} to={step.to}>
                     <span>{step.n}</span>
@@ -330,13 +315,13 @@ export function Overview() {
                 ))}
               </section>
             </div>
-            {data.attempts.length > 0 && (
-              <section className="panel">
+            {resumableAttempts.length > 0 && (
+              <section className="panel overview-paused">
                 <div className="section-heading">
                   <div><h2>Ready when you are</h2><p>Continue an interview you already started.</p></div>
                   <span className="pill">Saved progress</span>
                 </div>
-                <AttemptList attempts={data.attempts} />
+                <AttemptList attempts={resumableAttempts} />
               </section>
             )}
           </>
@@ -402,7 +387,7 @@ function studentAttemptState(value: Drive | DriveContext): StudentAttemptState {
 function placementGroup(drive: Drive) {
   const status = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
   const action = drive.interview_action || "";
-  if (status === "closed" || status === "completed" || drive.status === "closed") return "closed";
+  if (drive.is_locked || status === "closed" || status === "completed" || drive.status === "closed") return "closed";
   if (["resume", "start", "retry_preparation"].includes(action) && status !== "upcoming") return "active";
   if (["upcoming", "awaiting_assignment"].includes(status) || drive.status === "scheduled") return "upcoming";
   return "closed";
@@ -438,13 +423,18 @@ function compensationLabel(drive: Drive) {
   return `${amount} · ${humanize(drive.salary_period || "annual")}`;
 }
 
-const decisionTone = (value?: string) => {
-  const key = (value || "undecided").toLowerCase().replace(/[-\s]+/g, "_");
-  if (key.includes("shortlist")) return "shortlisted";
-  if (key.includes("reject")) return "rejected";
-  if (key.includes("hold")) return "on-hold";
-  return "undecided";
-};
+function placementPresentation(drive: Drive) {
+  const status = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
+  const rounds = drive.agent_selection?.length || drive.round_configuration?.length;
+  const labels: Record<string, string> = {awaiting_assignment: "Awaiting assignment", open: "Open now", upcoming: "Scheduled", in_progress: "In progress", completed: "Completed", expired: "Expired", closed: "Closed"};
+  return {
+    status: drive.is_locked ? "Locked" : labels[status] || (drive.interview_action === "blocked" ? "Action required" : "Closed"),
+    attempts: status === "closed" ? "Interview closed" : attemptSummaryText(studentAttemptState(drive)),
+    window: drive.window_start_at ? `${date(drive.window_start_at)} – ${drive.window_end_at ? date(drive.window_end_at) : "To be announced"}` : date(drive.drive_date),
+    interview: `${drive.interview_duration_minutes || "—"} minutes · ${drive.difficulty_tier === "dynamic" ? "Personalized" : humanize(drive.difficulty_tier || "Difficulty not set")} · ${rounds || "—"} ${rounds === 1 ? "round" : "rounds"}`,
+    compensation: compensationLabel(drive),
+  };
+}
 
 export function Placements() {
   const resource = useResource<Drive[]>("/api/student/drives");
@@ -454,29 +444,31 @@ export function Placements() {
   const [search, setSearch] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
   const [sortOrder, setSortOrder] = useState("soonest");
+  const [view, setView] = useState<"cards" | "table">("cards");
+  const selectionRequest = useRef(0);
   const [context, setContext] = useState<DriveContext | null>(null);
   const [selected, setSelected] = useState<Drive | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  function closeOpportunity() { selectionRequest.current += 1; setSelected(null); setContext(null); setBusy(false); }
   async function select(drive: Drive) {
+    const requestId = ++selectionRequest.current;
     setSelected(drive);
     setContext(null);
     setError("");
     setBusy(true);
     try {
-      setContext(
-        await api<DriveContext>(
-          `/api/student/drives/${encodeURIComponent(drive.id)}/interview-context`,
-        ),
-      );
+      const result = await api<DriveContext>(`/api/student/drives/${encodeURIComponent(drive.id)}/interview-context`);
+      if (selectionRequest.current === requestId) setContext(result);
     } catch (e) {
+      if (selectionRequest.current !== requestId) return;
       setError(
         e instanceof ApiError && e.status === 404
           ? "This opportunity is no longer available. Refresh the placements list to see current opportunities."
           : (e as Error).message,
       );
     } finally {
-      setBusy(false);
+      if (selectionRequest.current === requestId) setBusy(false);
     }
   }
   useEffect(() => {
@@ -500,10 +492,10 @@ export function Placements() {
       const groupOrder = { active: 0, upcoming: 1, closed: 2 };
       const groupDifference = groupOrder[placementGroup(left)] - groupOrder[placementGroup(right)];
       if (groupDifference) return groupDifference;
+      if (sortOrder === "company") return left.company_name.localeCompare(right.company_name);
       const actionRank = (drive: Drive) => drive.interview_action === "resume" ? 0 : ["start", "retry_preparation"].includes(drive.interview_action || "") ? 1 : 2;
       const actionDifference = actionRank(left) - actionRank(right);
       if (actionDifference) return actionDifference;
-      if (sortOrder === "company") return left.company_name.localeCompare(right.company_name);
       const leftDate = new Date(left.window_start_at || left.drive_date || "9999-12-31").getTime();
       const rightDate = new Date(right.window_start_at || right.drive_date || "9999-12-31").getTime();
       return leftDate - rightDate;
@@ -528,8 +520,8 @@ export function Placements() {
   ].filter((item): item is string => Boolean(item)) : [];
   const interviewWindow = context?.interview_window || "";
   const mainResumeAvailable = context?.main_resume_available === true;
-  const canResume = Boolean(context && mainResumeAvailable && interviewWindow === "open" && (context.can_resume ?? context.action === "resume"));
-  const canStart = Boolean(context && mainResumeAvailable && interviewWindow === "open" && !context.coach_gate_locked && (
+  const canResume = Boolean(context && !context.is_locked && !selected?.is_locked && mainResumeAvailable && interviewWindow === "open" && (context.can_resume ?? context.action === "resume"));
+  const canStart = Boolean(context && !context.is_locked && !selected?.is_locked && mainResumeAvailable && interviewWindow === "open" && !context.coach_gate_locked && (
     context.can_start ?? (["start", "retry_preparation"].includes(context.action) || Boolean(context.can_start_next_attempt))
   ));
   const startInterview = () => context && navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
@@ -539,7 +531,7 @@ export function Placements() {
     else navigate(`/practice?drive=${encodeURIComponent(context.drive_id)}`);
   };
   const statusText = context
-    ? canResume ? "In progress"
+    ? context.is_locked || selected?.is_locked ? "Locked" : canResume ? "In progress"
       : context.main_resume_available === false ? "Main Resume required"
       : interviewWindow === "closed" ? "Closed"
       : interviewWindow === "not_open" ? "Scheduled"
@@ -551,7 +543,9 @@ export function Placements() {
     : "Checking status";
   let nextStep = "Your placement interview details are being checked.";
   if (context && attemptState) {
-    if (context.main_resume_available === false)
+    if (context.is_locked || selected?.is_locked)
+      nextStep = "This placement is locked. Contact your placement cell to reopen interview access.";
+    else if (context.main_resume_available === false)
       nextStep = "Upload or select your Main Resume in My Profile before starting or resuming this placement interview.";
     else if (interviewWindow === "closed" || selected?.status === "closed")
       nextStep = attemptState.remaining === 0 ? "You have completed all available attempts." : "This placement drive is closed. No further interview action is available.";
@@ -604,32 +598,30 @@ export function Placements() {
             </select>
           </label>
         </div>
-        <span className="placement-result-count">{items.length} {items.length === 1 ? "opportunity" : "opportunities"}</span>
+        <div className="placement-view-controls"><span className="placement-result-count">{items.length} {items.length === 1 ? "opportunity" : "opportunities"}</span><div className="placement-view-switcher" role="group" aria-label="Placement view"><button type="button" aria-pressed={view === "cards"} onClick={() => setView("cards")}><LayoutGrid size={15}/>Cards</button><button type="button" aria-pressed={view === "table"} onClick={() => setView("table")}><Table2 size={15}/>Table</button></div></div>
       </section>
       <ResourceState resource={resource}>
         {items.length ? (
           <div className="placement-groups">
           {groups.filter((group) => group.drives.length > 0).map((group) => <section className="placement-group" key={group.key} aria-labelledby={`placement-group-${group.key}`}>
             <div className="placement-group-heading"><div><h2 id={`placement-group-${group.key}`}>{group.title}</h2><p>{group.description}</p></div><span>{group.drives.length}</span></div>
-            <div className="drive-grid">
+            {view === "table" ? <div className="placement-table-scroll" role="region" aria-label={`${group.title} opportunities`} tabIndex={0}><table className="placement-table"><caption className="sr-only">{group.title} placement opportunities</caption><thead><tr><th scope="col">Company & role</th><th scope="col">Location & window</th><th scope="col">Interview</th><th scope="col">Attempts</th><th scope="col">Compensation</th><th scope="col"><span className="sr-only">Actions</span></th></tr></thead><tbody>{group.drives.map(drive => {
+              const info = placementPresentation(drive);
+              return <tr key={drive.id} data-drive-id={drive.id}><td><span className="placement-table-company">{drive.company_name}</span><strong>{drive.role_title}</strong><span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span></td><td><span>{drive.location || "Location to be announced"}</span><small>{info.window}</small></td><td><span className={`pill ${info.status === "Locked" ? "placement-locked-badge" : ""}`}>{info.status}</span><small>{info.interview}</small>{drive.placement_decision && <PlacementResult value={drive.placement_decision} compact/>}</td><td><span>{info.attempts}</span></td><td><span>{info.compensation}</span><small>{humanize(drive.job_type || "Job type not set")}</small></td><td><button className="button secondary small" aria-label={`View opportunity at ${drive.company_name} for ${drive.role_title}`} onClick={() => void select(drive)}>View opportunity <ArrowRight size={14}/></button></td></tr>;
+            })}</tbody></table></div> : <div className="drive-grid">
             {group.drives.map((drive) => (
-              <article className="panel drive-card" key={drive.id}>
+              <article className="panel drive-card" key={drive.id} data-drive-id={drive.id}>
                 {(() => {
-                  const interviewStatus = drive.interview_status || (drive.status === "active" ? "open" : "upcoming");
-                  const statusLabel = drive.interview_action === "blocked" ? "Locked" : interviewStatus === "awaiting_assignment" ? "Awaiting assignment" : interviewStatus === "open" ? "Open now" : interviewStatus === "upcoming" ? "Scheduled" : interviewStatus === "in_progress" ? "In progress" : interviewStatus === "completed" ? "Completed" : interviewStatus === "expired" ? "Expired" : "Closed";
-                  const state = studentAttemptState(drive);
-                  const attemptProgress = interviewStatus === "closed"
-                    ? "Interview closed"
-                    : attemptSummaryText(state);
+                  const info = placementPresentation(drive);
                   return <>
                 <div className="drive-card-top">
                   <span className="company-avatar">
                     {(drive.company_name || "C").slice(0, 2).toUpperCase()}
                   </span>
-                  <span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span>
+                  <span className="drive-company-name">{drive.company_name}</span>
+                  <div className="drive-status-badges"><span className={`pill ${drive.main_resume_available === false ? "placement-resume-required" : "placement-eligible-badge"}`}>{drive.main_resume_available === false ? "Main Resume required" : "Eligible"}</span>{drive.is_locked && <span className="pill placement-locked-badge">Locked</span>}</div>
                 </div>
-                {drive.is_locked && <span className="pill">Locked</span>}
-                <span className="eyebrow">{drive.company_name}</span>
+
                 <h2>{drive.role_title}</h2>
                 <p>
                   <MapPin size={15} />
@@ -637,11 +629,12 @@ export function Placements() {
                 </p>
                 <p>
                   <CalendarDays size={15} />
-                  {drive.window_start_at ? `${date(drive.window_start_at)} – ${drive.window_end_at ? date(drive.window_end_at) : "To be announced"}` : date(drive.drive_date)}
+                  {info.window}
                 </p>
-                <p className="drive-attempt-summary">{statusLabel} · {attemptProgress}</p>
-                <p className="drive-interview-summary">{drive.interview_duration_minutes || "—"} minutes · {humanize(drive.difficulty_tier || "Difficulty not set")} · {drive.agent_selection?.length || drive.round_configuration?.length || "—"} rounds</p>
-                <div className="drive-card-meta"><span>{humanize(drive.job_type || "Job type not set")}</span><span>{compensationLabel(drive)}</span></div>
+                <p className="drive-attempt-summary"><span className="drive-interview-status">{info.status}</span><span>{info.attempts}</span></p>
+                <p className="drive-interview-summary">{info.interview}</p>
+                {drive.placement_decision && <PlacementResult value={drive.placement_decision} compact/>}
+                <div className="drive-card-meta"><span>{humanize(drive.job_type || "Job type not set")}</span><span>{info.compensation}</span></div>
                 {drive.main_resume_available === false && <p className="drive-resume-prompt">Upload your Main Resume in <Link to="/profile">My Profile</Link> before starting an interview.</p>}
                 <button
                   className="button secondary"
@@ -653,7 +646,7 @@ export function Placements() {
                 })()}
               </article>
             ))}
-            </div>
+            </div>}
           </section>)}
           </div>
         ) : (
@@ -670,7 +663,7 @@ export function Placements() {
           </Empty>
         )}
       </ResourceState>
-      {selected && <Dialog labelledBy="drive-title" close={() => setSelected(null)} className="opportunity-dialog">
+      {selected && <Dialog labelledBy="drive-title" close={closeOpportunity} className="opportunity-dialog">
         <div className="opportunity-shell">
           <header className="opportunity-header">
             <div className="opportunity-identity">
@@ -683,7 +676,7 @@ export function Placements() {
               {canResume && <button className="button primary" onClick={resumeInterview}>Resume interview <ArrowRight size={16}/></button>}
               {canStart && <button className="button primary" onClick={startInterview}>{attemptState?.completed ? `Start Attempt ${attemptState.next}` : "Start interview"} <ArrowRight size={16}/></button>}
               {context && context.main_resume_available === false && <Link className="button primary" to="/profile">Upload Main Resume <ArrowRight size={16}/></Link>}
-              <button className="opportunity-close" aria-label="Close opportunity details" onClick={() => setSelected(null)}><X size={19}/></button>
+              <button className="opportunity-close" aria-label="Close opportunity details" onClick={closeOpportunity}><X size={19}/></button>
             </div>
             <div className="opportunity-header-metadata">
               <span><MapPin size={15}/>{context?.location || selected.location || "Location not specified"}</span>
@@ -695,6 +688,7 @@ export function Placements() {
           {busy && <p className="opportunity-loading" role="status">Checking your interview assignment…</p>}
           {error && <div className="opportunity-error"><ErrorMessage message={error}/></div>}
           {context?.main_resume_available === false && <div className="placement-resume-callout" role="status"><strong>A Main Resume is required for every placement interview.</strong><span>Upload or select your Main Resume in My Profile. You can return here afterward and continue with the same resume.</span><Link className="button secondary" to="/profile">Go to My Profile</Link></div>}
+          {selected.placement_decision && <div className="opportunity-outcome"><PlacementResult value={selected.placement_decision}/></div>}
           <div className="opportunity-layout">
             <main className="opportunity-main">
               {(context?.company_description || selected.company_description || companyWebsite || companyLinkedIn) && <section className="opportunity-section" aria-labelledby="company-about-heading">
@@ -709,7 +703,7 @@ export function Placements() {
               {eligibilityDetails.length > 0 && <section className="opportunity-section" aria-labelledby="eligibility-criteria-heading"><span className="eyebrow">PLACEMENT CRITERIA</span><h3 id="eligibility-criteria-heading">Eligibility criteria</h3><ul className="opportunity-round-list">{eligibilityDetails.map((detail) => <li key={detail}><span aria-hidden="true">✓</span><strong>{detail}</strong></li>)}</ul></section>}
               <section className="opportunity-section" aria-labelledby="interview-process-heading">
                 <span className="eyebrow">WHAT TO EXPECT</span><h3 id="interview-process-heading">Interview process</h3>
-                <div className="opportunity-process-meta"><span><Clock3 size={16}/>{context?.duration_minutes || selected.interview_duration_minutes || "—"} minutes</span><span><Target size={16}/>{humanize(context?.difficulty_tier || selected.difficulty_tier || "Difficulty not set")}</span><span><BriefcaseBusiness size={16}/>{context?.round_count ?? configuredRoundLabels(selected).length} rounds</span></div>
+                <div className="opportunity-process-meta"><span><Clock3 size={16}/>{context?.duration_minutes || selected.interview_duration_minutes || "—"} minutes</span><span><Target size={16}/>{(context?.difficulty_tier || selected.difficulty_tier) === "dynamic" ? "Personalized" : humanize(context?.difficulty_tier || selected.difficulty_tier || "Difficulty not set")}</span><span><BriefcaseBusiness size={16}/>{context?.round_count ?? configuredRoundLabels(selected).length} {(context?.round_count ?? configuredRoundLabels(selected).length) === 1 ? "round" : "rounds"}</span></div>
                 {configuredRoundLabels(selected).length > 0 ? <ol className="opportunity-round-list">{configuredRoundLabels(selected).map((round, index) => <li key={`${round}-${index}`}><span>{index + 1}</span><strong>{round}</strong></li>)}</ol> : <p className="opportunity-muted">Round details have not been provided yet.</p>}
               </section>
               {context && <section className="opportunity-section" aria-labelledby="attempts-heading">
@@ -734,7 +728,7 @@ export function Placements() {
               <div><dt>Company</dt><dd>{selected.company_name}</dd></div><div><dt>Role</dt><dd>{selected.role_title}</dd></div><div><dt>Location</dt><dd>{context?.location || selected.location || "Not specified"}</dd></div><div><dt>Job type</dt><dd>{humanize(selected.job_type || "Not specified")}</dd></div><div><dt>Compensation</dt><dd>{compensationLabel(selected)}</dd></div><div><dt>Interview window</dt><dd>{selected.window_start_at ? `${dateTime(selected.window_start_at)}${selected.window_end_at ? ` – ${dateTime(selected.window_end_at)}` : ""}` : date(selected.drive_date)}</dd></div><div><dt>Status</dt><dd>{statusText}</dd></div><div><dt>Eligibility</dt><dd>{context?.eligibility?.status === "eligible" || selected.eligibility_status === "eligible" ? "Eligible" : humanize(context?.eligibility?.status || "Eligible")}</dd></div>
             </dl>{selected.application_deadline && <p className="opportunity-deadline"><strong>Application deadline</strong><span>{dateTime(selected.application_deadline)}</span></p>}</aside>
           </div>
-          <footer className="opportunity-footer"><span>Your placement information is provided by your placement cell.</span><button className="button secondary" onClick={() => setSelected(null)}>Close details</button></footer>
+          <footer className="opportunity-footer"><span>Your placement information is provided by your placement cell.</span><button className="button secondary" onClick={closeOpportunity}>Close details</button></footer>
         </div>
       </Dialog>}
     </>
@@ -743,6 +737,7 @@ export function Placements() {
 
 export function Reports() {
   const resource = useResource<{ reports: Report[] }>("/api/student/reports");
+  const [view, setView] = useState<"cards" | "table">("cards");
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState("all");
   const reports = resource.data?.reports || [];
@@ -772,10 +767,11 @@ export function Reports() {
             <article><span>TOP SCORE</span><strong>{latestScore == null ? "—" : score(latestScore)}</strong><small>Across released reports</small></article>
           </section>
           <section className="student-reports-toolbar" aria-label="Find a report">
-            <label className="student-reports-search"><Search size={17}/><input aria-label="Search reports" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company, role, or feedback" /></label>
+            <label className="student-reports-search"><Search size={17}/><input aria-label="Search reports" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search company or role" /></label>
             <label className="student-reports-filter"><select aria-label="Interview type" value={filter} onChange={(event) => setFilter(event.target.value)}><option value="all">All interviews</option><option value="placement">Placement interviews</option><option value="practice">Practice interviews</option></select></label>
+            <div className="placement-view-switcher" role="group" aria-label="Reports view"><button aria-pressed={view === "cards"} onClick={() => setView("cards")}><LayoutGrid size={15}/>Cards</button><button aria-pressed={view === "table"} onClick={() => setView("table")}><Table2 size={15}/>Table</button></div>
           </section>
-          {reports.length ? <ReportList reports={reports} search={search} filter={filter}/> : <section className="panel"><Empty title="Your feedback starts here" action>Your interview reports will appear here when an interview has been reviewed and the report is ready.</Empty></section>}
+          {reports.length ? <ReportList reports={reports} search={search} filter={filter} view={view}/> : <section className="panel"><Empty title="Your feedback starts here" action>Your interview reports will appear here when an interview has been reviewed and the report is ready.</Empty></section>}
         </>}
       </ResourceState>
     </div>
@@ -784,83 +780,14 @@ export function Reports() {
 
 export function Growth() {
   const resource = useResource<Readiness>("/api/student/readiness");
-  return (
-    <section className="overview-growth">
-      <div className="section-heading panel">
-        <div><span className="eyebrow">PROGRESS WITH PURPOSE</span><h2>My growth</h2><p>Understand your placement readiness and decide where to focus next.</p></div>
-        <button className="button secondary small" onClick={resource.reload}><RefreshCw size={15} /> Refresh</button>
-      </div>
-      <ResourceState resource={resource}>
-        {resource.data && (
-          <div className="growth-grid">
-            <section className="panel readiness-card">
-              <span className="eyebrow">PLACEMENT READINESS</span>
-              <div className="readiness-ring">
-                <strong>{score(resource.data.overall_score ?? null)}</strong>
-              </div>
-              <h2>
-                {resource.data.overall_score == null
-                  ? "Your story is still unfolding"
-                  : "Keep building on your progress"}
-              </h2>
-              <p>
-                Based on your official placement interview and the resume used
-                in that assessment. Missing evidence is never counted as a zero
-                score.
-              </p>
-              <Link className="button primary" to="/placements">
-                Explore placements <ArrowRight size={16} />
-              </Link>
-            </section>
-            <section className="panel">
-              <div className="section-heading">
-                <h2>Your readiness areas</h2>
-              </div>
-              {["interview_readiness", "resume_readiness"].map((axis) => {
-                const value = resource.data!.axis_scores?.[axis] ?? null;
-                return (
-                  <div className="readiness-axis" key={axis}>
-                    <div>
-                      <strong>{humanize(axis)}</strong>
-                      <span>{score(value)}</span>
-                    </div>
-                    <progress
-                      max={100}
-                      value={value ?? 0}
-                      aria-label={humanize(axis)}
-                    />
-                    <p>
-                      {value == null
-                        ? "Waiting for assessment evidence."
-                        : "From your latest qualifying placement assessment."}
-                    </p>
-                  </div>
-                );
-              })}
-              <div className="gentle-note">
-                <Sparkles size={22} />
-                <div>
-                  <strong>One conversation can make a difference.</strong>
-                  <p>
-                    Practice is a place to try, learn, and become more
-                    comfortable telling your story.
-                  </p>
-                  <Link to="/practice">
-                    Make time for practice <ArrowRight size={15} />
-                  </Link>
-                </div>
-              </div>
-            </section>
-          </div>
-        )}
-      </ResourceState>
-    </section>
-  );
+  const metrics = [{key: "overall", label: "Placement readiness", value: resource.data?.overall_score, icon: Target, text: "Your overall preparation for placement opportunities."}, {key: "interview", label: "Interview readiness", value: resource.data?.axis_scores?.interview_readiness, icon: Mic, text: "How confidently you demonstrate your skills."}, {key: "resume", label: "Resume readiness", value: resource.data?.axis_scores?.resume_readiness, icon: FileText, text: "How clearly your resume presents your experience."}];
+  return <section className="panel overview-growth"><div className="section-heading"><div><span className="eyebrow">SEE HOW FAR YOU’VE COME</span><h2>My growth</h2><p>A clearer view of your preparation, one step at a time.</p></div><button className="button secondary small" onClick={resource.reload}><RefreshCw size={15}/> Refresh</button></div><ResourceState resource={resource}>{resource.data && <div className="growth-summary">{metrics.map(({key,label,value,icon:Icon,text}) => <div key={key}><div className="growth-metric-heading"><span className="record-icon"><Icon size={18}/></span><span>{label}</span></div><strong>{value == null ? "—" : score(value)}</strong><p>{text}</p><progress max={100} value={value ?? 0} aria-label={label}/><small>{value == null ? "Complete an assessment to see your progress" : "Based on your latest assessment"}</small></div>)}</div>}</ResourceState></section>;
 }
 
 export function Profile() {
   const { identity, refresh } = useAuth();
   const student = identity!.student;
+  useEffect(() => { void refresh(); }, [refresh]);
   const [message, setMessage] = useState("");
   const [error, setError] = useState("");
   const [busy, setBusy] = useState(false);

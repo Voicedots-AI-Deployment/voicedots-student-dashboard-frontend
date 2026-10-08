@@ -1,46 +1,81 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Download, ArrowLeft } from "lucide-react";
-import { api, apiUrl, request, type Report } from "./api";
-import { ErrorMessage, humanize, useResource, ResourceState } from "./ui";
+import { Download, ArrowLeft, ArrowRight, CheckCircle2, MessageSquare, Play, RefreshCw } from "lucide-react";
+import { api, apiUrl, type Report, type QuestionReview, type InterviewReportView, type AnswerCoaching } from "./api";
+import { ErrorMessage, humanize, useResource, ResourceState, date, score } from "./ui";
+import { CoachQuestionContribution } from "./coach-question-contribution";
+import { PlacementResult } from "./report-result";
 
-type Recording = { status: string; playback_url: string | null; message?: string };
-
+type Recording = { status: string; playback_url: string | null; message?: string; started_at?: string; duration_seconds?: number; segment_count?: number };
+const evidenceLabels: Record<string,string> = { answered:"Response captured", limited_answer:"Limited evidence", explicit_dont_know:"Unsure", irrelevant_answer:"Off topic", capture_unavailable:"Capture unavailable", system_interrupted:"Interrupted", no_response:"No response", unanswered:"No response" };
+const evidenceNotes: Record<string,string> = {
+  answered:"Your response was captured and included in the assessment. No separate feedback was saved for this question.",
+  limited_answer:"There was limited detail in this response. Add a concrete example, explain your approach, and describe the outcome.",
+  explicit_dont_know:"You indicated that you were unsure. Review this topic, then practise explaining it with an example.",
+  irrelevant_answer:"The saved response did not address the question. Start with a direct answer before adding supporting detail.",
+  capture_unavailable:"The answer could not be captured. This is a recording issue, not a judgment of your ability.",
+  system_interrupted:"The system interrupted this answer. The incomplete response does not provide enough evidence to assess it.",
+  no_response:"No response was recorded for this question.", unanswered:"No response was recorded for this question.",
+};
+function QuestionCard({question,index,view,coaching,busy,onReplay,offset}: {question:QuestionReview;index:number;view:InterviewReportView;coaching?:AnswerCoaching;busy?:boolean;onReplay:()=>void;offset:number|null}) {
+  const positive=question.strength_feedback || view.strengths?.filter(item => item.cites_answer_id === question.answer_id).map(item => item.text || "") || [];
+  const improve=question.improvement_feedback || view.improvements?.filter(item => typeof item !== "string" && item.cites_answer_id === question.answer_id).map(item => typeof item === "string" ? item : item.text || "") || [];
+  return <details id={`question-${index}`} className="report-question" open={index===0}>
+    <summary><span className="report-question-number">{String(index+1).padStart(2,"0")}</span><span className="report-question-heading"><span>{humanize(question.round || "Interview")}{question.kind === "followup" ? " · Follow-up" : ""}</span><strong>{question.question || "Interview question"}</strong></span><span className="report-evidence-label">{evidenceLabels[question.evidence_status || ""] || "Response recorded"}</span></summary>
+    <div className="report-question-content"><div className="report-response"><span className="report-section-label">YOUR RESPONSE</span><p>{question.answer || "No answer transcript is available."}</p>{offset != null && <button className="button secondary small" onClick={onReplay}><Play size={14}/> Watch this answer · {timeLabel(offset)}</button>}</div>
+      <div className="report-question-feedback"><span className="report-section-label">QUESTION FEEDBACK</span>{coaching ? <>{coaching.what_worked && <div className="report-feedback-positive"><span>What worked</span><p>{coaching.what_worked}</p></div>}<div className="report-feedback-next"><span>Try next time</span><p>{coaching.improve}</p></div><p className="report-feedback-evidence">From your answer: “{coaching.evidence_quote}”</p></> : <>{positive.filter(Boolean).map((text,i) => <div className="report-feedback-positive" key={`s-${i}`}><span>What worked</span><p>{text}</p></div>)}{improve.filter(Boolean).map((text,i) => <div className="report-feedback-next" key={`i-${i}`}><span>Try next time</span><p>{text}</p></div>)}{!positive.filter(Boolean).length && !improve.filter(Boolean).length && <p>{busy ? "Preparing feedback from your saved answer…" : evidenceNotes[question.evidence_status || ""] || "No separate feedback was saved for this response."}</p>}</>}</div></div>
+  </details>;
+}
+const timeLabel=(seconds:number)=>`${Math.floor(seconds/60)}:${String(Math.floor(seconds%60)).padStart(2,"0")}`;
 export function InterviewReport() {
-  const { sessionId = "" } = useParams();
-  const reports = useResource<{ reports: Report[] }>("/api/student/reports");
-  const report = reports.data?.reports.find(item => item.session_id === sessionId);
-  const [html, setHtml] = useState("");
-  const [error, setError] = useState("");
-  const [recording, setRecording] = useState<Recording | null>(null);
-  const [recordingError, setRecordingError] = useState("");
-  const [showResult, setShowResult] = useState(false);
+  const {sessionId=""}=useParams();
+  const reports=useResource<{reports:Report[]}>("/api/student/reports");
+  const report=reports.data?.reports.find(item => item.session_id===sessionId);
+  const released=report?.status === "released" && report.report?.status !== "awaiting_release";
+  const detail=useResource<InterviewReportView>(released ? `/api/interview/${encodeURIComponent(sessionId)}/evaluation` : null);
+  const recording=useResource<Recording>(released && report?.drive_id ? `/api/student/interview/${encodeURIComponent(sessionId)}/recording` : null);
+  const [tab,setTab]=useState<"overview"|"questions">("overview");
+  const [feedback,setFeedback]=useState<Record<string,AnswerCoaching>>({});
+  const [feedbackBusy,setFeedbackBusy]=useState(false),[feedbackError,setFeedbackError]=useState(""),[feedbackLoaded,setFeedbackLoaded]=useState(false);
+  const [mediaError,setMediaError]=useState("");
+  const videoRef=useRef<HTMLVideoElement>(null), refreshedPlayback=useRef(false);
+  useEffect(()=>{refreshedPlayback.current=false;},[sessionId]);
+  useEffect(()=>{if(!["recording","processing","uploading"].includes(recording.data?.status || ""))return;const timer=window.setInterval(()=>recording.reload(),10000);return()=>clearInterval(timer);},[recording.data?.status]);
+  function playbackError(){if(!refreshedPlayback.current){refreshedPlayback.current=true;recording.reload();}else setMediaError("The video could not load. Refresh the secure link to try again.");}
+  useEffect(() => {setTab("overview");setMediaError("");setFeedback({});setFeedbackLoaded(false);setFeedbackError("");},[sessionId]);
   useEffect(() => {
-    const controller = new AbortController();
-    setHtml(""); setError(""); setRecording(null); setRecordingError(""); setShowResult(false);
-    if (!report || report.status !== "released" || report.report?.status === "awaiting_release") return;
-    void request(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.html`, { signal: controller.signal })
-      .then(response => response.text()).then(value => { if (!controller.signal.aborted) setHtml(value.replace('href="report.pdf"', `href="${apiUrl(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.pdf`)}"`)); })
-      .catch(cause => { if (!controller.signal.aborted) setError(cause.message); });
-    void api<Recording>(`/api/student/interview/${encodeURIComponent(sessionId)}/recording`, { signal: controller.signal })
-      .then(value => { if (!controller.signal.aborted) setRecording(value); })
-      .catch(cause => { if (!controller.signal.aborted) setRecordingError(cause.message); });
-    return () => controller.abort();
-  }, [sessionId, report]);
-  return <section className="interview-report-page">
-    <Link className="button secondary" to="/reports"><ArrowLeft size={17}/> All reports</Link>
-    <ResourceState resource={reports}>
-      {report ? <>
-        <header className="panel full-report-header"><div><span className="eyebrow">INTERVIEW REPORT</span><h1>{report.target_role || "Your interview"}</h1><p>{report.company_name || "Practice interview"}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</p></div>
-          {report.status === "released" && report.report?.status !== "awaiting_release" && <a className="button primary" href={apiUrl(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.pdf`)}><Download size={17}/> Download PDF</a>}
-        </header>
-        {report.report?.status === "awaiting_release" || report.status !== "released" ? <p className="panel">Your report is awaiting release.</p> : <>
-          {report.drive_id && <section className="panel"><button className="button secondary" aria-expanded={showResult} onClick={() => setShowResult(value => !value)}>View placement result</button>{showResult && <div className="placement-result-reveal" role="status"><h2>{report.placement_decision ? humanize(report.placement_decision) : "Decision pending"}</h2></div>}</section>}
-          <section className="panel"><h2>Interview recording</h2>{recording?.playback_url ? <video className="report-video" controls playsInline preload="metadata" src={recording.playback_url} aria-label="Interview recording"/> : <p>{recordingError || recording?.message || (recording ? `Recording ${humanize(recording.status).toLowerCase()}` : "Loading recording…")}</p>}</section>
-          <ErrorMessage message={error}/>
-          {html ? <iframe className="full-report-document" title="Complete interview report and questions" srcDoc={html} sandbox="allow-same-origin allow-popups"/> : !error && <p role="status">Loading full report…</p>}
-        </>}
-      </> : reports.data && <p className="panel">This report is unavailable.</p>}
-    </ResourceState>
+    if(tab!=="questions" || !detail.data || feedbackLoaded) return;
+    const controller=new AbortController();setFeedbackBusy(true);setFeedbackError("");
+    void api<{feedback:Record<string,AnswerCoaching>;complete:boolean}>(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/question-feedback`,{method:"POST",signal:controller.signal,timeoutMs:180000}).then(result=>{if(!controller.signal.aborted){setFeedback(result.feedback);if(!result.complete)setFeedbackError("Some answer feedback is still unavailable. Retry to complete it.");}}).catch(cause=>{if(!controller.signal.aborted)setFeedbackError(cause.message);}).finally(()=>{if(!controller.signal.aborted){setFeedbackBusy(false);setFeedbackLoaded(true);}});
+    return ()=>controller.abort();
+  },[tab,detail.data,sessionId,feedbackLoaded]);
+  const view=detail.data;
+  const answerFeedback={...(view?.question_feedback || {}),...feedback};
+  const questions=view?.question_reviews || [];
+  const dimensions=Object.entries(view?.score_breakdown || {});
+  const points=view?.overall_score;
+  function questionOffset(question:QuestionReview):number|null {
+    if(!recording.data?.playback_url || Number(recording.data.segment_count || 0)>1)return null;
+    const start=Date.parse(recording.data.started_at || ""),point=Date.parse(question.answer_started_at || question.asked_at || "");
+    const offset=(point-start)/1000,duration=Number(recording.data.duration_seconds || 0);
+    return Number.isFinite(offset)&&offset>=0&&(!duration||offset<=duration)?offset:null;
+  }
+  function replay(question:QuestionReview){const offset=questionOffset(question),video=videoRef.current;if(offset==null||!video)return;video.scrollIntoView({behavior:"smooth",block:"center"});const play=()=>{video.currentTime=offset;void video.play().catch(()=>undefined);};if(video.readyState===0)video.addEventListener("loadedmetadata",play,{once:true});else play();}
+
+  return <section className="interview-report-page report-workspace">
+    <Link className="report-back-link" to="/reports"><ArrowLeft size={16}/> All reports</Link>
+    <ResourceState resource={reports}>{report ? <>
+      <header className="full-report-header"><div><span className="eyebrow">{report.drive_id ? "PLACEMENT INTERVIEW" : "PRACTICE INTERVIEW"}</span><h1>{report.target_role || "Your interview"}</h1><p>{report.company_name || "Self practice"} · {date(report.completed_at || report.created_at)}{report.attempt_number ? ` · Attempt ${report.attempt_number}` : ""}</p></div>{released && <a className="button secondary" href={apiUrl(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/report.pdf`)}><Download size={16}/> Download PDF</a>}</header>
+      {!released ? <section className="panel report-awaiting"><MessageSquare size={24}/><h2>Your feedback is being prepared</h2><p>Your report and placement result will appear here when they are released.</p></section> : <ResourceState resource={detail}>{view && <>
+        {report.drive_id && <PlacementResult value={report.placement_decision} decidedAt={report.placement_decided_at}/>}
+        <nav className="report-section-nav" aria-label="Report sections">{([{key:"overview",label:"Overview",Icon:CheckCircle2},{key:"questions",label:`Questions & feedback (${questions.length})`,Icon:MessageSquare}] as const).map(({key,label,Icon}) => <button key={key} aria-pressed={tab===key} onClick={() => setTab(key)}><Icon size={16}/>{label}</button>)}</nav>
+        {tab === "overview" && <div className="report-overview-content"><section className="panel report-interview-details"><div><span className="eyebrow">INTERVIEW DETAILS</span><h2>Your interview at a glance</h2></div><dl><div><dt>Company</dt><dd>{report.company_name || "Self practice"}</dd></div><div><dt>Role</dt><dd>{report.target_role || "Interview"}</dd></div><div><dt>Interview date</dt><dd>{date(report.started_at || report.completed_at || report.created_at)}</dd></div><div><dt>Duration</dt><dd>{report.duration_minutes ? `${report.duration_minutes} minutes` : "Not recorded"}</dd></div><div><dt>Attempt</dt><dd>{report.attempt_number || "1"}</dd></div><div><dt>Interview type</dt><dd>{report.drive_id ? "Placement" : "Practice"}</dd></div></dl>{report.drive_id && <div className="report-community"><div><h3>Pass your experience forward</h3><p>Share the questions you were asked to help other students prepare.</p></div><CoachQuestionContribution driveId={report.drive_id} company={report.company_name || "Placement"} role={report.target_role || "Interview"}/></div>}</section><section className="report-performance panel"><div className="report-score-block"><div className={`report-score-ring ${points == null ? "is-unscored" : ""}`} style={{"--report-score":`${Math.max(0,Math.min(100,points ?? 0))}%`} as CSSProperties}><div><strong>{points == null ? "—" : score(points)}</strong><span>Interview score</span></div></div><div><span className="report-section-label">YOUR PERFORMANCE</span><h2>{points == null ? "Assessment pending" : humanize(view.readiness || "Feedback ready")}</h2><p>Your interview performance is separate from your placement decision.</p>{view.assessment_coverage_percent != null && <span className="report-coverage">{view.assessment_coverage_percent}% assessment coverage</span>}</div></div><div className="report-score-breakdown"><h3>Skills in focus</h3>{dimensions.length ? dimensions.map(([label,value]) => <div className="report-score-row" key={label}><span>{humanize(label)}</span><progress max={100} value={value ?? 0} aria-label={label}/><span>{value == null ? "Not assessed" : score(value)}</span></div>) : <p>A skill breakdown is not available for this interview.</p>}</div></section>
+          <div className="report-guidance-grid"><div className="report-guidance-stack"><section className="panel report-guidance"><span className="eyebrow">BUILD ON THIS</span><h2>What went well</h2>{view.strengths?.length ? view.strengths.map((item,index) => <div className="report-strength" key={index}><CheckCircle2 size={17}/><p>{item.text || item.focus}</p></div>) : <p>No specific strengths were saved in this report.</p>}</section>{view.communication && <section className="panel report-guidance"><span className="eyebrow">HOW YOU COMMUNICATED</span><h2>Your speaking snapshot</h2><div className="report-speaking-metrics">{view.communication.speaking_speed_wpm != null && <div><strong>{view.communication.speaking_speed_wpm}</strong><span>Words per minute</span></div>}{view.communication.filler_word_count != null && <div><strong>{view.communication.filler_word_count}</strong><span>Filler words</span></div>}</div>{view.communication.measurement_note && <p>{view.communication.measurement_note}</p>}{view.communication.top_filler_words?.length ? <div className="report-filler-chips">{view.communication.top_filler_words.map(word=><span key={word}>{word}</span>)}</div> : null}{view.communication.scores && <div className="report-speaking-scores">{Object.entries(view.communication.scores).map(([label,value])=><div key={label}><span>{humanize(label)}</span><span>{value == null ? "Not assessed" : score(value)}</span></div>)}</div>}</section>}</div><section className="panel report-guidance"><span className="eyebrow">YOUR NEXT PRACTICE</span><h2>Where to focus</h2>{view.priority_improvement_areas?.length ? view.priority_improvement_areas.map((item,index) => <article className="report-improvement" key={index}><span className="report-question-number">{String(index+1).padStart(2,"0")}</span><div><h3>{item.focus || "Practice focus"}</h3>{item.problem && <p>{item.problem}</p>}{item.actions?.length ? <ul>{item.actions.map((action,i) => <li key={i}>{action}</li>)}</ul> : null}</div></article>) : view.improvements?.length ? view.improvements.map((item,index) => <p key={index}>{typeof item === "string" ? item : item.text || item.focus}</p>) : <p>No practice priorities were saved in this report.</p>}<Link className="button secondary small" to={report.drive_id ? `/coach?drive=${encodeURIComponent(report.drive_id)}` : "/practice"}>{report.drive_id ? "Prepare with AI Coach" : "Practise another interview"}<ArrowRight size={15}/></Link></section></div>
+          <button className="report-question-cta" onClick={() => setTab("questions")}><MessageSquare size={20}/><span><strong>Review every answer</strong><span>Read your responses and the feedback linked to each question.</span></span><ArrowRight size={18}/></button>
+        </div>}
+        {tab === "questions" && <section className="report-questions-section"><div className="report-review-layout">{report.drive_id && <aside className="panel report-video-review"><div className="report-section-heading"><div><span className="report-section-label">REVIEW YOUR INTERVIEW</span><h2>Interview video</h2></div></div>{recording.loading ? <p role="status">Loading video…</p> : recording.error ? <ErrorMessage message={recording.error} retry={recording.reload}/> : recording.data?.playback_url ? <><video ref={videoRef} className="report-video" controls playsInline preload="metadata" src={recording.data.playback_url} aria-label="Interview video" onError={playbackError}/>{mediaError && <p role="status">{mediaError}</p>}</> : <p className="report-media-unavailable">{recording.data?.message || "No video was saved for this attempt. You can still review your answers and feedback."}</p>}<button className="button secondary small" onClick={()=>{setMediaError("");refreshedPlayback.current=false;recording.reload();}}><RefreshCw size={14}/> Refresh video</button></aside>}<div className="report-answer-review"><div className="report-section-heading"><div><h2>Questions & feedback</h2><p>Your saved responses, including follow-ups, with feedback from this interview.</p></div><span>{questions.length} {questions.length === 1 ? "response" : "responses"}</span></div>{feedbackBusy && <p className="report-feedback-loading" role="status">Preparing answer-specific feedback. Your responses are ready to read below.</p>}{feedbackError && <ErrorMessage message={feedbackError} retry={() => setFeedbackLoaded(false)}/>} {questions.length ? questions.map((question,index) => <QuestionCard key={`${question.answer_id ?? index}-${question.turn_id || ""}`} question={question} index={index} view={view} offset={questionOffset(question)} onReplay={()=>replay(question)} coaching={answerFeedback[String(question.answer_id)]} busy={feedbackBusy}/>) : <div className="panel"><p>Question-level responses are not available for this earlier interview.</p></div>}</div></div></section>}
+
+      </>}</ResourceState>}
+    </> : reports.data && <p className="panel">This report is unavailable.</p>}</ResourceState>
   </section>;
 }

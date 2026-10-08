@@ -59,8 +59,8 @@
     @keyframes fadeUp{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}
 
     /* Camera preview */
-    .cam-preview{width:100%;aspect-ratio:16/9;border-radius:var(--r-md);background:#000;overflow:hidden;position:relative;margin:20px 0;border:1px solid var(--border);}
-    .cam-preview video{width:100%;height:100%;object-fit:cover;transform:scaleX(-1);}
+    .cam-preview{width:100%;max-width:360px;aspect-ratio:1/1;border-radius:var(--r-md);background:#000;overflow:hidden;position:relative;margin:20px auto;border:1px solid var(--border);}
+    .cam-preview video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;object-position:center;transform:scaleX(-1);}
     .cam-overlay{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:8px;color:var(--muted);font-size:0.85rem;}
     .vision-checks{display:grid;grid-template-columns:repeat(3,1fr);gap:8px;margin:-8px 0 14px;}
     .vision-check{padding:8px 9px;border:1px solid var(--border);border-radius:9px;background:rgba(15,23,42,.65);font-size:.7rem;font-weight:700;color:#94A3B8;text-align:center;}
@@ -236,7 +236,25 @@
       .call-controls{right:12px;bottom:20px;}
       .report-agent-grid,.r-grid{grid-template-columns:1fr;}
     }
-  </style>
+
+    /* Compact panels follow the configured interviewer count. */
+    .interview-grid[data-panel-count="1"]{grid-template-columns:minmax(0,1.3fr) minmax(260px,1fr);grid-template-rows:1fr;max-width:1040px;align-items:center}
+    .interview-grid[data-panel-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr)) minmax(260px,.9fr);grid-template-rows:1fr;align-items:center}
+    .interview-grid[data-panel-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(240px,.9fr);grid-template-rows:1fr;align-items:center}
+    .interview-grid[data-panel-count="1"] .panel-agent,.interview-grid[data-panel-count="2"] .panel-agent,.interview-grid[data-panel-count="3"] .panel-agent{height:auto;aspect-ratio:4/3;width:100%}
+    .interview-grid[data-panel-count="1"] .pip{grid-column:2;grid-row:1}
+    .interview-grid[data-panel-count="2"] .pip{grid-column:3;grid-row:1}
+    .interview-grid[data-panel-count="3"] .pip{grid-column:4;grid-row:1}
+    .pj-panel h3{margin:0 0 14px;font-size:1.1rem;font-weight:600;line-height:1.4}
+    .pj-panel label{display:block;margin-top:14px;color:var(--muted);font-size:.8rem;font-weight:400}
+    .pj-panel select{font-family:inherit;font-size:.85rem;font-weight:400;min-height:42px;box-sizing:border-box}
+    .pj-panel .pj-btn{display:flex;align-items:center;justify-content:center;min-height:42px;width:100%;margin-top:12px;font-weight:500}
+    .pj-panel [role="alert"]:empty,.mic-status:empty{display:none}
+    .vision-checks{margin:0 0 16px;align-items:stretch}.vision-check{display:flex;align-items:center;justify-content:center;min-height:40px;font-weight:500}
+    @media(max-width:1100px){.interview-grid[data-panel-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));max-width:940px}.interview-grid[data-panel-count="3"] .pip{grid-column:2;grid-row:2}}
+    @media(max-width:700px){.interview-grid[data-panel-count="1"],.interview-grid[data-panel-count="2"],.interview-grid[data-panel-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:none;gap:10px}.interview-grid[data-panel-count="1"] .pip,.interview-grid[data-panel-count="2"] .pip,.interview-grid[data-panel-count="3"] .pip{grid-column:auto;grid-row:auto;width:100%}.pj-panel{padding:22px}.vision-checks{gap:6px}.vision-check{padding:8px 5px;font-size:.65rem}}
+  .pj-panel button[hidden]{display:none!important}
+</style>
   <link rel="icon" href="/voicedotslogo.svg" type="image/svg+xml" />
   <link rel="stylesheet" href="/interview-brand.css" />
 </head>
@@ -268,8 +286,8 @@
           <video id="lobby-video" autoplay muted playsinline></video>
           <div class="cam-overlay" id="cam-overlay"><span>Waiting for camera access…</span></div>
         </div>
-        <p style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
-        <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand this interview will be video and audio recorded for evaluation and can be reviewed by authorized placement staff.</span></label>
+        <p id="preflight-requirements" style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
+        <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand my answers will be transcribed for evaluation. Placement interviews are also video recorded and may be reviewed by authorized placement staff.</span></label>
         <p id="recording-status" class="recording-status" role="status" aria-live="polite" hidden></p>
         <button class="pj-btn pj-btn-primary" id="pj-join-btn" type="button" disabled>Start AI Interview</button>
       </div>
@@ -589,6 +607,6 @@
 
   <script src="/student-api-config.js"></script>
   <script src="/interview-theme.js"></script>
-  <script type="module" src="interview.js"></script>
+  <script type="module" src="interview.js?v=gemini-demo-20261008"></script>
 </body>
 </html>

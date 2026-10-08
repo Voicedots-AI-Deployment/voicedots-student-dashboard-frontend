@@ -66,12 +66,14 @@ async function prepare(page: Page, failure = "") {
         const oscillator = context.createOscillator();
         oscillator.frequency.value = 440;
         const gain = context.createGain();
-        gain.gain.value = w.failure === "microphone" ? 0 : .8;
+        gain.gain.value = ["microphone", "silent"].includes(w.failure) ? 0 : .8;
         const destination = context.createMediaStreamDestination();
         oscillator.connect(gain).connect(destination);
         oscillator.start();
         await context.resume();
-        tracks.push(...destination.stream.getAudioTracks());
+        const audioTracks = destination.stream.getAudioTracks();
+        for (const track of audioTracks) Object.defineProperty(track, 'muted', {get:()=>w.failure === "microphone"});
+        tracks.push(...audioTracks);
       }
       return new MediaStream(tracks);
     };
@@ -104,6 +106,7 @@ async function prepare(page: Page, failure = "") {
       window.__testStartRecording = startInterviewRecording;
       window.__testStopRecording = stopInterviewRecording;
       window.__testControlMessage = handleControlMessage;
+      window.__testFinalizeRecording = finalizePendingInterviewRecording;
       window.__testEmitRecordingChunk = blob => interviewRecorder?.ondataavailable?.({ data: blob });
       window.__testSaveRecordingQueue = () => recordingPersistenceQueue;
       window.__testFlushRecordingQueue = () => retryRecordingFlush(true);
@@ -320,7 +323,7 @@ for (const [failure, retry, panel] of [
     const mediaBefore = await page.evaluate(() => (window as any).mediaCalls.length);
     await recover();
     await page.locator(retry).click();
-    await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as any).starts), {timeout:15000}).toBe(1);
     expect(counts.create).toBe(1);
     expect(counts.preflight).toBe(1);
     expect(counts.readiness).toBe(before.readiness + (failure === "network" ? 1 : 0));
@@ -338,7 +341,7 @@ test("a service connection failure after readiness returns to the failed check a
   expect(await page.evaluate(() => (window as any).starts)).toBe(0);
   await recover();
   await page.locator("#pj-network-retry").click();
-  await expect.poll(() => page.evaluate(() => (window as any).starts)).toBe(1);
+  await expect.poll(() => page.evaluate(() => (window as any).starts), {timeout:15000}).toBe(1);
   expect(counts).toEqual({ create: 2, identity: 1, readiness: 2, preflight: 1 });
   expect(await page.evaluate(() => (window as any).mediaCalls.length)).toBe(1);
   expect(await page.evaluate(() => (window as any).shares)).toBe(1);
@@ -354,4 +357,134 @@ test("failed controls remain reachable on a short mobile viewport", async ({ pag
   await expect(page.locator("#pj-cam-retry")).toBeInViewport();
   await page.locator("#preflight-title").scrollIntoViewIfNeeded();
   await expect(page.locator("#preflight-title")).toBeInViewport();
+});
+
+test("recording retries through authenticated API when direct storage upload fails", async ({ page }) => {
+  await prepare(page);
+  const calls: { start?: any; part?: number; put?: number; options?: number; finalize?: any } = {};
+  await page.route("**/recording/start", async route => {
+    calls.start = route.request().postDataJSON();
+    await route.fulfill({ json: { status: "recording" } });
+  });
+  await page.route("**/recording/parts/*/*/authorize", async route => {
+    calls.part = Number(new URL(route.request().url()).pathname.split("/").slice(-2, -1)[0]);
+    await route.fulfill({ json: { url: "https://r2.invalid/signed-part" } });
+  });
+  await page.route("https://r2.invalid/**", route => route.abort());
+  await page.route("**/recording/parts/*/*", async route => {
+    if (route.request().method() !== "PUT") return route.fallback();
+    calls.put = (calls.put || 0) + 1;
+    expect(route.request().postDataBuffer()?.byteLength || 0).toBeGreaterThan(0);
+    await route.fulfill({json:{ETag:'"test-etag"'}});
+  });
+  await page.route("**/recording/finalize", async route => {
+    calls.finalize = route.request().postDataJSON();
+    await route.fulfill({ json: { status: "processing" } });
+  });
+  await page.evaluate(async () => {
+    const input = document.createElement("canvas"); input.width = 640; input.height = 360;
+    const inputContext = input.getContext("2d")!;
+    inputContext.fillStyle = "#7340e8"; inputContext.fillRect(0, 0, 640, 360);
+    const inputStream = input.captureStream(15);
+    const audioContext = new AudioContext();
+    const oscillator = audioContext.createOscillator();
+    const destination = audioContext.createMediaStreamDestination();
+    oscillator.connect(destination); oscillator.start(); await audioContext.resume();
+    (window as any).__testRecordingSetup("recording-test-session", inputStream, destination);
+  });
+  await page.evaluate(() => (window as any).__testStartRecording());
+  await page.evaluate(() => (window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1, 2, 3])], { type: "video/webm" })));
+  await page.evaluate(() => (window as any).__testSaveRecordingQueue());
+  await page.evaluate(() => (window as any).__testStopRecording(true));
+  expect(calls.start).toMatchObject({ consent: true, mime_type: "video/webm", extension: "webm" });
+  expect(calls.part).toBe(1);
+  expect(calls.put).toBe(1);
+  expect(calls.finalize?.parts).toEqual([{ PartNumber: 1, ETag: '"test-etag"' }]);
+  expect(calls.finalize?.duration_seconds).toEqual(expect.any(Number));
+});
+
+
+test("video finalization retries an ended-status race without discarding uploaded parts",async({page})=>{
+  await prepare(page);let attempts=0,failed=0;
+  await page.route("**/recording/start",route=>route.fulfill({json:{status:'recording'}}));
+  await page.route("**/recording/parts/*/*/authorize",route=>route.fulfill({json:{url:'https://r2.invalid/part'}}));
+  await page.route("https://r2.invalid/**",route=>route.abort());
+  await page.route(/\/recording\/parts\/[^/]+\/\d+$/,route=>route.fulfill({json:{ETag:'saved-etag'}}));
+  await page.route("**/recording/fail",route=>{failed++;return route.fulfill({json:{status:'failed'}});});
+  await page.route("**/recording/finalize",route=>{attempts++;return attempts===1?route.fulfill({status:409,json:{detail:'This interview must end before its recording can be finalized.'}}):route.fulfill({json:{status:'processing'}});});
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+    const stream=canvas.captureStream(15),audio=new AudioContext(),destination=audio.createMediaStreamDestination();
+    const oscillator=audio.createOscillator();oscillator.connect(destination);oscillator.start();await audio.resume();
+    (window as any).__testRecordingSetup('race-session',stream,destination);
+  });
+  await page.evaluate(()=>(window as any).__testStartRecording());
+  await page.evaluate(()=>(window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1,2,3])],{type:'video/webm'})));
+  await page.evaluate(()=>(window as any).__testSaveRecordingQueue());
+  await page.evaluate(()=>(window as any).__testStopRecording(true));
+  expect(attempts).toBe(2);expect(failed).toBe(0);
+});
+
+test('temporary finalization failure retries automatically without reuploading confirmed video parts',async({page})=>{
+  await prepare(page);let finalized=0,uploads=0;
+  await page.route('**/recording/start',route=>route.fulfill({json:{status:'recording'}}));
+  await page.route('**/recording/parts/*/*/authorize',route=>route.fulfill({json:{url:'https://r2.invalid/retry'}}));
+  await page.route('https://r2.invalid/**',route=>route.abort());
+  await page.route(/\/recording\/parts\/[^/]+\/\d+$/,route=>{uploads++;return route.fulfill({json:{ETag:'retry-etag'}});});
+  await page.route('**/recording/finalize',route=>{finalized++;return finalized===1?route.fulfill({status:503,json:{detail:'Temporary storage error'}}):route.fulfill({json:{status:'processing'}});});
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+    const audio=new AudioContext(),destination=audio.createMediaStreamDestination(),oscillator=audio.createOscillator();oscillator.connect(destination);oscillator.start();await audio.resume();
+    (window as any).__testRecordingSetup('auto-retry-session',canvas.captureStream(15),destination);
+  });
+  await page.evaluate(()=>(window as any).__testStartRecording());
+  await page.evaluate(()=>(window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1,2,3])],{type:'video/webm'})));
+  await page.evaluate(()=>(window as any).__testSaveRecordingQueue());
+  await page.evaluate(()=>(window as any).__testStopRecording(true));
+  expect(finalized).toBe(1);
+  await expect.poll(()=>finalized,{timeout:22000}).toBe(2);
+  expect(uploads).toBe(1);
+  expect(await page.evaluate(()=>(window as any).__testPendingRecordingCount())).toBe(0);
+});
+
+
+test("silent default microphone starts automatically without a device picker", async ({page})=>{
+ await prepare(page,"silent");
+ await page.getByRole("button",{name:"Start AI Interview",exact:true}).click();
+ await expect.poll(()=>page.evaluate(()=>(window as any).starts),{timeout:15000}).toBe(1);
+ await expect(page.locator("#pj-panel-2")).toBeHidden();
+ const calls=await page.evaluate(()=>(window as any).mediaCalls);
+ expect(calls).toHaveLength(1);expect(calls[0].audio.deviceId).toBeUndefined();
+});
+
+test("setup and microphone recovery stay aligned on desktop and mobile",async({page})=>{
+ await page.setViewportSize({width:1280,height:800});await prepare(page,"microphone");
+ await expect(page.locator('.recording-consent')).toHaveCSS('display','flex');
+ await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/setup-desktop.png',fullPage:true});
+ await page.getByRole('button',{name:'Start AI Interview',exact:true}).click();
+ await expect(page.locator('#pj-mic-retry')).toBeEnabled();
+ await expect(page.locator('#lobby-video')).toHaveCSS('object-fit','contain');
+ const preview=await page.locator('#cam-preview').boundingBox();
+ expect(Math.abs(preview!.width-preview!.height)).toBeLessThanOrEqual(1);
+ await expect(page.locator('#mic-select')).toHaveValue('');
+ await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/microphone-desktop.png',fullPage:true});
+ await page.setViewportSize({width:390,height:844});
+ await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
+ await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/microphone-mobile.png',fullPage:true});
+});
+
+test('practice start and reconnect never start video recording', async ({page}) => {
+  await prepare(page);
+  let starts=0;
+  await page.route('**/recording/start',route=>{starts++;return route.fulfill({json:{status:'recording'}});});
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=640;canvas.height=360;
+    const context=new AudioContext();const destination=context.createMediaStreamDestination();
+    (window as any).__testRecordingSetup('practice-session',canvas.captureStream(15),destination);
+    (window as any).__testControlMessage({type:'interview_started',recording_enabled:false,total_rounds:1});
+    (window as any).__testControlMessage({type:'resume_state',completed_rounds:[],turns_completed:1});
+    await (window as any).__testStartRecording();
+  });
+  await expect.poll(()=>page.evaluate(()=>(window as any).__testRecordingState().active)).toBe(false);
+  expect(starts).toBe(0);
 });
