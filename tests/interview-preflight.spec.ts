@@ -399,3 +399,25 @@ test("recording retries through authenticated API when direct storage upload fai
   expect(calls.finalize?.parts).toEqual([{ PartNumber: 1, ETag: '"test-etag"' }]);
   expect(calls.finalize?.duration_seconds).toEqual(expect.any(Number));
 });
+
+
+test("video finalization retries an ended-status race without discarding uploaded parts",async({page})=>{
+  await prepare(page);let attempts=0,failed=0;
+  await page.route("**/recording/start",route=>route.fulfill({json:{status:'recording'}}));
+  await page.route("**/recording/parts/*/*/authorize",route=>route.fulfill({json:{url:'https://r2.invalid/part'}}));
+  await page.route("https://r2.invalid/**",route=>route.abort());
+  await page.route(/\/recording\/parts\/[^/]+\/\d+$/,route=>route.fulfill({json:{ETag:'saved-etag'}}));
+  await page.route("**/recording/fail",route=>{failed++;return route.fulfill({json:{status:'failed'}});});
+  await page.route("**/recording/finalize",route=>{attempts++;return attempts===1?route.fulfill({status:409,json:{detail:'This interview must end before its recording can be finalized.'}}):route.fulfill({json:{status:'processing'}});});
+  await page.evaluate(async()=>{
+    const canvas=document.createElement('canvas');canvas.width=160;canvas.height=90;
+    const stream=canvas.captureStream(15),audio=new AudioContext(),destination=audio.createMediaStreamDestination();
+    const oscillator=audio.createOscillator();oscillator.connect(destination);oscillator.start();await audio.resume();
+    (window as any).__testRecordingSetup('race-session',stream,destination);
+  });
+  await page.evaluate(()=>(window as any).__testStartRecording());
+  await page.evaluate(()=>(window as any).__testEmitRecordingChunk(new Blob([new Uint8Array([1,2,3])],{type:'video/webm'})));
+  await page.evaluate(()=>(window as any).__testSaveRecordingQueue());
+  await page.evaluate(()=>(window as any).__testStopRecording(true));
+  expect(attempts).toBe(2);expect(failed).toBe(0);
+});

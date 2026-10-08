@@ -2108,7 +2108,7 @@ async function uploadRecordingPart(chunks) {
   if (!authorize.ok || !authData.url) throw new Error(authData.detail || "Recording part upload could not be authorized.");
   let etag;
   try {
-    const uploaded = await fetch(authData.url, { method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob, credentials: "omit" });
+    const uploaded = await fetch(authData.url, { method: "PUT", headers: { "Content-Type": recordingMimeType }, body: blob, credentials: "omit", signal: AbortSignal.timeout(30000) });
     if (uploaded.ok) etag = uploaded.headers.get("ETag");
   } catch (_) { /* Storage CORS can prevent direct upload. */ }
   if (!etag) {
@@ -2195,6 +2195,8 @@ async function startInterviewRecording() {
   recordingUploadFailed = false;
   recordingDataDropped = false;
   recordingStartedAt = Date.now();
+  recordingFinalDuration = null;
+  recordingFinalizePending = false;
   try {
     const mimeType = selectInterviewRecordingMimeType();
     if (!mimeType) throw new Error("This browser does not expose a supported video recording format.");
@@ -2295,24 +2297,43 @@ function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}
       setRecordingStatus("The interview ended, but the local recording queue could not save every media chunk.", true);
       return;
     }
-    try {
-      await retryRecordingFlush(true);
-      setRecordingStatus("Interview ended · finalizing the secure recording…");
-      const response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
-        method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ duration_seconds: Math.floor((Date.now() - recordingStartedAt) / 1000), parts: recordingPartMetadata }),
-      });
-      if (!response.ok) throw new Error((await response.json().catch(() => ({}))).detail || "Recording finalization failed.");
-      await clearRecordingQueue();
-      setRecordingStatus("Interview ended · securely processing the recording.");
-    } catch (error) {
-      await markRecordingFailed();
-      setRecordingStatus("The interview ended, but its recording could not be finalized. Placement staff will see it as unavailable.", true);
-      console.error("Interview recording finalization failed", error);
-    }
+    await finalizePendingInterviewRecording();
   })().finally(() => { recordingStopTask = null; });
   return recordingStopTask;
 }
+
+let recordingFinalDuration = null;
+let recordingFinalizePending = false;
+async function finalizePendingInterviewRecording() {
+  recordingFinalizePending = true;
+  recordingFinalDuration ??= Math.floor((Date.now() - recordingStartedAt) / 1000);
+  try {
+    await retryRecordingFlush(true);
+    setRecordingStatus("Interview ended · finalizing the secure recording…");
+    let response;
+    for (let attempt=0;attempt<6;attempt++) {
+      response = await studentFetch(`${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/recording/finalize`, {
+        method:"POST", headers:{"Content-Type":"application/json"},
+        body:JSON.stringify({duration_seconds:recordingFinalDuration,parts:recordingPartMetadata}),
+      });
+      if (response.status!==409) break;
+      await new Promise(resolve=>setTimeout(resolve,1000));
+    }
+    if (!response?.ok) throw new Error((await response?.json().catch(()=>({})))?.detail || "Recording finalization failed.");
+    await clearRecordingQueue();recordingFinalizePending=false;
+    setRecordingStatus("Interview ended · securely processing the recording.");
+  } catch(error) {
+    // Keep both the upload and IndexedDB chunks retryable after a transient error.
+    setRecordingStatus("Interview ended · video save is delayed. Keep this page open and retry when connected.",true);
+    if(recordingStatusEl) {
+      const retry=document.createElement("button");retry.type="button";retry.textContent="Retry video save";
+      retry.className="btn btn-secondary";retry.style.marginLeft="12px";
+      retry.onclick=()=>{retry.disabled=true;void finalizePendingInterviewRecording();};recordingStatusEl.appendChild(retry);
+    }
+    console.warn("Recording save remains retryable",error);
+  }
+}
+window.addEventListener("online",()=>{if(recordingFinalizePending&&!recordingStopTask)void finalizePendingInterviewRecording();});
 
 // ============================================================
 // CONTROL MESSAGES
