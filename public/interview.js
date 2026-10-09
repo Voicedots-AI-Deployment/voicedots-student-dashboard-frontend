@@ -191,7 +191,7 @@ let preflightStarted = false;
 let preflightCancelled = false;
 let servicesCheckedAt = 0;
 let identityCheckedAt = 0;
-const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", environment: "pending", screen: "pending" };
+const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", screen: "pending" };
 let currentAudioEpoch = 0;
 let playbackTime = 0;
 let playbackCompleteTimer = null;
@@ -595,28 +595,7 @@ function setupPrejoinFlow() {
   photoCaptureBtn?.addEventListener("click", () => void retryPreflight("identity"));
   document.getElementById("pj-network-retry")?.addEventListener("click", () => void retryPreflight("network"));
   pjShareAllowBtn?.addEventListener("click", () => void retryPreflight("screen"));
-  document.getElementById("pj-environment-retry")?.addEventListener("click", () => {
-    if (preflightBusy) return;
-    const confirmation = document.getElementById("pj-environment-confirm");
-    if (!confirmation?.checked) {
-      failPreflight("environment", "Close other screen-sharing and remote-control apps, then confirm below and retry.");
-      return;
-    }
-    if (document.visibilityState !== "visible" || !document.hasFocus()) {
-      failPreflight("environment", "Return to this interview tab and retry the environment check.");
-      return;
-    }
-    if (!navigator.mediaDevices?.getDisplayMedia) {
-      failPreflight("environment", "Screen sharing is unavailable. Open the interview in a supported desktop browser.");
-      return;
-    }
-    preflightChecks.environment = "passed";
-    document.getElementById("pj-environment-error").textContent = "";
-    void runPreflight();
-  });
-  document.getElementById("pj-environment-confirm")?.addEventListener("change", event => {
-    if (!event.target.checked) { preflightChecks.environment = "pending"; renderPreflight(); }
-  });
+
 }
 
 function showPrejoinError(element, message) {
@@ -626,12 +605,11 @@ function showPrejoinError(element, message) {
 }
 
 function renderPreflight() {
-  const panels = { camera: pjPanel1, microphone: pjPanel2, identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), environment: document.getElementById("pj-environment-panel"), screen: pjPanel3 };
+  const panels = { camera: pjPanel1, microphone: pjPanel2, identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
   for (const [key, panel] of Object.entries(panels)) {
     if (panel) panel.classList.toggle("active", preflightChecks[key] === "failed" ||
-      (preflightStarted && ["environment", "screen"].includes(key) && preflightChecks[key] !== "passed" &&
-       ["camera", "microphone", "identity", "network"].every(item => preflightChecks[item] === "passed") &&
-       (key !== "screen" || preflightChecks.environment === "passed")));
+      (preflightStarted && key === "screen" && preflightChecks[key] !== "passed" &&
+       ["camera", "microphone", "identity", "network"].every(item => preflightChecks[item] === "passed")));
     panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
   }
   document.getElementById("preflight-loading").hidden = !preflightBusy;
@@ -648,7 +626,7 @@ function preflightStatus(message) {
 
 function failPreflight(key, message) {
   preflightChecks[key] = "failed";
-  const errors = { camera: camErrorEl, microphone: micErrorEl, identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), environment: document.getElementById("pj-environment-error"), screen: shareErrorEl };
+  const errors = { camera: camErrorEl, microphone: micErrorEl, identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), screen: shareErrorEl };
   showPrejoinError(errors[key], message);
   renderPreflight();
 }
@@ -730,11 +708,6 @@ async function retryPreflight(key) {
     micLevelDetected = false;
   }
   if (key === "screen") {
-    if (preflightChecks.environment !== "passed") {
-      preflightBusy = false;
-      failPreflight("environment", "Review other sharing apps and retry the environment check first.");
-      return;
-    }
     preflightBusy = true; renderPreflight();
     await checkPreflightItem("screen", prepareScreenShare);
     preflightBusy = false;
@@ -786,10 +759,6 @@ async function runPreflight() {
       }),
     ]);
     if (["camera", "microphone", "identity", "network"].some(key => preflightChecks[key] !== "passed")) return;
-    if (preflightChecks.environment !== "passed") {
-      preflightStatus("Close other sharing or remote-control apps, then complete the environment check below.");
-      return;
-    }
     if (preflightChecks.screen !== "passed") {
       preflightStatus("Click Share entire screen below. Select Entire Screen in the browser picker.");
       return; // getDisplayMedia must run directly from its own user click.
@@ -2089,15 +2058,20 @@ function setupIntegrityMonitoring() {
     }
   });
 
-  // App/window switching may blur the interview without making document.hidden
-  // true (for example an OS gesture selecting another window). Treat that as
-  // a reviewable warning so entire-screen sharing cannot silently turn into an
-  // unobserved app-switch path.
+  // Chrome's native capture banner can blur a visible interview when Hide
+  // is clicked. Blur alone cannot distinguish that from another OS window.
+  // Preserve it as context only; actual hidden tabs and stopped sharing are
+  // handled by their own corroborated checks and remain enforceable.
+  let blurTimer;
   window.addEventListener("blur", () => {
-    if (_isCallScreenActive() && !document.hidden) {
-      recordIntegrityViolation("window_blur_observed", "The interview window lost focus.");
-    }
+    clearTimeout(blurTimer);
+    blurTimer = setTimeout(() => {
+      if (proctoringActive && _isCallScreenActive() && !document.hidden && !document.hasFocus()) {
+        _sendIntegrityEvent("window_blur_observed", "info", { review_only: true });
+      }
+    }, 1500);
   });
+  window.addEventListener("focus", () => clearTimeout(blurTimer));
 
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement && _isCallScreenActive()) {

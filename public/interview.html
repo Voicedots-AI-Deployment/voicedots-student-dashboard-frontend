@@ -237,9 +237,7 @@
       .report-agent-grid,.r-grid{grid-template-columns:1fr;}
     }
 
-    .environment-limit,.skill-summary,.list-item-empty{color:var(--muted);font-size:.8rem;line-height:1.5}
-    .environment-confirm{display:flex;align-items:flex-start;gap:10px;margin:16px 0;font-size:.85rem;line-height:1.5}
-    .environment-confirm input{margin-top:4px;accent-color:var(--accent)}
+    .skill-summary,.list-item-empty{color:var(--muted);font-size:.8rem;line-height:1.5}
     .skill-group{margin-top:16px}.skill-group h4{font-size:.8rem;margin:0 0 10px}.skill-group h4 span{color:var(--muted);font-weight:400}
     .skill-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
     .skill-chip{padding:6px 10px;border:1px solid var(--border);border-radius:999px;background:var(--surf2);font-size:.75rem;color:var(--muted);overflow-wrap:anywhere;max-width:100%}
@@ -322,14 +320,6 @@
       <div class="pj-panel" id="pj-network-panel">
         <h3>Connection and interview services</h3><p id="pj-network-error" role="alert"></p>
         <button class="pj-btn pj-btn-ghost" id="pj-network-retry" type="button">Retry readiness check</button>
-      </div>
-      <div class="pj-panel" id="pj-environment-panel">
-        <h3>Environment check</h3>
-        <p>Close other screen-sharing sessions and remote-control apps, including Chrome Remote Desktop, AnyDesk and TeamViewer.</p>
-        <p class="environment-limit">Your browser cannot inspect or close other apps. This step records your confirmation; it does not verify that those apps are closed.</p>
-        <label class="environment-confirm"><input type="checkbox" id="pj-environment-confirm"> I have closed other screen-sharing and remote-control sessions.</label>
-        <p id="pj-environment-error" role="alert"></p>
-        <button class="pj-btn pj-btn-primary" id="pj-environment-retry" type="button">Retry environment check</button>
       </div>
       <div class="pj-panel" id="pj-panel-3">
         <h3>Entire-screen sharing</h3><p id="share-error" role="alert"></p><div id="share-ok" hidden></div>

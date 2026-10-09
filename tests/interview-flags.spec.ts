@@ -121,3 +121,45 @@ test('camera reminders hide the misconduct badge and server zero clears optimist
  const result=await page.evaluate(()=>{const h=(window as any).noticeAudit;h.remind();const badgeHidden=(document.getElementById('integrity-strikes') as HTMLElement)?.hidden;h.reply({type:'integrity_event_recorded',total_flags:0});return {badgeHidden,count:h.count()};});
  expect(result.badgeHidden).toBe(true);expect(result.count).toBe(0);
 });
+
+test('hiding the native screen-share banner cannot create a focus warning', async ({page}) => {
+ await page.route('**/api/**', route => route.fulfill({json:{student:{id:'s1'},csrf_token:'test'}}));
+ await page.route('**/interview.js*', async route => {
+  const response = await route.fetch();
+  await route.fulfill({response,body:await response.text()+`
+   window.focusAuditEvents=[];
+   window.focusAudit={activate:()=>{
+    proctoringActive=true; callScreen.style.display='flex';
+    ws={readyState:WebSocket.OPEN,send:value=>window.focusAuditEvents.push(JSON.parse(value))};
+    setupIntegrityMonitoring();
+   },count:()=>integrityStrikeCount};
+  `});
+ });
+ await page.goto('/interview.html?id=sub-1');
+ await expect.poll(()=>page.evaluate(()=>!!(window as any).focusAudit)).toBe(true);
+ await page.clock.install();
+ await page.evaluate(()=>{
+  (window as any).focusAudit.activate();
+  Object.defineProperty(document,'hidden',{configurable:true,get:()=>false});
+  document.hasFocus=()=>false;
+  window.dispatchEvent(new Event('blur'));
+ });
+ await page.clock.runFor(200);
+ await page.evaluate(()=>window.dispatchEvent(new Event('focus')));
+ await page.clock.runFor(1800);
+ expect(await page.evaluate(()=>(window as any).focusAuditEvents)).toEqual([]);
+ await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
+ await page.clock.runFor(1800);
+ const events=await page.evaluate(()=>(window as any).focusAuditEvents);
+ expect(events).toHaveLength(1);
+ expect(events[0]).toMatchObject({event_type:'window_blur_observed',severity:'info',details:{review_only:true}});
+ expect(await page.evaluate(()=>(window as any).focusAudit.count())).toBe(0);
+ await expect(page.locator('#integrity-toast')).not.toHaveClass(/show/);
+ // A real hidden-tab event remains a violation.
+ await page.evaluate(()=>{
+  Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});
+  document.dispatchEvent(new Event('visibilitychange'));
+ });
+ await page.clock.runFor(2100);
+ expect(await page.evaluate(()=>(window as any).focusAuditEvents.some((e:any)=>e.event_type==='tab_hidden'&&e.severity==='violation'))).toBe(true);
+});
