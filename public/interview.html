@@ -237,6 +237,10 @@
       .report-agent-grid,.r-grid{grid-template-columns:1fr;}
     }
 
+    .support-retry-actions{display:flex;gap:10px;justify-content:center;flex-wrap:wrap;margin-top:10px}
+    .support-retry-actions button{border:1px solid var(--border);border-radius:999px;padding:9px 16px;background:var(--surf2);color:var(--text);cursor:pointer}
+    .support-retry-actions button:disabled{opacity:.55;cursor:default}
+    #support-retry-controls p{margin-top:12px;color:var(--muted);font-size:.85rem}
     .skill-summary,.list-item-empty{color:var(--muted);font-size:.8rem;line-height:1.5}
     .skill-group{margin-top:16px}.skill-group h4{font-size:.8rem;margin:0 0 10px}.skill-group h4 span{color:var(--muted);font-weight:400}
     .skill-chips{display:flex;flex-wrap:wrap;gap:8px;align-items:flex-start}
@@ -354,6 +358,13 @@
     <div class="question-focus" aria-live="polite">
       <div class="question-focus-label">Current question</div>
       <div class="question-focus-text" id="current-question-text">The panel is preparing your first question…</div>
+      <div id="support-retry-controls" hidden>
+        <p role="status" id="support-retry-status">Would you like another try at this question?</p>
+        <div class="support-retry-actions">
+          <button type="button" id="support-retry-yes">Yes, try again</button>
+          <button type="button" id="support-retry-no">Continue interview</button>
+        </div>
+      </div>
     </div>
 
     <!-- All four interviewers stay visible for the entire call. -->

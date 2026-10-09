@@ -192,6 +192,7 @@ let preflightCancelled = false;
 let servicesCheckedAt = 0;
 let identityCheckedAt = 0;
 const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", screen: "pending" };
+let supportRetryState = "complete";
 let currentAudioEpoch = 0;
 let playbackTime = 0;
 let playbackCompleteTimer = null;
@@ -588,6 +589,14 @@ function setupStudentProfileInfo() {
 }
 
 function setupPrejoinFlow() {
+  for (const [id, choice] of [["support-retry-yes", "retry"], ["support-retry-no", "continue"]]) {
+    document.getElementById(id)?.addEventListener("click", () => {
+      if (supportRetryState !== "awaiting_choice" || !ws || ws.readyState !== WebSocket.OPEN) return;
+      supportRetryState = "submitted";
+      document.querySelectorAll(".support-retry-actions button").forEach(button => { button.disabled = true; });
+      ws.send(JSON.stringify({ type: "support_retry_choice", choice }));
+    });
+  }
   pjJoinBtn?.addEventListener("click", () => void runPreflight());
   recordingConsentEl?.addEventListener("change", renderPreflight);
   document.getElementById("pj-cam-retry")?.addEventListener("click", () => void retryPreflight("camera"));
@@ -2794,6 +2803,20 @@ function handleControlMessage(payload) {
       if (aiRoleEl) aiRoleEl.textContent = currentAgentRole;
       break;
 
+    case "support_retry": {
+      supportRetryState = payload.state;
+      const controls = document.getElementById("support-retry-controls");
+      if (controls) controls.hidden = !["offered", "awaiting_choice", "submitted"].includes(payload.state);
+      const status = document.getElementById("support-retry-status");
+      if (status) status.textContent = payload.state === "awaiting_choice"
+        ? "Say yes to try again, or no to continue. You can also choose below."
+        : "Would you like another try at this question?";
+      document.querySelectorAll(".support-retry-actions button").forEach(button => {
+        button.disabled = payload.state !== "awaiting_choice";
+      });
+      break;
+    }
+
     case "processing":
       showProcessingStatus(payload.detail);
       break;
@@ -2975,6 +2998,9 @@ async function recoverCompletedSession() {
 }
 
 function stopInterview() {
+  supportRetryState = "complete";
+  const supportControls = document.getElementById("support-retry-controls");
+  if (supportControls) supportControls.hidden = true;
   clearTimeout(initialConnectionTimer);
   photoVerifier.stop();
   interviewStopRequested = true;
