@@ -6,6 +6,12 @@ async function interview(page: Page) {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
       window.conversationAudit = {
+        preview: syncCameraPreview, recoverCamera: () => attachDeviceTrack("video", ""),
+        distinct: distinctFaceLandmarks,
+        corroborated(faces,bodies,age=0) {
+          faceCountDetected=faces;corroboratedPersonCount=bodies;lastPersonDetectionAt=Date.now()-age;
+          return multiplePeopleCorroborated();
+        },
         async microphone() {
           const context = new AudioContext();
           const destination = context.createMediaStreamDestination();
@@ -141,4 +147,61 @@ test('microphone list defaults to system device and preserves available selectio
   expect(result.initial).toBe('');
   expect(result.selected).toBe('usb');
   expect(result.options).toContain('USB microphone');
+});
+
+
+test('camera recovery clears the disconnected overlay once frames arrive',async({page})=>{
+  await interview(page);
+  await page.evaluate(async()=>{
+    const video=document.querySelector('#lobby-video') as HTMLVideoElement;
+    const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;
+    canvas.getContext('2d')!.fillRect(0,0,640,480);
+    const stream=canvas.captureStream(10);
+    // Exercise the actual recovery path without real hardware permissions.
+    navigator.mediaDevices.getUserMedia=async()=>stream;
+    video.srcObject=stream;await video.play();
+  });
+  // Bind the stream through the real attachDeviceTrack function in the page.
+  await page.evaluate(()=>(window as any).conversationAudit.recoverCamera());
+  await expect(page.locator('#cam-overlay')).toBeHidden();
+});
+
+test('duplicate and malformed face landmarks cannot count as additional people',async({page})=>{
+  await interview(page);
+  const count=await page.evaluate(()=>{
+    const face=(offset:number)=>{
+      const points=Array.from({length:468},(_,i)=>({x:offset+.2+(i%8)*.015,y:.2+Math.floor(i/8)%8*.025}));
+      points[33]={x:offset+.22,y:.25};points[263]={x:offset+.28,y:.25};
+      points[1]={x:offset+.25,y:.30};points[13]={x:offset+.25,y:.35};points[152]={x:offset+.25,y:.40};
+      return points;
+    };
+    const bad=face(.5);bad[152].y=.1;
+    const f=(window as any).conversationAudit.distinct;
+    return {duplicates:f([face(0),face(.005)]).length,distinct:f([face(0),face(.5)]).length,malformed:f([face(0),bad]).length,nearby:f([face(0),face(.04)]).length};
+  });
+  expect(count).toEqual({duplicates:1,distinct:2,malformed:1,nearby:2});
+});
+
+test('large skill reports group unassessed evidence and expand without a long initial list',async({page})=>{
+  await interview(page);
+  await page.route('**/evaluation/question-feedback',route=>route.fulfill({json:{complete:true,feedback:{}}}));
+  await page.evaluate(r=>(window as any).conversationAudit.report(r),{...report,strengths:[],resume_alignment:{credibility_score:null,skills:Array.from({length:24},(_,i)=>({skill:'Skill '+i,evidence_level:'not_assessed'}))}});
+  const alignment=page.locator('#results-resume-alignment');
+  await expect(alignment).toContainText('0 assessed · 24 claimed skills');
+  await expect(alignment.locator('.skill-chip:visible')).toHaveCount(6);
+  await expect(alignment).toContainText('Not assessed in this interview');
+  await alignment.locator('..').screenshot({path:'/root/voicedots/artifacts/interview-natural-20261009/report-skills.png'});
+  await alignment.locator('summary').click();
+  await expect(alignment.locator('.skill-chip:visible')).toHaveCount(24);
+  await expect(page.locator('#results-strengths .list-item-g')).toHaveCount(0);
+});
+
+
+test('multiple-person accusations require fresh corroboration from both camera models',async({page})=>{
+  await interview(page);
+  const signals=await page.evaluate(()=>{
+    const check=(window as any).conversationAudit.corroborated;
+    return [check(2,1),check(1,2),check(2,2,3000),check(2,2)];
+  });
+  expect(signals).toEqual([false,false,false,true]);
 });

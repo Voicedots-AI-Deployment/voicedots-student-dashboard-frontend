@@ -78,6 +78,7 @@ async function prepare(page: Page, failure = "") {
       return new MediaStream(tracks);
     };
     navigator.mediaDevices.getDisplayMedia = async () => {
+      if (!navigator.userActivation.isActive) throw new DOMException("Screen picker requires a fresh click", "InvalidStateError");
       w.shares++;
       if (w.failure === "screen") throw new DOMException("Share cancelled", "NotAllowedError");
       const track = videoTrack();
@@ -134,6 +135,22 @@ async function prepare(page: Page, failure = "") {
   };
 }
 
+async function completeEnvironment(page: Page) {
+  await expect.poll(async () => {
+    if (await page.locator("#pj-environment-panel").isVisible() && await page.locator("#pj-environment-retry").isEnabled()) return true;
+    if (await page.locator("#call-screen").isVisible()) return true;
+    for (const id of ["#pj-cam-retry", "#pj-mic-retry", "#pj-photo-capture", "#pj-network-retry"]) {
+      if (await page.locator(id).isVisible() && await page.locator(id).isEnabled()) return true;
+    }
+    return false;
+  }, {timeout:15000}).toBe(true);
+  if (!await page.locator("#pj-environment-panel").isVisible()) return;
+  await page.locator("#pj-environment-confirm").check();
+  await page.locator("#pj-environment-retry").click();
+  await expect(page.locator("#pj-share-allow")).toBeEnabled();
+  await page.locator("#pj-share-allow").click();
+}
+
 test("recording disclosure requires explicit consent before interview setup starts", async ({ page }) => {
   const { counts } = await prepare(page);
   await page.locator("#recording-consent").uncheck();
@@ -141,11 +158,12 @@ test("recording disclosure requires explicit consent before interview setup star
   expect(counts).toEqual({ create: 0, identity: 0, readiness: 0, preflight: 0 });
 });
 
-test("one click checks permissions and identity before creating the session, with no preflight STT", async ({ page }) => {
+test("permissions and identity are preserved through explicit environment and screen-sharing steps", async ({ page }) => {
   const { counts } = await prepare(page);
   expect(counts.create).toBe(0);
   expect(await page.evaluate(() => (window as any).mediaCalls.length)).toBe(0);
   await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await completeEnvironment(page);
   await expect.poll(() => page.evaluate(() => (window as any).starts), { timeout: 15_000 }).toBe(1);
   expect(counts).toEqual({ create: 1, identity: 1, readiness: 1, preflight: 1 });
   expect(await page.evaluate(() => (window as any).shares)).toBe(1);
@@ -312,6 +330,7 @@ for (const [failure, retry, panel] of [
   test(`${failure} failure blocks creation and retry preserves successful checks`, async ({ page }) => {
     const { counts, recover } = await prepare(page, failure);
     await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await completeEnvironment(page);
     await expect(page.locator(retry)).toBeEnabled();
     await expect(page.locator(panel)).toBeVisible();
     expect(counts.create).toBe(0);
@@ -323,6 +342,7 @@ for (const [failure, retry, panel] of [
     const mediaBefore = await page.evaluate(() => (window as any).mediaCalls.length);
     await recover();
     await page.locator(retry).click();
+    await completeEnvironment(page);
     await expect.poll(() => page.evaluate(() => (window as any).starts), {timeout:15000}).toBe(1);
     expect(counts.create).toBe(1);
     expect(counts.preflight).toBe(1);
@@ -336,6 +356,7 @@ for (const [failure, retry, panel] of [
 test("a service connection failure after readiness returns to the failed check and reuses preparation", async ({ page }) => {
   const { counts, recover } = await prepare(page, "runtime");
   await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await completeEnvironment(page);
   await expect(page.locator("#pj-network-retry")).toBeVisible();
   expect(counts.create).toBe(1);
   expect(await page.evaluate(() => (window as any).starts)).toBe(0);
@@ -352,6 +373,7 @@ test("failed controls remain reachable on a short mobile viewport", async ({ pag
   await page.setViewportSize({ width: 390, height: 620 });
   await prepare(page, "camera");
   await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await completeEnvironment(page);
   await expect(page.locator("#pj-cam-retry")).toBeEnabled();
   await page.locator("#pj-cam-retry").scrollIntoViewIfNeeded();
   await expect(page.locator("#pj-cam-retry")).toBeInViewport();
@@ -451,6 +473,7 @@ test('temporary finalization failure retries automatically without reuploading c
 test("silent default microphone starts automatically without a device picker", async ({page})=>{
  await prepare(page,"silent");
  await page.getByRole("button",{name:"Start AI Interview",exact:true}).click();
+  await completeEnvironment(page);
  await expect.poll(()=>page.evaluate(()=>(window as any).starts),{timeout:15000}).toBe(1);
  await expect(page.locator("#pj-panel-2")).toBeHidden();
  const calls=await page.evaluate(()=>(window as any).mediaCalls);
@@ -462,6 +485,7 @@ test("setup and microphone recovery stay aligned on desktop and mobile",async({p
  await expect(page.locator('.recording-consent')).toHaveCSS('display','flex');
  await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/setup-desktop.png',fullPage:true});
  await page.getByRole('button',{name:'Start AI Interview',exact:true}).click();
+  await completeEnvironment(page);
  await expect(page.locator('#pj-mic-retry')).toBeEnabled();
  await expect(page.locator('#lobby-video')).toHaveCSS('object-fit','contain');
  const preview=await page.locator('#cam-preview').boundingBox();
@@ -487,4 +511,24 @@ test('practice start and reconnect never start video recording', async ({page}) 
   });
   await expect.poll(()=>page.evaluate(()=>(window as any).__testRecordingState().active)).toBe(false);
   expect(starts).toBe(0);
+});
+
+
+test("environment review blocks start and screen capture until explicit confirmation and a fresh click", async ({page}) => {
+  const {counts} = await prepare(page);
+  await page.locator("#pj-join-btn").click();
+  await expect(page.locator("#pj-environment-retry")).toBeEnabled();
+  expect(counts.create).toBe(0);
+  expect(await page.evaluate(()=>(window as any).shares)).toBe(0);
+  await expect(page.locator("#pj-environment-panel")).toContainText("cannot inspect or close other apps");
+  await page.locator("#pj-environment-retry").click();
+  await expect(page.locator("#pj-environment-error")).toContainText("Close other screen-sharing");
+  await page.locator("#pj-environment-confirm").check();
+  await page.locator("#pj-environment-retry").click();
+  await expect(page.locator("#pj-share-allow")).toBeEnabled();
+  expect(counts.create).toBe(0);
+  expect(await page.evaluate(()=>(window as any).shares)).toBe(0);
+  await page.locator("#pj-share-allow").click();
+  await expect.poll(()=>counts.create).toBe(1);
+  expect(counts.identity).toBe(1);
 });

@@ -191,7 +191,7 @@ let preflightStarted = false;
 let preflightCancelled = false;
 let servicesCheckedAt = 0;
 let identityCheckedAt = 0;
-const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", screen: "pending" };
+const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", environment: "pending", screen: "pending" };
 let currentAudioEpoch = 0;
 let playbackTime = 0;
 let playbackCompleteTimer = null;
@@ -232,6 +232,7 @@ let cameraAnalysisStarted = false;
 let cameraAnalysisPassing = false;
 let faceCountDetected = 0;
 let personBoxCountDetected = 0;
+let corroboratedPersonCount = 0;
 let personDetectionConfidence = null;
 let lastPersonDetectionAt = 0;
 let lastMultiplePeopleDetectedAt = 0;
@@ -566,6 +567,13 @@ async function acquireEntireScreenShare() {
   return { stream, track };
 }
 
+const questionCard = document.querySelector(".question-focus");
+if (questionCard && typeof ResizeObserver !== "undefined") {
+  new ResizeObserver(() => {
+    callScreen.style.setProperty("--question-height", `${Math.ceil(questionCard.getBoundingClientRect().height)}px`);
+  }).observe(questionCard);
+}
+
 function setupStudentProfileInfo() {
   try {
     const raw = sessionStorage.getItem("vd_student_data");
@@ -587,6 +595,28 @@ function setupPrejoinFlow() {
   photoCaptureBtn?.addEventListener("click", () => void retryPreflight("identity"));
   document.getElementById("pj-network-retry")?.addEventListener("click", () => void retryPreflight("network"));
   pjShareAllowBtn?.addEventListener("click", () => void retryPreflight("screen"));
+  document.getElementById("pj-environment-retry")?.addEventListener("click", () => {
+    if (preflightBusy) return;
+    const confirmation = document.getElementById("pj-environment-confirm");
+    if (!confirmation?.checked) {
+      failPreflight("environment", "Close other screen-sharing and remote-control apps, then confirm below and retry.");
+      return;
+    }
+    if (document.visibilityState !== "visible" || !document.hasFocus()) {
+      failPreflight("environment", "Return to this interview tab and retry the environment check.");
+      return;
+    }
+    if (!navigator.mediaDevices?.getDisplayMedia) {
+      failPreflight("environment", "Screen sharing is unavailable. Open the interview in a supported desktop browser.");
+      return;
+    }
+    preflightChecks.environment = "passed";
+    document.getElementById("pj-environment-error").textContent = "";
+    void runPreflight();
+  });
+  document.getElementById("pj-environment-confirm")?.addEventListener("change", event => {
+    if (!event.target.checked) { preflightChecks.environment = "pending"; renderPreflight(); }
+  });
 }
 
 function showPrejoinError(element, message) {
@@ -596,14 +626,18 @@ function showPrejoinError(element, message) {
 }
 
 function renderPreflight() {
-  const panels = { camera: pjPanel1, microphone: pjPanel2, identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
+  const panels = { camera: pjPanel1, microphone: pjPanel2, identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), environment: document.getElementById("pj-environment-panel"), screen: pjPanel3 };
   for (const [key, panel] of Object.entries(panels)) {
-    if (panel) panel.classList.toggle("active", preflightChecks[key] === "failed");
+    if (panel) panel.classList.toggle("active", preflightChecks[key] === "failed" ||
+      (preflightStarted && ["environment", "screen"].includes(key) && preflightChecks[key] !== "passed" &&
+       ["camera", "microphone", "identity", "network"].every(item => preflightChecks[item] === "passed") &&
+       (key !== "screen" || preflightChecks.environment === "passed")));
     panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
   }
   document.getElementById("preflight-loading").hidden = !preflightBusy;
   pjJoinBtn.disabled = preflightBusy || !recordingConsentEl?.checked;
-  pjJoinBtn.hidden = Object.values(preflightChecks).includes("failed");
+  pjJoinBtn.hidden = Object.values(preflightChecks).includes("failed") ||
+    (preflightStarted && ["camera", "microphone", "identity", "network"].every(key => preflightChecks[key] === "passed") && preflightChecks.screen !== "passed");
   pjJoinBtn.textContent = preflightBusy ? "Preparing Interview…" : "Start AI Interview";
   document.getElementById("preflight-title").textContent = preflightStarted ? "Preparing Interview" : "Start AI Interview";
 }
@@ -614,7 +648,7 @@ function preflightStatus(message) {
 
 function failPreflight(key, message) {
   preflightChecks[key] = "failed";
-  const errors = { camera: camErrorEl, microphone: micErrorEl, identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), screen: shareErrorEl };
+  const errors = { camera: camErrorEl, microphone: micErrorEl, identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), environment: document.getElementById("pj-environment-error"), screen: shareErrorEl };
   showPrejoinError(errors[key], message);
   renderPreflight();
 }
@@ -696,6 +730,11 @@ async function retryPreflight(key) {
     micLevelDetected = false;
   }
   if (key === "screen") {
+    if (preflightChecks.environment !== "passed") {
+      preflightBusy = false;
+      failPreflight("environment", "Review other sharing apps and retry the environment check first.");
+      return;
+    }
     preflightBusy = true; renderPreflight();
     await checkPreflightItem("screen", prepareScreenShare);
     preflightBusy = false;
@@ -747,9 +786,14 @@ async function runPreflight() {
       }),
     ]);
     if (["camera", "microphone", "identity", "network"].some(key => preflightChecks[key] !== "passed")) return;
-    preflightStatus("Share your entire screen to start the interview.");
-    await checkPreflightItem("screen", prepareScreenShare);
-    if (preflightChecks.screen !== "passed") return;
+    if (preflightChecks.environment !== "passed") {
+      preflightStatus("Close other sharing or remote-control apps, then complete the environment check below.");
+      return;
+    }
+    if (preflightChecks.screen !== "passed") {
+      preflightStatus("Click Share entire screen below. Select Entire Screen in the browser picker.");
+      return; // getDisplayMedia must run directly from its own user click.
+    }
     if (Date.now() - identityCheckedAt > 240000) {
       preflightChecks.identity = "pending";
       await checkPreflightItem("identity", verifyPreflightIdentity);
@@ -835,7 +879,18 @@ function hasLiveTrack(kind) {
   return tracks.some((track) => track.readyState === "live" && track.enabled && !track.muted);
 }
 
+function syncCameraPreview() {
+  const overlay = document.getElementById("cam-overlay");
+  if (!overlay) return;
+  const ready = hasLiveTrack("video") && lobbyVideoEl?.readyState >= 2 && lobbyVideoEl.videoWidth > 0;
+  overlay.hidden = ready;
+  overlay.style.setProperty("display", ready ? "none" : "flex", "important");
+  if (!ready) overlay.textContent = hasLiveTrack("video") ? "Connecting camera…" : "Connect a camera to continue.";
+}
+for (const name of ["loadeddata", "playing", "emptied"]) lobbyVideoEl?.addEventListener(name, syncCameraPreview);
+
 function updatePrejoinReadiness() {
+  syncCameraPreview();
   cameraTrackLive = hasLiveTrack("video");
   microphoneTrackLive = hasLiveTrack("audio");
   if (!preflightStarted || _isCallScreenActive()) return;
@@ -1220,6 +1275,27 @@ function samePersonBox(a, b) {
   return smallerArea > 0 && overlapWidth*overlapHeight/smallerArea >= 0.7;
 }
 
+let prejoinMultipleEvidence = null;
+function multiplePeopleCorroborated(now = Date.now()) {
+  return faceCountDetected > 1 && corroboratedPersonCount > 1 && now-lastPersonDetectionAt < 2500;
+}
+function distinctFaceLandmarks(faces) {
+  const accepted = [], boxes = [];
+  for (const points of faces) {
+    // Test/native fallback may not expose geometry. Real MediaPipe faces do.
+    if (!points) { accepted.push(points); continue; }
+    if (points.length < 264 || points.some(p => !Number.isFinite(p.x) || !Number.isFinite(p.y))) continue;
+    const left=points[33], right=points[263], nose=points[1], mouth=points[13], chin=points[152];
+    const eyeY=(left.y+right.y)/2;
+    if (Math.abs(left.x-right.x) < .012 || nose.y < eyeY-.025 || mouth.y < nose.y || chin.y < mouth.y) continue;
+    const xs=points.map(p=>p.x), ys=points.map(p=>p.y);
+    const box={originX:Math.min(...xs),originY:Math.min(...ys),width:Math.max(...xs)-Math.min(...xs),height:Math.max(...ys)-Math.min(...ys)};
+    if (box.width < .025 || box.height < .035 || boxes.some(known=>boxIoU(box,known)>=.65)) continue;
+    boxes.push(box); accepted.push(points);
+  }
+  return accepted;
+}
+
 function frameLighting(video) {
   const canvas = frameLighting.canvas || (frameLighting.canvas = document.createElement("canvas"));
   canvas.width = 160;
@@ -1348,11 +1424,18 @@ async function analyzeCameraFrame() {
   let landmarks = null;
   if (faceLandmarker) {
     const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
-    faceCountDetected = (result.faceLandmarks || []).length;
-    landmarks = result.faceLandmarks?.[0] || null;
+    const faces = distinctFaceLandmarks(result.faceLandmarks || []);
+    faceCountDetected = faces.length;
+    landmarks = faces[0] || null;
   } else if (nativeFaceDetector) {
     const faces = await nativeFaceDetector.detect(lobbyVideoEl);
-    faceCountDetected = faces.length;
+    const distinct = [];
+    for (const face of faces) {
+      const r = face.boundingBox;
+      const box = r && {originX:r.x, originY:r.y, width:r.width, height:r.height};
+      if (!box || !distinct.some(known => known && boxIoU(box, known) >= .65)) distinct.push(box);
+    }
+    faceCountDetected = distinct.length;
   } else {
     faceCountDetected = 0;
   }
@@ -1408,7 +1491,7 @@ async function analyzeCameraFrame() {
         }
         const overlapsKnown = personDetections.some(known => samePersonBox(box, known.boundingBox));
         if (overlapsKnown) continue;
-        personDetections.push({ boundingBox: box });
+        personDetections.push({ boundingBox: box, categories: det.categories });
       }
     }
     const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
@@ -1418,6 +1501,7 @@ async function analyzeCameraFrame() {
     phoneDetected = updatePhoneEvidence(phoneDetections, corroboratingPhones, now);
     if (phoneDetected) lastPhoneDetectedAt = now;
     personBoxCountDetected = personDetections.length;
+    corroboratedPersonCount = personDetections.filter(d => Number(d.categories?.[0]?.score) >= .7).length;
     if (personBoxCountDetected > 1) lastMultiplePeopleDetectedAt = now;
   }
   // Only a corroborated sequence can indicate a phone; an isolated detection
@@ -1449,7 +1533,12 @@ async function analyzeCameraFrame() {
   } else if (peopleCountDetected === 0) {
     personCheckText = "No person detected";
   } else if (faceCountDetected > 1) {
-    personCheckText = "Multiple people detected";
+    const prior = prejoinMultipleEvidence;
+    prejoinMultipleEvidence = prior && now-prior.last < 1800
+      ? {since:prior.since, last:now, count:prior.count+1} : {since:now,last:now,count:1};
+    const confirmed = multiplePeopleCorroborated(now) && prejoinMultipleEvidence.count >= 3 && now-prejoinMultipleEvidence.since >= 2000;
+    personCheckState = confirmed ? "fail" : "warn";
+    personCheckText = confirmed ? "Multiple people detected — keep only yourself in frame" : "Person check uncertain — adjust your camera and keep your face visible";
   } else if (phoneDetected) {
     // Live-call phone tracking (phoneVisibleSince/warnVisionSignal, further
     // below) only runs once _isCallScreenActive() is true -- before that,
@@ -1465,6 +1554,7 @@ async function analyzeCameraFrame() {
     personCheckState = "pass";
     personCheckText = "✓ One person detected";
   }
+  if (faceCountDetected <= 1) prejoinMultipleEvidence = null;
   setVisionCheck(
     faceCheckEl,
     personCheckState,
@@ -1507,18 +1597,19 @@ async function analyzeCameraFrame() {
       _sendIntegrityEvent("multiple_people_cleared", "info", { people_count: peopleCountDetected });
     }
     // Body/crop detections can mistake furniture or clothing for a person.
-    // Preserve them for review, but only sustained second-face evidence counts.
-    if (faceCountDetected === 1 && personBoxCountDetected > 1) {
+    // Preserve them for review; misconduct requires sustained face evidence
+    // corroborated by two confident, fresh body detections.
+    if ((faceCountDetected === 1 && personBoxCountDetected > 1) || (faceCountDetected > 1 && !multiplePeopleCorroborated(now))) {
       warnVisionSignal("multiple_people_unconfirmed", "The camera check is uncertain. Keep your face clearly visible. This is not a misconduct warning.", { face_count: faceCountDetected, body_count: personBoxCountDetected });
-    } else clearVisionSignal("multiple_people_unconfirmed", personBoxCountDetected <= 1, now);
-    multipleFaceSince = _trackSince(multipleFaceSince, !visionCheckUnavailable && faceCountDetected > 1, now);
+    } else clearVisionSignal("multiple_people_unconfirmed", faceCountDetected === 1 && personBoxCountDetected <= 1, now);
+    multipleFaceSince = _trackSince(multipleFaceSince, !visionCheckUnavailable && multiplePeopleCorroborated(now), now);
     if (multipleFaceSince !== null) {
       const ms = now - multipleFaceSince;
       if (ms >= MULTIPLE_PEOPLE_THRESHOLD_MS) {
         warnVisionSignal(
           "multiple_people_visible",
           `More than one person detected for ${Math.round(ms / 1000)}s. Only the candidate may be visible.`,
-          { confidence: personDetectionConfidence, duration_ms: ms, people_count: faceCountDetected, face_count: faceCountDetected, confirmed_by: "face_sequence" },
+          { confidence: personDetectionConfidence, duration_ms: ms, people_count: faceCountDetected, face_count: faceCountDetected, confirmed_by: "face_sequence", body_count: corroboratedPersonCount },
         );
       }
     }
@@ -2566,7 +2657,7 @@ function handleControlMessage(payload) {
       proctoringActive = payload.proctoring_enabled === true || (payload.proctoring_enabled === undefined && payload.recording_enabled === true);
       absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
       lastMultiplePeopleDetectedAt = 0;
-      personBoxCountDetected = 0;
+      personBoxCountDetected = corroboratedPersonCount = 0;
       lastPersonDetectionAt = 0;
       phoneEvidence = null; phoneDetected = false; lastPhoneDetectedAt = 0; cameraReminderTimes = {};
       if (proctoringActive) photoVerifier.start();
@@ -3165,7 +3256,7 @@ function renderResults(report) {
     const items = report.strengths || [];
     resultsStrengths.innerHTML = items.length
       ? items.map(s => `<li class="list-item-g">${escHtml(s.text || s)}</li>`).join("")
-      : `<li class="list-item-g">Not enough answered questions to identify strengths.</li>`;
+      : `<li class="list-item-empty">Not enough answered questions to identify strengths.</li>`;
   }
 
   if (resultsImprovements) {
@@ -3215,10 +3306,14 @@ function renderResults(report) {
     if (!alignment) {
       resultsResumeAlignment.innerHTML = `<div class="dim-row"><span>No claimed skills were assessed</span></div>`;
     } else {
-      const skills = (alignment.skills || []).map((item) =>
-        `<div class="dim-row"><span>${escHtml(item.skill)}</span><strong>${escHtml((item.evidence_level || "").replace(/_/g, " "))}</strong></div>`
-      ).join("");
-      resultsResumeAlignment.innerHTML = `<div class="dim-row"><span>Credibility score</span><strong>${alignment.credibility_score ?? "—"}%</strong></div>${skills}`;
+      const skills = alignment.skills || [];
+      const assessed = skills.filter(item => item.evidence_level && item.evidence_level !== "not_assessed");
+      const unassessed = skills.filter(item => !item.evidence_level || item.evidence_level === "not_assessed");
+      const chip = item => `<span class="skill-chip">${escHtml(item.skill)}</span>`;
+      const evidence = item => `<div class="skill-evidence"><span>${escHtml(item.skill)}</span><strong>${escHtml(item.evidence_level.replace(/_/g," "))}</strong>${item.note ? `<p>${escHtml(item.note)}</p>` : ""}</div>`;
+      const group = (items, title, render) => items.length ? `<section class="skill-group"><h4>${title} <span>${items.length}</span></h4><div class="skill-chips">${items.slice(0,6).map(render).join("")}</div>${items.length>6 ? `<details><summary>Show ${items.length-6} more skills</summary><div class="skill-chips">${items.slice(6).map(render).join("")}</div></details>` : ""}</section>` : "";
+      const score = Number.isFinite(alignment.credibility_score) ? `${alignment.credibility_score}%` : "Not assessed";
+      resultsResumeAlignment.innerHTML = `<div class="dim-row"><span>Credibility score</span><strong>${score}</strong></div><p class="skill-summary">${assessed.length} assessed · ${skills.length} claimed skills</p>${group(assessed,"Interview evidence",evidence)}${group(unassessed,"Not assessed in this interview",chip)}`;
     }
   }
 
