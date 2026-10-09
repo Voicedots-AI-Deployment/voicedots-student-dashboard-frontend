@@ -465,7 +465,7 @@ test("setup and microphone recovery stay aligned on desktop and mobile",async({p
  await expect(page.locator('#pj-mic-retry')).toBeEnabled();
  await expect(page.locator('#lobby-video')).toHaveCSS('object-fit','contain');
  const preview=await page.locator('#cam-preview').boundingBox();
- expect(Math.abs(preview!.width-preview!.height)).toBeLessThanOrEqual(1);
+ expect(preview!.width / preview!.height).toBeCloseTo(4 / 3, 1);
  await expect(page.locator('#mic-select')).toHaveValue('');
  await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/microphone-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});

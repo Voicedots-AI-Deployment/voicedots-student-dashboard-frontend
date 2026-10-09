@@ -1547,6 +1547,7 @@ async function startCameraAnalysis() {
   // person whose smaller or turned-away face is not recognizable.
   await Promise.allSettled([loadFaceDetector(), loadPersonDetector()]);
   const tick = async () => {
+    if (interviewHasStarted && !proctoringActive) return;
     try { await analyzeCameraFrame(); } catch (error) { console.warn("Camera analysis frame failed.", error); }
     setTimeout(tick, 800);
   };
@@ -2531,13 +2532,13 @@ function handleControlMessage(payload) {
       setRequiredInterviewRounds(payload.total_rounds);
       clearTimeout(initialConnectionTimer);
       interviewHasStarted = true;
-      proctoringActive = true;
+      proctoringActive = payload.proctoring_enabled === true || (payload.proctoring_enabled === undefined && payload.recording_enabled === true);
       absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
       lastMultiplePeopleDetectedAt = 0;
       personBoxCountDetected = 0;
       lastPersonDetectionAt = 0;
       phoneEvidence = null; phoneDetected = false; lastPhoneDetectedAt = 0; cameraReminderTimes = {};
-      photoVerifier.start();
+      if (proctoringActive) photoVerifier.start();
       _flushPendingIntegrityEvents();
       void startInterviewRecording();
       break;
@@ -2996,6 +2997,7 @@ async function loadEvaluationResults() {
     if (resultsScreen) resultsScreen.style.display = "block";
     if (hasEvaluableReportData(report)) {
       renderResults(report);
+      void loadAnswerFeedback(report);
     } else {
       renderResponsesSaved(report);
     }
@@ -3206,7 +3208,7 @@ function renderResults(report) {
           return `<details class="report-agent-card" style="margin-bottom:9px;">
             <summary style="cursor:pointer;font-weight:700;">${index + 1}. ${escHtml(item.question || "Interview question")}</summary>
             <div style="margin-top:9px;color:#94A3B8;line-height:1.55;"><strong>Your answer:</strong> ${escHtml(item.answer || "No answer recorded")}</div>
-            <div style="margin-top:7px;color:#C4B5FD;">${feedback.length ? feedback.map(escHtml).join("<br>") : "No answer-specific feedback was generated."}</div>
+            <div style="margin-top:7px;color:#C4B5FD;">${feedback.length ? feedback.map(escHtml).join("<br>") : (!item.answer ? "No answer was recorded for this question." : report.status !== "released" ? "Detailed feedback will be available when your report is released." : report.feedback_error ? "Detailed feedback is temporarily unavailable. Retry below." : "Preparing feedback for your answer…")}</div>
           </details>`;
         }).join("")
       : `<div class="dim-row"><span>No question review is available.</span></div>`;
@@ -3244,6 +3246,40 @@ function renderResults(report) {
       resultsDownloadLink.onclick = null;
     }
   }
+}
+
+async function loadAnswerFeedback(report) {
+  if (!currentSessionId || report.status !== "released" || !(report.question_reviews || []).some(item => item.answer)) return;
+  try {
+    const response = await studentFetch(`${_HTTP_BASE}/api/interview/${currentSessionId}/evaluation/question-feedback`, { method: "POST", signal: AbortSignal.timeout(45000) });
+    const data = await response.json();
+    if (!response.ok) throw new Error(data.detail || "Feedback unavailable");
+    report.question_reviews = (report.question_reviews || []).map(item => {
+      const note = data.feedback?.[String(item.answer_id)];
+      if (!note) return item;
+      return { ...item, strength_feedback: note.what_worked ? [note.what_worked] : [], improvement_feedback: note.improve ? [note.improve] : [] };
+    });
+    report.feedback_error = data.complete === false;
+  } catch (error) {
+    report.feedback_error = true;
+  }
+  renderResults(report);
+  if (report.feedback_error && resultsQuestionReviews) {
+    const retry = document.createElement("button");
+    retry.className = "btn btn-secondary";
+    retry.textContent = "Retry answer feedback";
+    retry.onclick = () => { retry.disabled = true; retry.textContent = "Preparing feedback…"; void loadAnswerFeedback(report); };
+    resultsQuestionReviews.append(retry);
+  }
+}
+
+// Match the actual camera frame instead of forcing landscape video into a square.
+for (const video of [lobbyVideoEl, candidateVideoEl]) {
+  video?.addEventListener("loadedmetadata", () => {
+    if (video.videoWidth && video.videoHeight) {
+      video.parentElement.style.aspectRatio = `${video.videoWidth} / ${video.videoHeight}`;
+    }
+  });
 }
 
 function escHtml(str) {
