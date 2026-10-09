@@ -1,7 +1,8 @@
 import { test, expect } from '@playwright/test';
 
+for (const [provider, rate] of [['Deepgram', 48000], ['Gemini', 24000]] as const) {
 for (const round of [1, 2, 3, 4]) {
-  test(`Gemini 24 kHz audio drives only avatar ${round} and waits for playback before opening the mic`, async ({ page }) => {
+  test(`${provider} ${rate / 1000} kHz audio drives only avatar ${round} and waits for playback before opening the mic`, async ({ page }) => {
     await page.route('**/api/**', route => route.fulfill({ json: { student: { id: 'voice-audit' }, csrf_token: 'test' } }));
     await page.route('**/interview.js*', async route => {
       const response = await route.fetch();
@@ -31,15 +32,15 @@ for (const round of [1, 2, 3, 4]) {
     await page.goto('/interview.html?id=voice-audit');
     await expect.poll(() => page.evaluate(() => !!(window as any).voiceAudit)).toBe(true);
     await page.clock.install();
-    await page.evaluate(round => (window as any).voiceAudit.start(round, 24000), round);
+    await page.evaluate(({round, rate}) => (window as any).voiceAudit.start(round, rate), {round, rate});
     await page.clock.runFor(100);
     let state = await page.evaluate(() => (window as any).voiceAudit.state());
-    expect(state.rates).toEqual([24000]);
+    expect(state.rates).toEqual([rate]);
     expect(state.speaking).toBe(true);
     expect(state.acks).toEqual([{type:'playback_started',audio_epoch:round}]);
     expect(state.mouth.filter((m: any) => m.talking).map((m: any) => m.round)).toEqual([round]);
     await page.evaluate(round => (window as any).voiceAudit.stale(round + 100), round);
-    expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([24000]);
+    expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([rate]);
     await page.clock.runFor(1100);
     state = await page.evaluate(() => (window as any).voiceAudit.state());
     expect(state.speaking).toBe(false);
@@ -49,4 +50,5 @@ for (const round of [1, 2, 3, 4]) {
     await page.evaluate(round => (window as any).voiceAudit.start(round, undefined), round);
     expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([48000]);
   });
+}
 }
