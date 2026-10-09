@@ -111,7 +111,7 @@ test('phone evidence rejects single, weak and inconsistent detections and confir
   return {weak,isolated,noCorroboration,strong};
  });
  expect(result.weak.some(Boolean)).toBe(false);expect(result.isolated.some(Boolean)).toBe(false);expect(result.noCorroboration.some(Boolean)).toBe(false);
- expect(result.strong.slice(0,5).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
+ expect(result.strong.slice(0,3).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
 });
 
 test('camera reminders hide the misconduct badge and server zero clears optimistic warnings',async({page})=>{
@@ -162,4 +162,29 @@ test('hiding the native screen-share banner cannot create a focus warning', asyn
  });
  await page.clock.runFor(2100);
  expect(await page.evaluate(()=>(window as any).focusAuditEvents.some((e:any)=>e.event_type==='tab_hidden'&&e.severity==='violation'))).toBe(true);
+});
+
+
+test('phone evidence still warns in poor lighting with slow object inference',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'student-1'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`
+ window.dimPhoneAudit={setup:async()=>{
+  const canvas=document.createElement('canvas');canvas.width=640;canvas.height=480;
+  canvas.getContext('2d').fillRect(0,0,640,480);
+  userMediaStream=canvas.captureStream(20);lobbyVideoEl.srcObject=userMediaStream;await lobbyVideoEl.play();cameraTrackLive=true;
+  faceLandmarker={detectForVideo:()=>({faceLandmarks:[null]})};frameLighting=()=>20;frameSharpness=()=>40;
+  objectDetector={detectForVideo:async frame=>({detections:[{categories:[{categoryName:'cell phone',score:.9}],boundingBox:frame.width===640?{originX:200,originY:100,width:50,height:90}:{originX:84,originY:5,width:58,height:105}}]})};
+  window.dimPhoneEvents=[];ws={readyState:WebSocket.OPEN,send:value=>window.dimPhoneEvents.push(JSON.parse(value))};proctoringActive=true;callScreen.style.display='flex';
+ },tick:analyzeCameraFrame};`});});
+ await page.goto('/interview.html?id=sub-1');await expect.poll(()=>page.evaluate(()=>!!(window as any).dimPhoneAudit)).toBe(true);
+ await page.evaluate(()=>(window as any).dimPhoneAudit.setup());
+ await page.clock.install();
+ for(let i=0;i<4;i++){
+  await page.evaluate(()=>(window as any).dimPhoneAudit.tick());
+  await page.clock.runFor(4000);
+ }
+ const events=await page.evaluate(()=>(window as any).dimPhoneEvents);
+ expect(events.some((e:any)=>e.event_type==='poor_lighting'&&e.severity==='info')).toBe(true);
+ expect(events.filter((e:any)=>e.event_type==='phone_usage_detected')).toHaveLength(1);
+ expect(events.filter((e:any)=>e.event_type==='multiple_people_visible')).toHaveLength(0);
 });
