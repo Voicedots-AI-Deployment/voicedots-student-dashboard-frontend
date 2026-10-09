@@ -262,7 +262,7 @@ let phoneVisibleSince = null;
 let phoneDetected = false;
 let phoneEvidence = null;
 const PHONE_EVIDENCE_MIN_SCORE = .75;
-const PHONE_EVIDENCE_MIN_MS = 4000;
+const PHONE_EVIDENCE_MIN_MS = 2000;
 let cameraReminderTimes = {};
 // Integrity signals are intentionally debounced to avoid false positives,
 // but must still be visible quickly to the placement team.
@@ -1255,7 +1255,7 @@ function samePersonBox(a, b) {
 
 let prejoinMultipleEvidence = null;
 function multiplePeopleCorroborated(now = Date.now()) {
-  return faceCountDetected > 1 && corroboratedPersonCount > 1 && now-lastPersonDetectionAt < 2500;
+  return !cameraQualityIssue && faceCountDetected > 1 && corroboratedPersonCount > 1 && now-lastPersonDetectionAt < 2500;
 }
 function distinctFaceLandmarks(faces) {
   const accepted = [], boxes = [];
@@ -1268,7 +1268,7 @@ function distinctFaceLandmarks(faces) {
     if (Math.abs(left.x-right.x) < .012 || nose.y < eyeY-.025 || mouth.y < nose.y || chin.y < mouth.y) continue;
     const xs=points.map(p=>p.x), ys=points.map(p=>p.y);
     const box={originX:Math.min(...xs),originY:Math.min(...ys),width:Math.max(...xs)-Math.min(...xs),height:Math.max(...ys)-Math.min(...ys)};
-    if (box.width < .025 || box.height < .035 || boxes.some(known=>boxIoU(box,known)>=.65)) continue;
+    if (box.width < .025 || box.height < .035 || boxes.some(known=>boxIoU(box,known)>=.5)) continue;
     boxes.push(box); accepted.push(points);
   }
   return accepted;
@@ -1279,7 +1279,7 @@ function frameLighting(video) {
   canvas.width = 160;
   canvas.height = 90;
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(video, 0, 0, canvas.width, canvas.height);
+  context.drawImage(video, video.videoWidth*.25, video.videoHeight*.15, video.videoWidth*.5, video.videoHeight*.7, 0, 0, canvas.width, canvas.height);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
   let total = 0;
   let samples = 0;
@@ -1322,15 +1322,20 @@ function landmarkGazeOffCamera(landmarks) {
 
 function updatePhoneEvidence(detections, corroborating, now) {
   const strong = detections.filter(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_EVIDENCE_MIN_SCORE) && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8);
-  const match = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
-  if (!match) { phoneEvidence = null; return false; }
-  if (!phoneEvidence || now - phoneEvidence.last > 1800 || boxIoU(phoneEvidence.box, match.boundingBox) < .2) {
-    phoneEvidence = {since:now,last:now,count:1,box:match.boundingBox,confidence:Number(match.categories[0].score)};
+  // Require agreement between independent views, including crop-only phones.
+  const full = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
+  const crop = corroborating.find((box, index) => Number(box.confidence) >= .75 &&
+    corroborating.some((other, otherIndex) => index !== otherIndex && Number(other.confidence) >= .75 && boxIoU(box, other) >= .3));
+  const box = full?.boundingBox || crop;
+  const confidence = full ? Number(full.categories[0].score) : Number(crop?.confidence);
+  if (!box) { phoneEvidence = null; return false; }
+  if (!phoneEvidence || now - phoneEvidence.last > 8000 || boxIoU(phoneEvidence.box, box) < .2) {
+    phoneEvidence = {since:now,last:now,count:1,box,confidence};
   } else {
-    phoneEvidence.last=now;phoneEvidence.count++;phoneEvidence.box=match.boundingBox;
-    phoneEvidence.confidence=Math.min(phoneEvidence.confidence,Number(match.categories[0].score));
+    phoneEvidence.last=now;phoneEvidence.count++;phoneEvidence.box=box;
+    phoneEvidence.confidence=Math.min(phoneEvidence.confidence,confidence);
   }
-  return phoneEvidence.count >= 4 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
+  return phoneEvidence.count >= 2 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
 }
 
 function warnVisionSignal(type, message, details) {
@@ -1368,19 +1373,20 @@ async function analyzeCameraFrame() {
   }
   if (!objectDetector && !objectDetectorUnavailable) void loadPersonDetector();
   const luminance = frameLighting(lobbyVideoEl);
-  lightingPassing = luminance >= 45 && luminance <= 225;
+  lightingPassing = luminance >= 40 && luminance <= 235;
   setVisionCheck(
     lightingCheckEl,
     lightingPassing ? "pass" : "fail",
-    lightingPassing ? "✓ Lighting is clear" : (luminance < 45 ? "More light needed" : "Reduce backlight"),
+    lightingPassing ? "✓ Lighting is clear" : (luminance < 40 ? "More light needed" : "Reduce backlight"),
   );
 
   const sharpness = frameSharpness(lobbyVideoEl);
   const qualityIssue = !lightingPassing ? "poor_lighting" : sharpness < 12 ? "camera_blurry" : null;
   if (qualityIssue) {
     cameraAnalysisPassing = false;
-    absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
-    lastPhoneDetectedAt = lastMultiplePeopleDetectedAt = 0;
+    absentFaceSince = multipleFaceSince = gazeOffCameraSince = null;
+    lastMultiplePeopleDetectedAt = 0;
+    if (!proctoringActive) { phoneVisibleSince = null; lastPhoneDetectedAt = 0; }
     const guidance = qualityIssue === "poor_lighting" ? "Camera lighting is too low or strongly backlit. Add light in front of you and avoid a bright light behind you." : "Your camera image looks blurry. Clean the lens, focus the camera and keep your face clearly visible.";
     setVisionCheck(lightingCheckEl, "warn", guidance);
     updatePrejoinReadiness();
@@ -1390,9 +1396,9 @@ async function analyzeCameraFrame() {
       lastCameraQualityNoticeAt = Date.now();
     }
     cameraQualityIssue = qualityIssue;
-    return;
+    if (!proctoringActive) return;
   }
-  if (cameraQualityIssue) {
+  if (!qualityIssue && cameraQualityIssue) {
     if (proctoringActive) _sendIntegrityEvent("camera_quality_restored", "info", {});
     cameraQualityIssue = null;
     absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
@@ -1411,7 +1417,7 @@ async function analyzeCameraFrame() {
     for (const face of faces) {
       const r = face.boundingBox;
       const box = r && {originX:r.x, originY:r.y, width:r.width, height:r.height};
-      if (!box || !distinct.some(known => known && boxIoU(box, known) >= .65)) distinct.push(box);
+      if (!box || !distinct.some(known => known && boxIoU(box, known) >= .5)) distinct.push(box);
     }
     faceCountDetected = distinct.length;
   } else {
@@ -1422,7 +1428,7 @@ async function analyzeCameraFrame() {
   // camera (no eyes/nose/mouth visible). The person/object detector counts
   // bodies instead of faces, so it still catches that case; take whichever
   // signal saw more people this frame.
-  const now = Date.now();
+  let now = Date.now();
   if (objectDetector && now - lastPersonDetectionAt >= PERSON_DETECTION_INTERVAL_MS) {
     // Every crop uses the same captured frame. Asynchronous inference must not
     // count a moving person twice by comparing snapshots from different times.
@@ -1444,7 +1450,6 @@ async function analyzeCameraFrame() {
       (detection.categories || []).map((category) => Number(category.score)).filter(Number.isFinite)
     );
     personDetectionConfidence = scores.length ? Math.max(...scores) : null;
-    lastPersonDetectionAt = now;
     const corroboratingPhones = [];
 
     // Supplementary zoomed-in pass on one half of the frame (alternating
@@ -1464,7 +1469,7 @@ async function analyzeCameraFrame() {
         if (category !== "person" && category !== "cell phone") continue;
         const box = translateCropBox(det.boundingBox, crop);
         if (category === "cell phone") {
-          if (Number(det.categories?.[0]?.score) >= .65) corroboratingPhones.push(box);
+          if (Number(det.categories?.[0]?.score) >= .65) corroboratingPhones.push({...box, confidence: Number(det.categories[0].score)});
           continue;
         }
         const overlapsKnown = personDetections.some(known => samePersonBox(box, known.boundingBox));
@@ -1474,8 +1479,10 @@ async function analyzeCameraFrame() {
     }
     const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
     for (const det of phoneCrop?.detections || []) {
-      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= .65) corroboratingPhones.push(translateCropBox(det.boundingBox, phoneCrop));
+      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= .65) corroboratingPhones.push({...translateCropBox(det.boundingBox, phoneCrop), confidence: Number(det.categories[0].score)});
     }
+    now = Date.now();
+    lastPersonDetectionAt = now;
     phoneDetected = updatePhoneEvidence(phoneDetections, corroboratingPhones, now);
     if (phoneDetected) lastPhoneDetectedAt = now;
     personBoxCountDetected = personDetections.length;
@@ -1484,7 +1491,7 @@ async function analyzeCameraFrame() {
   }
   // Only a corroborated sequence can indicate a phone; an isolated detection
   // or a stale worker result never accumulates into a misconduct warning.
-  phoneDetected = !!phoneEvidence && phoneEvidence.count >= 4 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 1500;
+  phoneDetected = !!phoneEvidence && phoneEvidence.count >= 2 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 8000;
   // Do not flash back to "one person" when the smaller background detection
   // drops for a frame. Keep the multi-person result briefly so the candidate
   // must present a consistently clear single-person frame before proceeding.
@@ -1551,7 +1558,7 @@ async function analyzeCameraFrame() {
     !visionCheckUnavailable && !objectDetectorUnavailable && fullPersonCheckReady && !phoneDetected;
   updatePrejoinReadiness();
 
-  if (!proctoringActive || now - lastVisionObservationAt > 3000) {
+  if (!proctoringActive || now - lastVisionObservationAt > 8000) {
     absentFaceSince = multipleFaceSince = phoneVisibleSince = poorLightingSince = gazeOffCameraSince = null;
     visionRecoverySince = {};
   }
@@ -2421,6 +2428,7 @@ function describeInterviewRecordingFormat(mimeType) {
 }
 
 let interviewRecordingEnabled = true;
+let completionPersistencePending = false;
 async function startInterviewRecording() {
   if (!interviewRecordingEnabled) return;
   if (interviewRecorder || !currentSessionId || !userMediaStream || !recordingConsentEl?.checked) return;
@@ -2821,6 +2829,9 @@ function handleControlMessage(payload) {
       showProcessingStatus(payload.detail);
       break;
 
+    case "call_ended":
+      completionPersistencePending = true;
+      // fall through: both events carry the completed-round proof.
     case "session_complete":
       clearProcessingStatus();
       setRequiredInterviewRounds(payload.required_rounds);
@@ -3061,12 +3072,16 @@ async function finishAndGenerateReport() {
     return;
   }
   reportGenerationStarted = true;
-  await stopInterviewRecording(true);
   stopInterview();
   if (callScreen) callScreen.style.display = "none";
   if (liveChip) liveChip.style.display = "none";
+  if (interviewRecordingEnabled) {
+    if (reportScreen) reportScreen.style.display = "none";
+    if (resultsScreen) resultsScreen.style.display = "block";
+    renderResponsesSaved({report_type: "placement_drive"});
+    return;
+  }
   if (reportScreen) reportScreen.style.display = "flex";
-
   await loadEvaluationResults();
 }
 
@@ -3099,7 +3114,29 @@ async function loadEvaluationResults() {
   }, 2500);
 
   try {
+    if (completionPersistencePending && currentSessionId) {
+      const waitStartedAt = Date.now();
+      let completed = false;
+      while (Date.now() - waitStartedAt < 180000) {
+        const state = await studentFetch(`${_HTTP_BASE}/api/interview/${currentSessionId}`);
+        if (!state.ok) throw new Error("Could not confirm saved interview answers.");
+        const record = await state.json();
+        if (record.status === "completed") { completed = true; break; }
+        if (["abandoned", "candidate_ended"].includes(record.status)) throw new Error("Interview persistence did not complete.");
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+      if (!completed) throw new Error("Interview answers are still being saved. Check your dashboard shortly.");
+    }
     let res = await studentFetch(`${endpoint}?async_mode=true`, { method: "POST" });
+    // Recording persistence may finish after the spoken goodbye.
+    const persistenceStartedAt = Date.now();
+    while (res.status === 409 && Date.now() - persistenceStartedAt < 180000) {
+      const existing = await studentFetch(endpoint);
+      if (existing.ok) { res = existing; break; }
+      if (existing.status !== 404) { res = existing; break; }
+      await new Promise(resolve => setTimeout(resolve, 2000));
+      res = await studentFetch(`${endpoint}?async_mode=true`, {method: "POST"});
+    }
     if (res.status === 202) {
       const startedAt = Date.now();
       while (Date.now() - startedAt < 180000) {

@@ -6,6 +6,17 @@ async function interview(page: Page) {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
       window.conversationAudit = {
+        phone: updatePhoneEvidence,
+        async finish(placement) {
+          currentSessionId='finish-test'; interviewRecordingEnabled=placement;
+          requiredInterviewRounds=1; completedRounds.add(0);
+          const canvas=document.createElement('canvas');const stream=canvas.captureStream();
+          userMediaStream=stream;
+          const track=stream.getVideoTracks()[0];
+          handleControlMessage({type:'call_ended',completed_rounds:1,required_rounds:1});
+          await new Promise(resolve=>setTimeout(resolve,20));
+          return track.readyState;
+        },
         preview: syncCameraPreview, recoverCamera: () => attachDeviceTrack("video", ""),
         distinct: distinctFaceLandmarks,
         corroborated(faces,bodies,age=0) {
@@ -204,4 +215,37 @@ test('multiple-person accusations require fresh corroboration from both camera m
     return [check(2,1),check(1,2),check(2,2,3000),check(2,2)];
   });
   expect(signals).toEqual([false,false,false,true]);
+});
+
+
+test('crop-only phone requires two agreeing views and sustained observations',async({page})=>{
+  await interview(page);
+  const result=await page.evaluate(()=>{
+    const check=(window as any).conversationAudit.phone;
+    const box={originX:100,originY:100,width:30,height:70,confidence:.85};
+    const other={...box,originX:102};
+    const isolated=check([], [box],1000);
+    const sequence=[1000,1800,2600,3400].map(now=>check([], [box,other],now));
+    const stale=check([], [box,other],13000);
+    return {isolated,sequence,stale};
+  });
+  expect(result).toEqual({isolated:false,sequence:[false,false,false,true],stale:false});
+});
+
+test('placement ends capture immediately and shows saved answers without report animation',async({page})=>{
+  await interview(page);
+  let evaluations=0;
+  await page.route('**/evaluation**',route=>{evaluations++;return route.fulfill({status:404,json:{}})});
+  expect(await page.evaluate(()=>(window as any).conversationAudit.finish(true))).toBe('ended');
+  await expect(page.locator('#report-screen')).toBeHidden();
+  await expect(page.locator('#results-saved-detail')).toContainText('placement cell');
+  expect(evaluations).toBe(0);
+});
+
+test('practice releases capture while its report request is still pending',async({page})=>{
+  await interview(page);
+  await page.route('**/api/interview/finish-test',route=>route.fulfill({json:{status:'completed'}}));
+  await page.route('**/evaluation**',()=>new Promise<void>(()=>{}));
+  expect(await page.evaluate(()=>(window as any).conversationAudit.finish(false))).toBe('ended');
+  await expect(page.locator('#report-screen')).toBeVisible();
 });
