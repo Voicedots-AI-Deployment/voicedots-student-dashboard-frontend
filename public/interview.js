@@ -805,7 +805,7 @@ async function runPreflight() {
     liveChip.style.display = "inline-flex";
     await startInterview(currentSubmissionId);
   } catch (error) {
-    const kind = /identity|liveness|face|photo|verification/i.test(error.message) ? "identity" : "network";
+    const kind = preflightFailureKind(error.message);
     failPreflight(kind, error.message);
   } finally {
     preflightBusy = false;
@@ -2141,30 +2141,94 @@ async function startMediaCapture() {
   if (recordingAudioDestination) {
     playbackAudioContext.createMediaStreamSource(recordingMicStream).connect(recordingAudioDestination);
   }
+  installMicrophoneProcessor();
+  startMicrophoneWatchdog();
+}
+
+let microphoneWatchdog = null;
+let microphoneRecoveryTask = null;
+let lastMicrophoneFrameAt = 0;
+let lastMicrophoneRecoveryAt = 0;
+let microphoneSilentGain = null;
+
+function microphoneCaptureStatus(message) {
+  let status = document.getElementById("live-microphone-status");
+  if (!status && callScreen) {
+    status = document.createElement("div"); status.id = "live-microphone-status";
+    status.setAttribute("role", "status");
+    status.style.cssText = "margin:12px auto;padding:12px;max-width:720px;border-radius:12px;background:#292334;color:#fff;display:flex;gap:12px;align-items:center;justify-content:space-between";
+    const text = document.createElement("span"); status.appendChild(text);
+    const retry = document.createElement("button"); retry.type = "button"; retry.className = "btn btn-secondary";
+    retry.textContent = "Retry microphone"; retry.onclick = () => void recoverMicrophoneCapture(true);
+    status.appendChild(retry); callScreen.prepend(status);
+  }
+  if (status) { status.hidden = !message; status.style.display = message ? "flex" : "none"; status.firstElementChild.textContent = message; }
+}
+
+function installMicrophoneProcessor() {
+  if (micProcessor && micCaptureSource) { try { micCaptureSource.disconnect(micProcessor); } catch {} }
+  micProcessor?.disconnect(); microphoneSilentGain?.disconnect();
   micProcessor = new AudioWorkletNode(audioContext, "pcm-capture-processor", {
     processorOptions: { targetSampleRate: STT_SAMPLE_RATE },
   });
-
+  lastMicrophoneFrameAt = Date.now();
   micProcessor.port.onmessage = (e) => {
-    // aiSpeaking gate is defense-in-depth alongside the server-side
-    // _tts_active gate (session.py _pump_browser_in) — belt and braces,
-    // not a replacement for it.
+    lastMicrophoneFrameAt = Date.now();
+    microphoneCaptureStatus("");
     if (!ws || ws.readyState !== WebSocket.OPEN || !interviewHasStarted || micMuted || aiSpeaking) return;
     const pcmData = floatTo16BitPCM(e.data);
+    // Bound buffered input so a transport outage cannot queue minutes of stale
+    // speech and replay it as the answer to a later question.
+    if (ws.bufferedAmount > 160000) { microphoneCaptureStatus("The interview connection is recovering. Your recording remains active."); return; }
     ws.send(pcmData.buffer);
   };
+  micProcessor.onprocessorerror = () => {
+    microphoneCaptureStatus("Microphone processing stopped. Reconnecting your microphone…");
+    void recoverMicrophoneCapture(true);
+  };
+  micCaptureSource.connect(micProcessor);
+  microphoneSilentGain = audioContext.createGain(); microphoneSilentGain.gain.value = 0;
+  micProcessor.connect(microphoneSilentGain); microphoneSilentGain.connect(audioContext.destination);
+}
 
-  micSource.connect(micProcessor);
-  // AudioWorkletNode.process() is only guaranteed to run while the node is
-  // part of a live graph reaching the destination — route through a
-  // zero-gain node so the mic capture stays active without producing any
-  // audible echo (identical purpose to the old micProcessor.connect(
-  // audioContext.destination) call, just via a silent node instead of
-  // relying on ScriptProcessorNode's own always-silent output).
-  const micSilentGain = audioContext.createGain();
-  micSilentGain.gain.value = 0;
-  micProcessor.connect(micSilentGain);
-  micSilentGain.connect(audioContext.destination);
+async function recoverMicrophoneCapture(force = false) {
+  if (microphoneRecoveryTask) return microphoneRecoveryTask;
+  if (!audioContext || interviewStopRequested || (!force && Date.now() - lastMicrophoneRecoveryAt < 5000)) return;
+  lastMicrophoneRecoveryAt = Date.now();
+  microphoneRecoveryTask = (async () => {
+    try {
+      if (!hasLiveTrack("audio")) {
+        const selected = micSelectEl?.value || "";
+        let restored = await attachDeviceTrack("audio", selected);
+        if (!restored && selected) {
+          restored = await attachDeviceTrack("audio", "");
+          if (restored && micSelectEl) micSelectEl.value = "";
+        }
+        if (!restored) throw new Error("Select a working microphone and retry.");
+      }
+      await Promise.race([audioContext.resume(), new Promise((_, reject) => setTimeout(() => reject(new Error("Click Retry microphone to resume microphone access.")), 4000))]);
+      if (audioContext.state !== "running") throw new Error("Click Retry microphone to enable audio capture.");
+      if (force || Date.now() - lastMicrophoneFrameAt > 3000) installMicrophoneProcessor();
+    } catch (error) { microphoneCaptureStatus(error.message || "Microphone audio is unavailable. Retry microphone."); }
+  })().finally(() => { microphoneRecoveryTask = null; });
+  return microphoneRecoveryTask;
+}
+
+function startMicrophoneWatchdog() {
+  if (microphoneWatchdog) clearInterval(microphoneWatchdog);
+  audioContext.onstatechange = () => { if (audioContext?.state === "suspended" || audioContext?.state === "interrupted") void recoverMicrophoneCapture(); };
+  microphoneWatchdog = setInterval(() => {
+    if (!interviewHasStarted || interviewStopRequested || !audioContext) return;
+    if (audioContext.state !== "running" || Date.now() - lastMicrophoneFrameAt > 3000) void recoverMicrophoneCapture();
+    if (playbackAudioContext && playbackAudioContext.state !== "running") void playbackAudioContext.resume().catch(() => {});
+  }, 1000);
+}
+
+function preflightFailureKind(message) {
+  if (/microphone|audio|worklet|capture/i.test(message)) return "microphone";
+  if (/camera|video/i.test(message)) return "camera";
+  if (/identity|liveness|face|photo|verification/i.test(message)) return "identity";
+  return "network";
 }
 
 function schedulePCMChunk(pcmBytes, epoch = currentAudioEpoch) {
@@ -2817,6 +2881,18 @@ function handleControlMessage(payload) {
       break;
     }
 
+    case "microphone_recovery":
+      microphoneCaptureStatus(payload.detail || "Reconnecting microphone audio…");
+      void recoverMicrophoneCapture(true);
+      break;
+
+    case "listening":
+      if (Number(payload.audio_epoch) === currentAudioEpoch && !activePlaybackSources.size) {
+        aiSpeaking = false; setActivePanelTalking(false);
+      }
+      void recoverMicrophoneCapture();
+      break;
+
     case "processing":
       showProcessingStatus(payload.detail);
       break;
@@ -2892,8 +2968,10 @@ async function startInterview(submissionId) {
     recordingAudioDestination = playbackAudioContext.createMediaStreamDestination();
     playbackAnalyser.connect(recordingAudioDestination);
 
-    await audioContext.resume();
-    await playbackAudioContext.resume();
+    await Promise.race([
+      Promise.all([audioContext.resume(), playbackAudioContext.resume()]),
+      new Promise((_, reject) => setTimeout(() => reject(new Error("Audio permission is paused. Retry microphone to start audio capture.")), 5000)),
+    ]);
     await startMediaCapture();
 
     interviewStopRequested = false;
@@ -2904,6 +2982,7 @@ async function startInterview(submissionId) {
 }
 
 function returnToPreflight(message) {
+  if (microphoneWatchdog) { clearInterval(microphoneWatchdog); microphoneWatchdog = null; }
   clearTimeout(initialConnectionTimer);
   const socket = ws;
   ws = null;
@@ -2918,7 +2997,7 @@ function returnToPreflight(message) {
   callScreen.style.display = "none";
   liveChip.style.display = "none";
   prejoinScreen.style.display = "flex";
-  const kind = /identity|liveness|face|photo|verification/i.test(message) ? "identity" : "network";
+  const kind = preflightFailureKind(message);
   failPreflight(kind, message);
   preflightStatus("Fix the item below to continue. Your other checks are preserved.");
 }
@@ -3031,6 +3110,7 @@ function stopInterview() {
 }
 
 function cleanupInterviewMedia() {
+  if (microphoneWatchdog) { clearInterval(microphoneWatchdog); microphoneWatchdog = null; }
   if (audioContext) {
     audioContext.close();
     audioContext = null;

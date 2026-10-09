@@ -103,3 +103,24 @@ test('self-practice report shows questions and feedback without fetching or warn
  await expect(page.getByRole('button',{name:'Refresh video'})).toHaveCount(0);
  expect(recordingRequests).toBe(0);
 });
+
+test('expired secure video link recovers and refresh preserves playback position',async({page})=>{
+ await setup(page);let requests=0;
+ await page.route('**/api/student/interview/s1/recording',route=>{requests++;return route.fulfill({json:{status:'ready',playback_url:`https://media.example/renewed-${requests}.mp4`}});});
+ await page.route('https://media.example/renewed-*.mp4',route=>{
+  if(route.request().url().endsWith('renewed-1.mp4'))return route.fulfill({status:403,body:'Expired signature'});
+  const bytes=readFileSync(new URL('./fixtures/report-recording.mp4',import.meta.url));
+  const range=route.request().headers()['range']?.match(/bytes=(\d+)-(\d*)/);
+  if(range){const start=Number(range[1]),end=range[2]?Math.min(Number(range[2]),bytes.length-1):bytes.length-1;return route.fulfill({status:206,contentType:'video/mp4',headers:{'accept-ranges':'bytes','content-range':`bytes ${start}-${end}/${bytes.length}`},body:bytes.subarray(start,end+1)});}
+  return route.fulfill({contentType:'video/mp4',headers:{'accept-ranges':'bytes'},body:bytes});
+ });
+ await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
+ const video=page.getByLabel('Interview video');
+ await expect.poll(()=>video.evaluate((v:HTMLVideoElement)=>v.readyState)).toBeGreaterThanOrEqual(1);
+ expect(requests).toBeGreaterThanOrEqual(2);
+ await video.evaluate((v:HTMLVideoElement)=>{v.pause();v.currentTime=5;});
+ await expect.poll(()=>video.evaluate((v:HTMLVideoElement)=>v.currentTime)).toBeGreaterThanOrEqual(5);
+ await page.getByRole('button',{name:'Refresh video'}).click();
+ await expect.poll(()=>video.evaluate((v:HTMLVideoElement)=>v.currentTime)).toBeGreaterThanOrEqual(5);
+ await expect.poll(()=>video.evaluate((v:HTMLVideoElement)=>v.error)).toBeNull();
+});
