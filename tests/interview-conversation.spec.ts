@@ -6,6 +6,40 @@ async function interview(page: Page) {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
       window.conversationAudit = {
+        async microphone() {
+          const context = new AudioContext();
+          const destination = context.createMediaStreamDestination();
+          const tone = context.createOscillator(); tone.connect(destination); tone.start();
+          userMediaStream = destination.stream;
+          audioContext = new AudioContext();
+          const sent = [];
+          ws = {readyState:WebSocket.OPEN, send:data => sent.push(data)};
+          interviewHasStarted = true; proctoringActive = false; micMuted = false; aiSpeaking = false;
+          await startMediaCapture();
+          micProcessor.port.onmessage({data:new Float32Array([.2,.1])});
+          const practicing = sent.length;
+          aiSpeaking = true; micProcessor.port.onmessage({data:new Float32Array([.2])});
+          const duringQuestion = sent.length;
+          aiSpeaking = false; micMuted = true; micProcessor.port.onmessage({data:new Float32Array([.2])});
+          const muted = sent.length;
+          micMuted = false;
+          const old = micCaptureSource;
+          navigator.mediaDevices.getUserMedia = async () => {
+            const d = context.createMediaStreamDestination(); tone.connect(d); return d.stream;
+          };
+          const switched = await attachDeviceTrack('audio','selected-mic');
+          const reconnected = old !== micCaptureSource;
+          micProcessor.disconnect(); await audioContext.close(); await context.close(); ws = null;
+          return {practicing,duringQuestion,muted,switched,reconnected};
+        },
+        async devices() {
+          navigator.mediaDevices.enumerateDevices = async () => [
+            {kind:'audioinput',deviceId:'default',label:'Default microphone'},
+            {kind:'audioinput',deviceId:'usb',label:'USB microphone'}];
+          await populateDeviceSelects(); const initial = micSelectEl.value;
+          micSelectEl.value='usb'; await populateDeviceSelects();
+          return {initial,selected:micSelectEl.value,options:Array.from(micSelectEl.options).map(x=>x.text)};
+        },
         async report(report) {
           currentSessionId = 'session-1';
           document.getElementById('prejoin-screen').style.display = 'none';
@@ -89,3 +123,22 @@ for (const [width, height] of [[1280, 720], [640, 480], [720, 1280]]) {
     await expect(page.locator('#lobby-video')).toHaveCSS('object-fit', 'contain');
   });
 }
+
+
+test('practice microphone sends PCM without proctoring and switches its audio source', async ({page}) => {
+  await interview(page);
+  const result = await page.evaluate(() => (window as any).conversationAudit.microphone());
+  expect(result.practicing).toBeGreaterThan(0);
+  expect(result.duringQuestion).toBe(result.practicing);
+  expect(result.muted).toBe(result.practicing);
+  expect(result.switched).toBe(true);
+  expect(result.reconnected).toBe(true);
+});
+
+test('microphone list defaults to system device and preserves available selection', async ({page}) => {
+  await interview(page);
+  const result = await page.evaluate(() => (window as any).conversationAudit.devices());
+  expect(result.initial).toBe('');
+  expect(result.selected).toBe('usb');
+  expect(result.options).toContain('USB microphone');
+});

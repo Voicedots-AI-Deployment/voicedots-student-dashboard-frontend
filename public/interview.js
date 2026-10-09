@@ -173,6 +173,9 @@ let recordingStopTask = null;
 let userMediaStream = null;
 let screenStream = null;
 let micProcessor = null;
+let micCaptureSource = null;
+let micCaptureDestination = null;
+let deviceSwitchGeneration = { audio: 0, video: 0 };
 let micAnalyser = null;
 let micAnimId = null;
 let micLevelDetected = false;
@@ -891,12 +894,13 @@ function setupDeviceMonitoring() {
     if (!preflightStarted) return;
     const { cams, mics } = await populateDeviceSelects();
     if (!hasLiveTrack("video") && cams.length) await attachDeviceTrack("video", cams[0].deviceId);
-    if (!hasLiveTrack("audio") && mics.length) await attachDeviceTrack("audio", mics[0].deviceId);
+    if (!hasLiveTrack("audio") && mics.length) await attachDeviceTrack("audio", micSelectEl?.value || "");
     updatePrejoinReadiness();
   });
 }
 
 async function attachDeviceTrack(kind, deviceId) {
+  const generation = ++deviceSwitchGeneration[kind];
   try {
     const constraints = kind === "video"
       ? { video: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }
@@ -904,7 +908,7 @@ async function attachDeviceTrack(kind, deviceId) {
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = kind === "video" ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
     if (!newTrack) return false;
-    if (preflightCancelled) { newStream.getTracks().forEach(track => track.stop()); return false; }
+    if (preflightCancelled || generation !== deviceSwitchGeneration[kind]) { newStream.getTracks().forEach(track => track.stop()); return false; }
     if (!userMediaStream) userMediaStream = new MediaStream();
     const oldTracks = kind === "video" ? userMediaStream.getVideoTracks() : userMediaStream.getAudioTracks();
     oldTracks.forEach((track) => { userMediaStream.removeTrack(track); track.stop(); });
@@ -912,8 +916,10 @@ async function attachDeviceTrack(kind, deviceId) {
     bindMediaTrackEnded(newTrack);
     if (kind === "video") {
       cameraAnalysisPassing = false;
-      preflightChecks.identity = "pending";
-      photoVerifier.invalidate();
+      if (!interviewHasStarted || proctoringActive) {
+        preflightChecks.identity = "pending";
+        photoVerifier.invalidate();
+      }
       if (lobbyVideoEl) lobbyVideoEl.srcObject = userMediaStream;
       if (candidateVideoEl) candidateVideoEl.srcObject = userMediaStream;
       if (camErrorEl) camErrorEl.style.display = "none";
@@ -922,6 +928,12 @@ async function attachDeviceTrack(kind, deviceId) {
         ws.send(JSON.stringify({ type: "required_media_state", media: "camera", state: "restored" }));
       }
     } else {
+      if (audioContext && micProcessor) {
+        micCaptureSource?.disconnect();
+        micCaptureSource = audioContext.createMediaStreamSource(new MediaStream([newTrack]));
+        micCaptureSource.connect(micProcessor);
+        if (micCaptureDestination) micCaptureSource.connect(micCaptureDestination);
+      }
       micLevelDetected = false;
       micSignalDetected = false;
       if (micErrorEl) micErrorEl.style.display = "none";
@@ -936,6 +948,20 @@ async function attachDeviceTrack(kind, deviceId) {
     console.warn(`Could not attach ${kind} device:`, err);
     return false;
   }
+}
+
+for (const [select, kind, errorEl] of [[micSelectEl, "audio", micErrorEl], [camSelectEl, "video", camErrorEl]]) {
+  select?.addEventListener("change", async () => {
+    select.disabled = true;
+    preflightStatus(`Connecting selected ${kind === "audio" ? "microphone" : "camera"}…`);
+    const changed = await attachDeviceTrack(kind, select.value);
+    select.disabled = false;
+    if (!changed) showPrejoinError(errorEl, "Could not connect this device. Your previous device remains active. Choose another device or retry.");
+    else {
+      preflightStatus("Device connected.");
+      if (kind === "video" && !interviewHasStarted) void retryPreflight("identity");
+    }
+  });
 }
 
 async function initCameraCheck() {
@@ -1547,7 +1573,7 @@ async function startCameraAnalysis() {
   // person whose smaller or turned-away face is not recognizable.
   await Promise.allSettled([loadFaceDetector(), loadPersonDetector()]);
   const tick = async () => {
-    if (interviewHasStarted && !proctoringActive) return;
+    if (preflightCancelled || sessionCompletedCleanly || (interviewHasStarted && !proctoringActive)) { cameraAnalysisStarted = false; return; }
     try { await analyzeCameraFrame(); } catch (error) { console.warn("Camera analysis frame failed.", error); }
     setTimeout(tick, 800);
   };
@@ -2032,8 +2058,10 @@ async function startMediaCapture() {
   // fixed-size Float32Array chunks; this callback just converts to 16-bit
   // PCM and sends it, same output contract to the backend as before.
   await audioContext.audioWorklet.addModule("pcm-worklet-processor.js");
-  const micSource = audioContext.createMediaStreamSource(userMediaStream);
+  const micSource = audioContext.createMediaStreamSource(new MediaStream(userMediaStream.getAudioTracks()));
+  micCaptureSource = micSource;
   const micRecorderDestination = audioContext.createMediaStreamDestination();
+  micCaptureDestination = micRecorderDestination;
   micSource.connect(micRecorderDestination);
   recordingMicStream = micRecorderDestination.stream;
   if (recordingAudioDestination) {
@@ -2047,7 +2075,7 @@ async function startMediaCapture() {
     // aiSpeaking gate is defense-in-depth alongside the server-side
     // _tts_active gate (session.py _pump_browser_in) — belt and braces,
     // not a replacement for it.
-    if (!ws || ws.readyState !== WebSocket.OPEN || !proctoringActive || micMuted || aiSpeaking) return;
+    if (!ws || ws.readyState !== WebSocket.OPEN || !interviewHasStarted || micMuted || aiSpeaking) return;
     const pcmData = floatTo16BitPCM(e.data);
     ws.send(pcmData.buffer);
   };
@@ -2090,7 +2118,10 @@ function schedulePCMChunk(pcmBytes, epoch = currentAudioEpoch) {
   if (!schedulePCMChunk._lipEpochs.has(epoch)) {
     schedulePCMChunk._lipEpochs.add(epoch);
     setTimeout(() => {
-      if (epoch === currentAudioEpoch && aiSpeaking) setActivePanelTalking(true);
+      if (epoch === currentAudioEpoch && aiSpeaking) {
+        setActivePanelTalking(true);
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "playback_started", audio_epoch: epoch }));
+      }
     }, startsInMs);
   }
   source.start(playbackTime);
@@ -2539,6 +2570,7 @@ function handleControlMessage(payload) {
       lastPersonDetectionAt = 0;
       phoneEvidence = null; phoneDetected = false; lastPhoneDetectedAt = 0; cameraReminderTimes = {};
       if (proctoringActive) photoVerifier.start();
+      else { photoVerifier.stop(); const livePhotoStatus = document.getElementById("call-photo-status"); if (livePhotoStatus) livePhotoStatus.hidden = true; }
       _flushPendingIntegrityEvents();
       void startInterviewRecording();
       break;

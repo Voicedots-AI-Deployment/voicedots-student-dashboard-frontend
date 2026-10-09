@@ -36,7 +36,7 @@ for (const round of [1, 2, 3, 4]) {
     let state = await page.evaluate(() => (window as any).voiceAudit.state());
     expect(state.rates).toEqual([24000]);
     expect(state.speaking).toBe(true);
-    expect(state.acks).toEqual([]);
+    expect(state.acks).toEqual([{type:'playback_started',audio_epoch:round}]);
     expect(state.mouth.filter((m: any) => m.talking).map((m: any) => m.round)).toEqual([round]);
     await page.evaluate(round => (window as any).voiceAudit.stale(round + 100), round);
     expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([24000]);
@@ -44,7 +44,7 @@ for (const round of [1, 2, 3, 4]) {
     state = await page.evaluate(() => (window as any).voiceAudit.state());
     expect(state.speaking).toBe(false);
     expect(state.mouth.some((m: any) => m.talking)).toBe(false);
-    expect(state.acks).toEqual([{type:'playback_complete',audio_epoch:round}]);
+    expect(state.acks).toEqual([{type:'playback_started',audio_epoch:round},{type:'playback_complete',audio_epoch:round}]);
     // An unchanged Deepgram server can still omit sample_rate and play at 48 kHz.
     await page.evaluate(round => (window as any).voiceAudit.start(round, undefined), round);
     expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([48000]);
