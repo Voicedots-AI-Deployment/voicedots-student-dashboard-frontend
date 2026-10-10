@@ -524,6 +524,7 @@ test("resume clarification is saved before continuing preparation", async ({
             name: "Weather app",
             missing_fields: ["ownership"],
           },
+          {entry_id:"project-2",name:"AWS Cloud Quest",missing_fields:["how"]},
         ],
       },
     }),
@@ -545,6 +546,21 @@ test("resume clarification is saved before continuing preparation", async ({
   await page
     .getByLabel("What was your personal contribution?")
     .fill("I built the API and wrote integration tests.");
+  const panel = page.locator('.resume-clarification-panel');
+  const card = page.locator('.resume-clarification-card');
+  const desktop = await panel.boundingBox();
+  expect(desktop!.width).toBeGreaterThan(700);
+  expect((await card.first().locator('textarea').boundingBox())!.height).toBeGreaterThanOrEqual(160);
+  await page.getByLabel('What tools and methods did you use?').fill('AWS console and SQL for checking stored data.');
+  const firstCard = (await card.nth(0).boundingBox())!, secondCard = (await card.nth(1).boundingBox())!;
+  expect(secondCard.y - firstCard.y - firstCard.height).toBeGreaterThanOrEqual(24);
+  await page.screenshot({path:'/tmp/voicedots-clarification-desktop.png',fullPage:true});
+  await page.setViewportSize({width:390,height:844});
+  await expect(panel).toBeVisible();
+  expect((await panel.boundingBox())!.width).toBeLessThanOrEqual(390);
+  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
+  await expect(card.first().locator('textarea')).toHaveValue('I built the API and wrote integration tests.');
+  await page.screenshot({path:'/tmp/voicedots-clarification-mobile.png',fullPage:true});
   const amendment = page.waitForRequest("**/api/resume/sub-1/amendments");
   await page.getByRole("button", { name: "Save and continue" }).click();
   expect((await amendment).postDataJSON().answers[0].entry_id).toBe(
