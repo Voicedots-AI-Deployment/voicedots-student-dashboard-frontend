@@ -207,6 +207,16 @@ export function Calendar() {
     if (event.kind === "coach") return "Open session";
     return event.personal?.meeting_url ? "Open meeting" : "View event";
   }
+  async function completeCoachEvent(event: CalendarEvent) {
+    if ((!event.session_id&&!event.cycle_id)||!event.plan_id||saving) return;
+    setSaving(true); setMutationError("");
+    try {
+      await api(event.cycle_id?`/api/student/coach/training-cycles/${encodeURIComponent(event.cycle_id)}/complete`:`/api/student/coach/plans/${encodeURIComponent(event.plan_id)}/sessions/${encodeURIComponent(event.session_id!)}/complete`, {method:"POST"});
+      await coach.reload();
+      setDetail(current => current?.id === event.id ? {...current,status:"completed"} : current);
+    } catch (error) { setMutationError(error instanceof Error ? error.message : "Could not complete this lesson."); }
+    finally {setSaving(false);}
+  }
   function eventCard(event: CalendarEvent) {
     const result = event.kind === "placement" ? resultFor(event) : undefined;
     return <article className={`calendar-event-card ${event.kind}`} key={`${event.kind}-${event.id}`}>
@@ -223,6 +233,7 @@ export function Calendar() {
       </button>
       <div className="calendar-card-actions">
         <button type="button" className="calendar-card-action" onClick={() => eventPrimaryAction(event)}>{eventPrimaryActionLabel(event)}<ArrowRight size={14}/></button>
+        {event.kind === "coach" && event.plan_id && (event.session_id||event.cycle_id) && event.status !== "completed" && <button className="calendar-card-action" disabled={saving} onClick={()=>void completeCoachEvent(event)}>Mark as complete</button>}
         {result && <Link className="calendar-result-link" to={`/reports?submission=${encodeURIComponent(result.submission_id)}`}>View result</Link>}
         {event.kind === "personal" && <div className="calendar-menu-wrap">
           <button type="button" className="calendar-more-button" aria-label={`More actions for ${event.title}`} aria-expanded={menuId === event.id} onClick={() => setMenuId(menuId === event.id ? "" : event.id)}><MoreHorizontal size={18}/></button>
@@ -301,7 +312,7 @@ export function Calendar() {
     {detail && <Dialog labelledBy="calendar-event-detail-title" close={() => setDetail(null)} className="calendar-dialog calendar-detail-dialog">
       <header className="calendar-dialog-header"><div><span className={`calendar-kind ${detail.kind}`}>{categoryNames[detail.personal?.category || detail.kind]}</span><h2 id="calendar-event-detail-title">{detail.title}</h2><p>{detail.kind === "placement" ? detail.subtitle : detail.kind === "coach" ? detail.subtitle : "Personal event"}</p></div><button type="button" className="icon-button" aria-label="Close event details" onClick={() => setDetail(null)}><X size={18}/></button></header>
       <dl className="calendar-detail-list"><div><dt>Date</dt><dd>{shortDate(detail.date)}</dd></div><div><dt>Time</dt><dd>{timeRange(detail)}</dd></div>{detail.kind === "coach" && <div><dt>Status</dt><dd>{coachStatus(detail.status)}{detail.durationMinutes ? ` · ${detail.durationMinutes} minutes` : ""}</dd></div>}{detail.kind === "placement" && <div><dt>Interview status</dt><dd>{placementStatus(detail.status)}</dd></div>}{detail.location && <div><dt>Location</dt><dd>{detail.location}</dd></div>}{detail.kind === "coach" && !detail.location && <div><dt>Location</dt><dd>Online session</dd></div>}{detail.personal && <div><dt>Reminder</dt><dd>{detail.personal.reminder_minutes == null ? "None" : detail.personal.reminder_minutes === 1440 ? "1 day before" : detail.personal.reminder_minutes >= 60 ? `${detail.personal.reminder_minutes / 60} hour${detail.personal.reminder_minutes > 60 ? "s" : ""} before` : `${detail.personal.reminder_minutes} minutes before`}</dd></div>}{detail.personal?.meeting_url && <div><dt>Meeting link</dt><dd><a href={detail.personal.meeting_url} target="_blank" rel="noopener noreferrer">Open meeting link <ExternalLink size={14}/></a></dd></div>}<div className="description"><dt>Description</dt><dd>{eventDescription(detail) || "No notes added."}</dd></div></dl>
-      <footer className="calendar-dialog-actions">{detail.kind === "personal" ? <><button className="button secondary calendar-danger" onClick={() => { setDeleteTarget(detail.personal!); setDetail(null); }}>Delete</button><button className="button secondary" onClick={() => beginEdit(detail.personal!)}><Pencil size={15}/>Edit</button>{detail.personal?.meeting_url && <button className="button primary" onClick={() => eventPrimaryAction(detail)}>Open meeting<ArrowRight size={15}/></button>}</> : <><button className="button secondary" onClick={() => setDetail(null)}>Close details</button><button className="button primary" onClick={() => eventPrimaryAction(detail)}>{eventActionLabel(detail)}<ArrowRight size={15}/></button></>}</footer>
+      {mutationError&&<p role="alert">{mutationError}</p>}<footer className="calendar-dialog-actions">{detail.kind === "coach"&&(detail.session_id||detail.cycle_id)&&detail.status!=="completed"&&<button className="button secondary" disabled={saving} onClick={()=>void completeCoachEvent(detail)}>Mark as complete</button>}{detail.kind === "personal" ? <><button className="button secondary calendar-danger" onClick={() => { setDeleteTarget(detail.personal!); setDetail(null); }}>Delete</button><button className="button secondary" onClick={() => beginEdit(detail.personal!)}><Pencil size={15}/>Edit</button>{detail.personal?.meeting_url && <button className="button primary" onClick={() => eventPrimaryAction(detail)}>Open meeting<ArrowRight size={15}/></button>}</> : <><button className="button secondary" onClick={() => setDetail(null)}>Close details</button><button className="button primary" onClick={() => eventPrimaryAction(detail)}>{eventActionLabel(detail)}<ArrowRight size={15}/></button></>}</footer>
     </Dialog>}
 
     {deleteTarget && <Dialog labelledBy="calendar-delete-title" close={() => setDeleteTarget(null)} className="calendar-dialog calendar-delete-dialog">
