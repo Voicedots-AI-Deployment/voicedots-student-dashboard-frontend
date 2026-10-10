@@ -1286,21 +1286,29 @@ test("Calendar opens the exact persisted AI Coach session from its event", async
   };
   await page.route("**/api/student/coach/overview", route => route.fulfill({json:{upcoming_drives:[],completed_placements:[],plans:[plan],main_resume:{submission_id:"resume-calendar",label:"Main Resume"}}}));
   await page.route("**/api/student/drives", route => route.fulfill({ json: [] }));
+  let completed = false;
+  await page.route(`**/api/student/coach/plans/${plan.id}/sessions/${sessionId}/complete`,route=>{completed=true;return route.fulfill({json:{id:sessionId,stage:"teaching",lesson_completed_at:"2026-10-10T10:00:00Z"}})});
   await page.route("**/api/student/coach/calendar", route => route.fulfill({ json: { events: [{
     id: "calendar-event-1", date: "2027-01-01", title: "Database indexes",
-    subtitle: "Example Company · Backend Engineer", kind: "coach", plan_id: plan.id, session_id: sessionId,
+    status: completed ? "completed" : "scheduled", subtitle: "Example Company · Backend Engineer", kind: "coach", plan_id: plan.id, session_id: sessionId,
   }] } }));
   await page.route(`**/api/student/coach/plans/${plan.id}`, route => route.fulfill({ json: plan }));
   await page.route(`**/api/student/coach/plans/${plan.id}/sessions/${sessionId}`, route => route.fulfill({ json: {
-    id: sessionId, stage: "teaching", skill: "Database indexes", learning_objective: "Explain index tradeoffs",
+    id: sessionId, stage: "completed", lesson_completed_at:"2026-10-10T10:00:00Z", skill: "Database indexes", learning_objective: "Explain index tradeoffs",
   } }));
 
   await page.goto("/calendar");
   await page.getByRole("button", { name: "View Database indexes" }).click();
+  await page.getByRole("dialog").getByRole("button", { name: "Mark as complete" }).click();
+  await expect(page.getByRole("dialog").getByText("Completed · 30 minutes",{exact:true})).toBeVisible();
+  expect(completed).toBe(true);
+  await expect(page.getByRole("dialog").getByRole("button", { name: "Mark as complete" })).toHaveCount(0);
   await page.getByRole("dialog").getByRole("button", { name: "Open session" }).click();
   await expect(page).toHaveURL(new RegExp(`/coach\\?plan=${plan.id}&session=${sessionId}&stage=coach`));
   await expect(page.locator(".coach-lesson-identity").getByRole("heading", { name: "Database indexes" })).toBeVisible();
   await expect(page.getByText("Explain index tradeoffs", {exact:true}).first()).toBeVisible();
+  await expect(page.getByRole("button",{name:"Connect with Neha"})).toBeEnabled();
+  await expect(page.getByText("Lesson completed · You can revisit this session anytime.")).toBeVisible();
 });
 
 test("Calendar opens the selected placement and displays Coach time in IST", async ({ page }) => {
@@ -1639,12 +1647,13 @@ test('AI Coach blocks premature teaching checks and gives a useful next step aft
  await mockStudent(page);
  const planId='teaching-guard-plan',sessionId='teaching-guard-session';
  const plan={id:planId,company_name:'Example Company',role_title:'Backend Engineer',target_date:'2026-10-01',plan:{summary:'Prepare',goal:'Explain the fundamentals',priority_topics:[],daily_roadmap:[{day:1,session_id:sessionId,title:'Database indexes',focus:'Index tradeoffs',activities:['Explain an index'],success_check:'Describe index tradeoffs'}],discussion_starters:[]},messages:[{id:'m1',role:'student',content:'An index speeds up lookup.'}]};
- let studentTurns=1;
+ let studentTurns=1,manualCompleted=false;
  await page.route('**/api/student/coach/overview',route=>route.fulfill({json:{upcoming_drives:[],plans:[plan],completed_drive_recommendation:null}}));
  await page.route('**/api/student/coach/plans**',async route=>{
   const url=new URL(route.request().url()),path=url.pathname,method=route.request().method();
+  if(path.endsWith('/complete')&&method==='POST'){manualCompleted=true;return route.fulfill({json:{id:sessionId,stage:'teaching',lesson_completed_at:'2026-10-10'}})}
   if(path.endsWith('/messages')&&method==='POST'){studentTurns++;return route.fulfill({json:{ok:true}})}
-  if(path.endsWith('/sessions/'+sessionId)&&method==='GET')return route.fulfill({json:{id:sessionId,stage:'teaching',skill:'Database indexes',learning_objective:'Explain index tradeoffs'}});
+  if(path.endsWith('/sessions/'+sessionId)&&method==='GET')return route.fulfill({json:{id:sessionId,stage:'teaching',...(manualCompleted?{lesson_completed_at:'2026-10-10'}:{}),skill:'Database indexes',learning_objective:'Explain index tradeoffs'}});
   if(path.endsWith('/sessions/'+sessionId+'/teaching')&&method==='POST')return route.fulfill({status:409,json:{detail:'The saved conversation does not yet cover the learning objective. Add another example and try again.'}});
   if(path==='/api/student/coach/plans'&&method==='GET')return route.fulfill({json:{plans:[plan]}});
   if(path==='/api/student/coach/plans/'+planId&&url.searchParams.has('session_id'))return route.fulfill({json:{...plan,messages:Array.from({length:studentTurns},(_,i)=>({id:'m'+i,role:'student',content:i?'An index improves lookup but has write and storage costs.':'An index speeds up lookup.'}))}});
@@ -1658,6 +1667,7 @@ test('AI Coach blocks premature teaching checks and gives a useful next step aft
  await expect(page.getByRole('alert')).toContainText('does not yet cover the learning objective');
  await expect(complete).toBeDisabled();
  await expect(page.getByText('Add a clear example or explanation in the chat, then try saving again.')).toBeVisible();
+ await page.getByRole('button',{name:'Mark as complete',exact:true}).click();await expect(page.getByText('Lesson completed · You can revisit this session anytime.')).toBeVisible();await expect(page.getByRole('button',{name:'Connect with Neha'})).toBeEnabled();expect(manualCompleted).toBe(true);
 });
 
 test('AI Coach validation lets a student skip a task without claiming ability',async({page})=>{
@@ -1854,12 +1864,12 @@ test('Coach skill comparison retries failed extraction and uses the full row for
 });
 
 test('Coach diagnostic saves typed answers, exposes skip before voice, and resumes unanswered tasks',async({page})=>{
- await mockStudent(page);const diagnostic:any={id:'d',status:'in_progress',tasks_json:[{task_id:'inactive',active:false,sub_skill:'Old',format:'scenario',question:'Old task'},{task_id:'one',sub_skill:'Python',format:'scenario',question:'Explain error handling.'},{task_id:'two',sub_skill:'SQL',format:'scenario',question:'Explain joins.'}],answers_json:{}};
+ await mockStudent(page);const diagnostic:any={id:'d',status:'in_progress',tasks_json:[{task_id:'inactive',active:false,sub_skill:'Old',format:'scenario',question:'Old task'},{task_id:'one',sub_skill:'Python',format:'scenario',question:'Explain error handling.',input_format:'hidden input',output_format:'hidden output',constraints:['hidden constraint'],schema:'hidden schema'},{task_id:'two',sub_skill:'SQL',format:'scenario',question:'Explain joins.'}],answers_json:{}};
  await page.route('**/api/student/coach/overview',route=>route.fulfill({json:{upcoming_drives:[{drive_id:'answer',company_name:'Answer Co',role_title:'Engineer'}],completed_placements:[],plans:[],main_resume:{submission_id:'r',label:'Main Resume'}}}));
  await page.route('**/api/student/coach/drives/answer/context',route=>route.fulfill({json:{company_name:'Answer Co',role_title:'Engineer',job_description:'Build reliable Python APIs and use SQL.',preparation_mode:'upcoming_placement'}}));
  await page.route('**/api/student/coach/drives/answer/skill-match**',route=>route.fulfill({json:{company_name:'Answer Co',role_title:'Engineer',groups:{resume_match:['Python'],related_evidence:[],no_resume_evidence:['SQL']},language_options:[],language_is_alternative:false}}));
  await page.route('**/api/student/coach/drives/answer/diagnostic**',route=>{if(route.request().method()==='PUT')Object.assign(diagnostic.answers_json,route.request().postDataJSON().answers);return route.fulfill({json:diagnostic})});
- await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Question 1 of 2')).toBeVisible();await page.getByLabel('Your answer',{exact:true}).fill('Catch specific exceptions, log context and return a safe error.');await page.getByRole('button',{name:'Save answer',exact:true}).click();await expect(page.getByText('Question 2 of 2')).toBeVisible();expect(diagnostic.answers_json.one).toContain('specific exceptions');
+ await page.goto('/coach');await page.getByRole('button',{name:'Build preparation plan'}).click();await page.getByRole('button',{name:'Continue to validate skills'}).click();await expect(page.getByText('Question 1 of 2')).toBeVisible();await expect(page.getByText('hidden input')).toHaveCount(0);await expect(page.getByText('hidden output')).toHaveCount(0);await expect(page.getByText('hidden constraint')).toHaveCount(0);await expect(page.getByText('hidden schema')).toHaveCount(0);await page.getByLabel('Your answer',{exact:true}).fill('Draft preserved');await page.getByRole('button',{name:'Next',exact:true}).click();await expect(page.getByText('Question 2 of 2')).toBeVisible();await page.getByRole('button',{name:'Back',exact:true}).click();await expect(page.getByLabel('Your answer',{exact:true})).toHaveValue('Draft preserved');await page.getByLabel('Your answer',{exact:true}).fill('Catch specific exceptions, log context and return a safe error.');await page.getByRole('button',{name:'Save answer',exact:true}).click();await expect(page.getByText('Question 2 of 2')).toBeVisible();expect(diagnostic.answers_json.one).toContain('specific exceptions');
  await page.getByRole('button',{name:'Voice answer',exact:true}).click();await expect(page.getByRole('button',{name:'Skip question',exact:true})).toBeEnabled();await page.getByRole('button',{name:'Skip question',exact:true}).click();await expect(page.getByText('You answered or skipped all 2 questions.')).toBeVisible();expect(diagnostic.answers_json.two).toBe('');
 });
 
