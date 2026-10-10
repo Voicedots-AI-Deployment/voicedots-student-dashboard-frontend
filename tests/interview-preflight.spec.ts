@@ -475,7 +475,7 @@ test("silent default microphone starts automatically without a device picker", a
  await expect.poll(()=>page.evaluate(()=>(window as any).starts),{timeout:15000}).toBe(1);
  await expect(page.locator("#pj-panel-2")).toBeHidden();
  const calls=await page.evaluate(()=>(window as any).mediaCalls);
- expect(calls).toHaveLength(1);expect(calls[0].audio.deviceId).toBeUndefined();
+ expect(calls).toHaveLength(1);expect(calls[0].audio.deviceId).toEqual({ideal:"default"});
 });
 
 test("setup and microphone recovery stay aligned on desktop and mobile",async({page})=>{

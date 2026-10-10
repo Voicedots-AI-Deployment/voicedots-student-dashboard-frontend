@@ -841,6 +841,7 @@ async function populateDeviceSelects() {
         ? (kind === "Microphone" ? '<option value="">System default microphone</option>' : "") + list.map((d, i) => `<option value="${d.deviceId}">${d.label || (kind + " " + (i + 1))}</option>`).join("")
         : `<option value="">No ${kind} found</option>`;
       if (current && list.some((d) => d.deviceId === current)) select.value = current;
+      else if (kind === "Microphone") select.value = "";
     };
     fill(camSelectEl, cams, "Camera");
     fill(micSelectEl, mics, "Microphone");
@@ -937,7 +938,7 @@ async function attachDeviceTrack(kind, deviceId) {
   try {
     const constraints = kind === "video"
       ? { video: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), width: { ideal: 1280 }, height: { ideal: 720 } }, audio: false }
-      : { audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : {}), echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } }, video: false };
+      : { audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : { deviceId: { ideal: "default" } }), echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } }, video: false };
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = kind === "video" ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
     if (!newTrack) return false;
@@ -1001,7 +1002,7 @@ async function initCameraCheck() {
   try {
     const result = await acquireMediaStream({
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
+      audio: { deviceId: { ideal: "default" }, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
     });
     if (preflightCancelled) { result.stream.getTracks().forEach(track => track.stop()); return; }
     userMediaStream = result.stream;
@@ -2124,7 +2125,7 @@ async function startMediaCapture() {
   if (!userMediaStream) {
     const result = await acquireMediaStream({
       video: { width: { ideal: 1280 }, height: { ideal: 720 } },
-      audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
+      audio: { deviceId: { ideal: "default" }, echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } },
     });
     userMediaStream = result.stream;
   }
