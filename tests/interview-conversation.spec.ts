@@ -7,6 +7,31 @@ async function interview(page: Page) {
     await route.fulfill({ response, body: await response.text() + `
       window.conversationAudit = {
         phone: updatePhoneEvidence,
+        async pendingCaptureAfterCompletion() {
+          const original=document.createElement('canvas').captureStream(10);
+          const replacement=document.createElement('canvas').captureStream(10);
+          userMediaStream=original;
+          let release;
+          navigator.mediaDevices.getUserMedia=()=>new Promise(resolve=>{release=resolve;});
+          const pending=attachDeviceTrack('video','replacement');
+          stopInterview();
+          release(replacement);
+          const attached=await pending;
+          return {attached,original:original.getVideoTracks()[0].readyState,replacement:replacement.getVideoTracks()[0].readyState,streamCleared:userMediaStream===null};
+        },
+        async finishRealRecorder() {
+          const canvas=document.createElement('canvas');canvas.width=320;canvas.height=240;
+          const stream=canvas.captureStream(10);userMediaStream=stream;
+          const recorder=new MediaRecorder(stream,{mimeType:'video/webm'});
+          const blobs=[];recorder.ondataavailable=event=>blobs.push(event.data);
+          const stopped=new Promise(resolve=>recorder.addEventListener('stop',resolve,{once:true}));
+          interviewRecorder=recorder;finalizePendingInterviewRecording=async()=>{};
+          recorder.start(50);canvas.getContext('2d').fillRect(0,0,320,240);
+          await new Promise(resolve=>setTimeout(resolve,200));
+          stopInterview();const immediate=stream.getVideoTracks()[0].readyState;
+          await stopped;
+          return {immediate,bytes:blobs.reduce((total,blob)=>total+blob.size,0),recorder:recorder.state};
+        },
         async finish(placement) {
           currentSessionId='finish-test'; interviewRecordingEnabled=placement;
           requiredInterviewRounds=1; completedRounds.add(0);
@@ -248,4 +273,16 @@ test('practice releases capture while its report request is still pending',async
   await page.route('**/evaluation**',()=>new Promise<void>(()=>{}));
   expect(await page.evaluate(()=>(window as any).conversationAudit.finish(false))).toBe('ended');
   await expect(page.locator('#report-screen')).toBeVisible();
+});
+
+
+test('a pending device recovery cannot restart camera capture after completion',async({page})=>{
+ await interview(page);
+ expect(await page.evaluate(()=>(window as any).conversationAudit.pendingCaptureAfterCompletion())).toEqual({attached:false,original:'ended',replacement:'ended',streamCleared:true});
+});
+
+test('completion stops camera immediately and retains the real recorder final buffered slice',async({page})=>{
+ await interview(page);
+ const result=await page.evaluate(()=>(window as any).conversationAudit.finishRealRecorder());
+ expect(result.immediate).toBe('ended');expect(result.recorder).toBe('inactive');expect(result.bytes).toBeGreaterThan(0);
 });

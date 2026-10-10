@@ -102,7 +102,7 @@ async function prepare(page: Page, failure = "") {
         currentSessionId = session;
         userMediaStream = stream;
         recordingAudioDestination = destination;
-        if (candidateVideoEl) { candidateVideoEl.srcObject = stream; void candidateVideoEl.play(); }
+        if (candidateVideoEl) { candidateVideoEl.srcObject = stream; void candidateVideoEl.play().catch(error => { if (error.name !== "AbortError") throw error; }); }
       };
       window.__testStartRecording = startInterviewRecording;
       window.__testStopRecording = stopInterviewRecording;

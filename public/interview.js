@@ -941,8 +941,8 @@ async function attachDeviceTrack(kind, deviceId) {
       : { audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : { deviceId: { ideal: "default" } }), echoCancellation: true, noiseSuppression: true, autoGainControl: true, channelCount: { ideal: 1 } }, video: false };
     const newStream = await navigator.mediaDevices.getUserMedia(constraints);
     const newTrack = kind === "video" ? newStream.getVideoTracks()[0] : newStream.getAudioTracks()[0];
-    if (!newTrack) return false;
-    if (preflightCancelled || generation !== deviceSwitchGeneration[kind]) { newStream.getTracks().forEach(track => track.stop()); return false; }
+    if (!newTrack) { newStream.getTracks().forEach(track=>track.stop()); return false; }
+    if (preflightCancelled || interviewStopRequested || generation !== deviceSwitchGeneration[kind]) { newStream.getTracks().forEach(track => track.stop()); return false; }
     if (!userMediaStream) userMediaStream = new MediaStream();
     const oldTracks = kind === "video" ? userMediaStream.getVideoTracks() : userMediaStream.getAudioTracks();
     oldTracks.forEach((track) => { userMediaStream.removeTrack(track); track.stop(); });
@@ -2215,10 +2215,12 @@ async function recoverMicrophoneCapture(force = false) {
         }
         if (!restored) throw new Error("Select a working microphone and retry.");
       }
+      if (interviewStopRequested || !audioContext) return;
       await Promise.race([audioContext.resume(), new Promise((_, reject) => setTimeout(() => reject(new Error("Click Retry microphone to resume microphone access.")), 4000))]);
+      if (interviewStopRequested || !audioContext) return;
       if (audioContext.state !== "running") throw new Error("Click Retry microphone to enable audio capture.");
       if (force || Date.now() - lastMicrophoneFrameAt > 3000) installMicrophoneProcessor();
-    } catch (error) { microphoneCaptureStatus(error.message || "Microphone audio is unavailable. Retry microphone."); }
+    } catch (error) { if (!interviewStopRequested) microphoneCaptureStatus(error.message || "Microphone audio is unavailable. Retry microphone."); }
   })().finally(() => { microphoneRecoveryTask = null; });
   return microphoneRecoveryTask;
 }
@@ -3096,6 +3098,10 @@ function stopInterview() {
   clearTimeout(initialConnectionTimer);
   photoVerifier.stop();
   interviewStopRequested = true;
+  preflightCancelled = true;
+  deviceSwitchGeneration.audio += 1;
+  deviceSwitchGeneration.video += 1;
+  stopMicLevelTest();
   if (reconnectTimer !== null) {
     clearTimeout(reconnectTimer);
     reconnectTimer = null;
@@ -3115,9 +3121,12 @@ function stopInterview() {
     micProcessor = null;
   }
   // Stop and finalize even an interrupted/early-ended placement recording.
-  // Do not release camera/audio tracks until MediaRecorder's final slice has
-  // been emitted; cleanup then runs while its saved chunks upload.
+  // Stop the recorder before releasing capture devices. Its final buffered
+  // slice can persist/upload after the live camera and microphone stop.
   void stopInterviewRecording(true, cleanupInterviewMedia);
+  // MediaRecorder.stop() has already queued its final buffered slice. Upload
+  // can continue without holding live camera/microphone permissions open.
+  cleanupInterviewMedia();
   stopScreenShareCapture();
   exitInterviewFullscreen();
 }
@@ -3141,6 +3150,8 @@ function cleanupInterviewMedia() {
     userMediaStream.getTracks().forEach(t => t.stop());
     userMediaStream = null;
   }
+  if (lobbyVideoEl) lobbyVideoEl.srcObject = null;
+  if (candidateVideoEl) candidateVideoEl.srcObject = null;
 }
 
 // ============================================================
@@ -3564,9 +3575,9 @@ async function showInterviewExperienceFeedback() {
     const commentLabel=document.createElement("label");commentLabel.textContent="What worked well, or what should we improve? (optional)";
     const comments=document.createElement("textarea");comments.name="comments";comments.maxLength=2000;comments.rows=3;comments.style.cssText="display:block;width:100%;box-sizing:border-box;margin-top:8px;padding:10px;background:#242232;color:#fff;border:1px solid #484256;border-radius:8px";commentLabel.appendChild(comments);form.appendChild(commentLabel);
     const status=document.createElement("p");status.setAttribute("role","status");form.appendChild(status);
-    const actions=document.createElement("div");actions.style.cssText="display:flex;gap:12px;justify-content:flex-end;margin-top:20px";
-    const skip=document.createElement("button");skip.type="button";skip.className="btn btn-secondary";skip.textContent="Skip feedback";
-    const submit=document.createElement("button");submit.type="submit";submit.className="btn btn-primary";submit.textContent="Submit feedback";
+    const actions=document.createElement("div");actions.style.cssText="display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-end;margin-top:20px;padding-top:8px";
+    const skip=document.createElement("button");skip.type="button";skip.className="pj-btn pj-btn-ghost";skip.textContent="Skip feedback";skip.style.minHeight="44px";
+    const submit=document.createElement("button");submit.type="submit";submit.className="pj-btn pj-btn-primary";submit.textContent="Submit feedback";submit.style.minHeight="44px";
     actions.append(skip,submit);form.appendChild(actions);overlay.appendChild(form);document.body.appendChild(overlay);skip.focus();
     skip.onclick=()=>{overlay.remove();void studentFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({skipped:true}),signal:AbortSignal.timeout(10000)}).catch(()=>{});};
     form.onsubmit=async event=>{

@@ -36,3 +36,16 @@ test('feedback waits for interview persistence and a failed submission can be sk
  await expect(page.getByRole('status').filter({hasText:'Retry or skip'})).toBeVisible();
  await page.getByRole('button',{name:'Skip feedback'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
 });
+
+
+test('feedback actions have styled accessible buttons on a narrow screen',async({page})=>{
+ await page.setViewportSize({width:390,height:844});
+ await page.route('**/experience-feedback',route=>route.fulfill({json:{submitted:false,questions}}));
+ await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
+ const submit=page.getByRole('button',{name:'Submit feedback',exact:true});
+ const skip=page.getByRole('button',{name:'Skip feedback'});
+ await submit.scrollIntoViewIfNeeded();
+ for(const button of [submit,skip]){const box=await button.boundingBox();expect(box!.height).toBeGreaterThanOrEqual(44);expect(box!.x).toBeGreaterThanOrEqual(0);expect(box!.x+box!.width).toBeLessThanOrEqual(390);}
+ expect(await submit.evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
+ await page.screenshot({path:'/root/voicedots/artifacts/interview-listening-20261010/feedback-buttons-mobile.png'});
+});
