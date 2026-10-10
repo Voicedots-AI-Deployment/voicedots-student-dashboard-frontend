@@ -8,7 +8,7 @@ for (const round of [1, 2, 3, 4]) {
       const response = await route.fetch();
       await route.fulfill({ response, body: await response.text() + `
         window.voiceAudit = {
-          start(round, rate) {
+          start(round, rate, finished=true) {
             window.voiceRates = []; window.voiceAcks = [];
             resetPlaybackQueue(); activePanelRound = round;
             playbackAudioContext = {currentTime:0, destination:{},
@@ -22,8 +22,10 @@ for (const round of [1, 2, 3, 4]) {
             ws = {readyState:WebSocket.OPEN,send(message){window.voiceAcks.push(JSON.parse(message));}};
             handleControlMessage({type:'tts_begin',audio_epoch:round,text:'Tell me about your project.',sample_rate:rate});
             schedulePCMChunk(new Int16Array(rate || 48000).fill(1000).buffer,round);
-            handleControlMessage({type:'tts_end',audio_epoch:round});
+            if(finished) handleControlMessage({type:'tts_end',audio_epoch:round});
           },
+          chunk(round,rate) {const packet=new ArrayBuffer(4+Math.floor(rate*.08)*2);new DataView(packet).setUint32(0,round,false);handleBinaryFrame(packet);},
+          end(round) {handleControlMessage({type:"tts_end",audio_epoch:round});},
           state() {return {speaking:aiSpeaking, mouth: [...panelAnimations].map(([round,c])=>({round,talking:c.visibleFrame!==c.idleFrame&&c.visibleFrame!==c.blinkFrame})), rates:window.voiceRates,acks:window.voiceAcks};},
           stale(epoch) {const packet=new ArrayBuffer(48004);new DataView(packet).setUint32(0,epoch,false);handleBinaryFrame(packet);}
         };
@@ -32,15 +34,17 @@ for (const round of [1, 2, 3, 4]) {
     await page.goto('/interview.html?id=voice-audit');
     await expect.poll(() => page.evaluate(() => !!(window as any).voiceAudit)).toBe(true);
     await page.clock.install();
-    await page.evaluate(({round, rate}) => (window as any).voiceAudit.start(round, rate), {round, rate});
+    await page.evaluate(({round, rate}) => (window as any).voiceAudit.start(round, rate, false), {round, rate});
     await page.clock.runFor(100);
     let state = await page.evaluate(() => (window as any).voiceAudit.state());
     expect(state.rates).toEqual([rate]);
     expect(state.speaking).toBe(true);
     expect(state.acks).toEqual([{type:'playback_started',audio_epoch:round}]);
     expect(state.mouth.filter((m: any) => m.talking).map((m: any) => m.round)).toEqual([round]);
+    // Playback already starts while the provider is still generating audio.
+    await page.evaluate(({round,rate}) => {const h=(window as any).voiceAudit;h.chunk(round,rate);h.end(round);}, {round,rate});
     await page.evaluate(round => (window as any).voiceAudit.stale(round + 100), round);
-    expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([rate]);
+    expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([rate,rate]);
     await page.clock.runFor(1100);
     state = await page.evaluate(() => (window as any).voiceAudit.state());
     expect(state.speaking).toBe(false);

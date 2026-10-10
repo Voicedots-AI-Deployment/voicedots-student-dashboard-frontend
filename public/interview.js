@@ -1089,7 +1089,7 @@ async function loadFaceDetector() {
 // object detector so a body is still counted even with no face visible.
 async function createWorkerObjectDetector() {
   if (workerObjectFailed || !window.Worker || !window.createImageBitmap || !window.OffscreenCanvas) return null;
-  const worker = new Worker("/proctor-object-worker.js");
+  const worker = new Worker("/proctor-object-worker.js?v=cpu-int8-20261010");
   const pending = new Map();
   let sequence = 0;
   const fail = error => {
@@ -1274,12 +1274,21 @@ function distinctFaceLandmarks(faces) {
   return accepted;
 }
 
+let faceQualityRegion = null;
+function faceRegion(landmarks) {
+  if (!landmarks?.length) return null;
+  const xs=landmarks.map(p=>p.x),ys=landmarks.map(p=>p.y);
+  const x=Math.max(0,Math.min(...xs)),y=Math.max(0,Math.min(...ys));
+  const w=Math.min(1,Math.max(...xs))-x,h=Math.min(1,Math.max(...ys))-y;
+  return w>.05&&h>.05 ? {x,y,w,h} : null;
+}
 function frameLighting(video) {
   const canvas = frameLighting.canvas || (frameLighting.canvas = document.createElement("canvas"));
   canvas.width = 160;
   canvas.height = 90;
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(video, video.videoWidth*.25, video.videoHeight*.15, video.videoWidth*.5, video.videoHeight*.7, 0, 0, canvas.width, canvas.height);
+  const r=faceQualityRegion || {x:.25,y:.15,w:.5,h:.7};
+  context.drawImage(video, video.videoWidth*r.x, video.videoHeight*r.y, video.videoWidth*r.w, video.videoHeight*r.h, 0, 0, canvas.width, canvas.height);
   const pixels = context.getImageData(0, 0, canvas.width, canvas.height).data;
   let total = 0;
   let samples = 0;
@@ -1294,7 +1303,8 @@ function frameSharpness(video) {
   const canvas = frameSharpness.canvas || (frameSharpness.canvas = document.createElement("canvas"));
   canvas.width = canvas.height = 160;
   const context = canvas.getContext("2d", { willReadFrequently: true });
-  context.drawImage(video, video.videoWidth*.25, video.videoHeight*.15, video.videoWidth*.5, video.videoHeight*.7, 0, 0, 160, 160);
+  const r=faceQualityRegion || {x:.25,y:.15,w:.5,h:.7};
+  context.drawImage(video, video.videoWidth*r.x, video.videoHeight*r.y, video.videoWidth*r.w, video.videoHeight*r.h, 0, 0, 160, 160);
   const pixels = context.getImageData(0, 0, 160, 160).data;
   const gray = index => pixels[index*4]*.2126 + pixels[index*4+1]*.7152 + pixels[index*4+2]*.0722;
   let sum=0, squares=0, count=0;
@@ -1326,8 +1336,11 @@ function updatePhoneEvidence(detections, corroborating, now) {
   const full = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
   const crop = corroborating.find((box, index) => Number(box.confidence) >= .75 &&
     corroborating.some((other, otherIndex) => index !== otherIndex && Number(other.confidence) >= .75 && boxIoU(box, other) >= .3));
-  const box = full?.boundingBox || crop;
-  const confidence = full ? Number(full.categories[0].score) : Number(crop?.confidence);
+  // A large, confident full-frame phone can be confirmed over time even
+  // when zooming cuts it off. Crops are useful, not a mandatory second model.
+  const direct = strong.find(d => Number(d.categories?.[0]?.score) >= .85);
+  const box = full?.boundingBox || crop || direct?.boundingBox;
+  const confidence = full ? Number(full.categories[0].score) : Number(crop?.confidence ?? direct?.categories?.[0]?.score);
   if (!box) { phoneEvidence = null; return false; }
   if (!phoneEvidence || now - phoneEvidence.last > 8000 || boxIoU(phoneEvidence.box, box) < .2) {
     phoneEvidence = {since:now,last:now,count:1,box,confidence};
@@ -1372,6 +1385,26 @@ async function analyzeCameraFrame() {
     void loadFaceDetector();
   }
   if (!objectDetector && !objectDetectorUnavailable) void loadPersonDetector();
+  let landmarks = null;
+  if (faceLandmarker) {
+    const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
+    const faces = distinctFaceLandmarks(result.faceLandmarks || []);
+    faceCountDetected = faces.length;
+    landmarks = faces[0] || null;
+  } else if (nativeFaceDetector) {
+    const faces = await nativeFaceDetector.detect(lobbyVideoEl);
+    const distinct = [];
+    for (const face of faces) {
+      const r = face.boundingBox;
+      const box = r && {originX:r.x, originY:r.y, width:r.width, height:r.height};
+      if (!box || !distinct.some(known => known && boxIoU(box, known) >= .5)) distinct.push(box);
+    }
+    faceCountDetected = distinct.length;
+  } else {
+    faceCountDetected = 0;
+  }
+
+  faceQualityRegion = faceRegion(landmarks);
   const luminance = frameLighting(lobbyVideoEl);
   lightingPassing = luminance >= 40 && luminance <= 235;
   setVisionCheck(
@@ -1405,31 +1438,15 @@ async function analyzeCameraFrame() {
     delete lastVisionWarningAt.candidate_not_visible;
     delete lastVisionWarningAt.gaze_off_camera;
   }
-  let landmarks = null;
-  if (faceLandmarker) {
-    const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
-    const faces = distinctFaceLandmarks(result.faceLandmarks || []);
-    faceCountDetected = faces.length;
-    landmarks = faces[0] || null;
-  } else if (nativeFaceDetector) {
-    const faces = await nativeFaceDetector.detect(lobbyVideoEl);
-    const distinct = [];
-    for (const face of faces) {
-      const r = face.boundingBox;
-      const box = r && {originX:r.x, originY:r.y, width:r.width, height:r.height};
-      if (!box || !distinct.some(known => known && boxIoU(box, known) >= .5)) distinct.push(box);
-    }
-    faceCountDetected = distinct.length;
-  } else {
-    faceCountDetected = 0;
-  }
 
   // Face detection alone misses a person whose back/side is turned to the
   // camera (no eyes/nose/mouth visible). The person/object detector counts
   // bodies instead of faces, so it still catches that case; take whichever
   // signal saw more people this frame.
   let now = Date.now();
-  if (objectDetector && now - lastPersonDetectionAt >= PERSON_DETECTION_INTERVAL_MS) {
+  const objectCooldown=Math.min(2000, Math.max(PERSON_DETECTION_INTERVAL_MS, (analyzeCameraFrame.lastInferenceMs || 0)*2));
+  if (objectDetector && now - lastPersonDetectionAt >= objectCooldown) {
+    const inferenceStarted=performance.now();
     // Every crop uses the same captured frame. Asynchronous inference must not
     // count a moving person twice by comparing snapshots from different times.
     const objectFrame = analyzeCameraFrame.objectFrame || (analyzeCameraFrame.objectFrame = document.createElement("canvas"));
@@ -1462,7 +1479,8 @@ async function analyzeCameraFrame() {
     const region = personCropToggle === 0
       ? { x: 0, y: 0, w: 0.55, h: 1 }
       : { x: 0.45, y: 0, w: 0.55, h: 1 };
-    const crop = await cropDetectPersons(objectFrame, region);
+    const fullPhoneVisible=phoneDetections.some(d=>Number(d.categories?.[0]?.score)>=PHONE_EVIDENCE_MIN_SCORE);
+    const crop = fullPhoneVisible && faceCountDetected <= 1 ? null : await cropDetectPersons(objectFrame, region);
     if (crop) {
       for (const det of crop.detections) {
         const category = (det.categories || [])[0]?.categoryName;
@@ -1481,6 +1499,7 @@ async function analyzeCameraFrame() {
     for (const det of phoneCrop?.detections || []) {
       if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= .65) corroboratingPhones.push({...translateCropBox(det.boundingBox, phoneCrop), confidence: Number(det.categories[0].score)});
     }
+    analyzeCameraFrame.lastInferenceMs=performance.now()-inferenceStarted;
     now = Date.now();
     lastPersonDetectionAt = now;
     phoneDetected = updatePhoneEvidence(phoneDetections, corroboratingPhones, now);
@@ -1584,9 +1603,9 @@ async function analyzeCameraFrame() {
     // Body/crop detections can mistake furniture or clothing for a person.
     // Preserve them for review; misconduct requires sustained face evidence
     // corroborated by two confident, fresh body detections.
-    if ((faceCountDetected === 1 && personBoxCountDetected > 1) || (faceCountDetected > 1 && !multiplePeopleCorroborated(now))) {
+    if (faceCountDetected > 1 && !multiplePeopleCorroborated(now)) {
       warnVisionSignal("multiple_people_unconfirmed", "The camera check is uncertain. Keep your face clearly visible. This is not a misconduct warning.", { face_count: faceCountDetected, body_count: personBoxCountDetected });
-    } else clearVisionSignal("multiple_people_unconfirmed", faceCountDetected === 1 && personBoxCountDetected <= 1, now);
+    } else clearVisionSignal("multiple_people_unconfirmed", faceCountDetected === 1, now);
     multipleFaceSince = _trackSince(multipleFaceSince, !visionCheckUnavailable && multiplePeopleCorroborated(now), now);
     if (multipleFaceSince !== null) {
       const ms = now - multipleFaceSince;
@@ -2866,6 +2885,10 @@ function handleControlMessage(payload) {
       if (rndStatus) rndStatus.textContent = "Connected (Live)";
       if (aiRoleEl) aiRoleEl.textContent = currentAgentRole;
       showIntegrityNotice("Screen sharing restored. The interview will continue.");
+      break;
+
+    case "capture_error":
+      showFatalError(payload.message || "Speech recognition disconnected. Please reconnect the interview.");
       break;
 
     case "error":

@@ -7,10 +7,12 @@ self.onmessage = async ({data}) => {
       const vision = await import("/vendor/mediapipe/vision_bundle.mjs");
       const fileset = await vision.FilesetResolver.forVisionTasks("/vendor/mediapipe/wasm");
       let failure;
-      for (const delegate of ["GPU", "CPU"]) {
+      // Quantized CPU inference avoids silent GPU-delegate misses and uses
+      // substantially less model memory than the float32 Lite2 asset.
+      for (const modelAssetPath of ["/vendor/mediapipe/efficientdet_lite2_int8.tflite", "/vendor/mediapipe/efficientdet_lite2.tflite"]) {
         try {
           detector = await vision.ObjectDetector.createFromOptions(fileset, {
-            baseOptions: {modelAssetPath: "/vendor/mediapipe/efficientdet_lite2.tflite", delegate},
+            baseOptions: {modelAssetPath, delegate: "CPU"},
             runningMode: "VIDEO", maxResults: 20, scoreThreshold: .08,
             categoryAllowlist: ["person", "cell phone"],
           });

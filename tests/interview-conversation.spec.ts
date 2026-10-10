@@ -6,7 +6,7 @@ async function interview(page: Page) {
     const response = await route.fetch();
     await route.fulfill({ response, body: await response.text() + `
       window.conversationAudit = {
-        phone: updatePhoneEvidence,
+        phone: updatePhoneEvidence, faceRegion,
         async finish(placement) {
           currentSessionId='finish-test'; interviewRecordingEnabled=placement;
           requiredInterviewRounds=1; completedRounds.add(0);
@@ -248,4 +248,22 @@ test('practice releases capture while its report request is still pending',async
   await page.route('**/evaluation**',()=>new Promise<void>(()=>{}));
   expect(await page.evaluate(()=>(window as any).conversationAudit.finish(false))).toBe('ended');
   await expect(page.locator('#report-screen')).toBeVisible();
+});
+
+
+test('a sustained large full-frame phone is detected even if crops miss it',async({page})=>{
+ await interview(page);
+ const results=await page.evaluate(()=>{
+  const phone={boundingBox:{originX:100,originY:100,width:80,height:140},categories:[{categoryName:'cell phone',score:.92}]};
+  const h=(window as any).conversationAudit;
+  return [0,1000,2100].map(t=>h.phone([phone],[],t));
+ });
+ expect(results).toEqual([false,false,true]);
+});
+
+test('quality sampling uses the visible face instead of plain background',async({page})=>{
+ await interview(page);
+ const region=await page.evaluate(()=>(window as any).conversationAudit.faceRegion([{x:.4,y:.2},{x:.6,y:.6}]));
+ expect(region.x).toBeCloseTo(.4);expect(region.y).toBeCloseTo(.2);
+ expect(region.w).toBeCloseTo(.2);expect(region.h).toBeCloseTo(.4);
 });

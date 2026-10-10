@@ -103,3 +103,12 @@ test('self-practice report shows questions and feedback without fetching or warn
  await expect(page.getByRole('button',{name:'Refresh video'})).toHaveCount(0);
  expect(recordingRequests).toBe(0);
 });
+
+
+test('released placement video is available on the report overview as well as questions', async({page})=>{
+ await setup(page);await page.goto('/reports/s1');
+ await expect(page.getByLabel('Interview video')).toHaveAttribute('src',/recording.webm/);
+ await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
+ await expect(page.getByLabel('Interview video')).toHaveCount(1);
+ await expect(page.getByLabel('Interview video')).toHaveAttribute('src',/recording.webm/);
+});
