@@ -219,3 +219,48 @@ test('expired user activation never invokes fullscreen or logs a browser error',
  const result=await page.evaluate(async()=>{let calls=0;Object.defineProperty(navigator,'userActivation',{configurable:true,value:{isActive:false}});document.documentElement.requestFullscreen=async()=>{calls++};return {entered:await (window as any).fullscreenCheck(),calls};});
  expect(result).toEqual({entered:false,calls:0});
 });
+
+for (const mode of ['side-panel','zoom','practice']) {
+ test(`fullscreen layout check handles ${mode} without inventing an AI identity`,async({page})=>{
+  await page.clock.install();
+  await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'layout'},csrf_token:'test'}}));
+  await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`
+   window.layoutAudit={activate(mode){
+    window.layoutEvents=[];ws={readyState:WebSocket.OPEN,send:value=>window.layoutEvents.push(JSON.parse(value))};
+    proctoringActive=mode!=='practice';callScreen.style.display='flex';sessionCompletedCleanly=false;
+    Object.defineProperty(document,'fullscreenElement',{configurable:true,value:document.documentElement});
+    Object.defineProperty(window.screen,'width',{configurable:true,value:1600});
+    Object.defineProperty(window.screen,'height',{configurable:true,value:900});
+    Object.defineProperty(window,'innerWidth',{configurable:true,value:mode==='zoom'?800:1100});
+    Object.defineProperty(window,'innerHeight',{configurable:true,value:mode==='zoom'?450:900});
+    setupIntegrityMonitoring();
+   },restore(){Object.defineProperty(window,'innerWidth',{configurable:true,value:1600})}};
+  `});});
+  await page.goto('/interview.html?id=layout');await expect.poll(()=>page.evaluate(()=>!!(window as any).layoutAudit)).toBe(true);
+  await page.evaluate(mode=>(window as any).layoutAudit.activate(mode),mode);
+  await page.clock.runFor(2000);
+  const events=await page.evaluate(()=>(window as any).layoutEvents);
+  if(mode==='side-panel'){
+    expect(events.filter((event:any)=>event.event_type==='screen_layout_obstructed')).toHaveLength(1);
+    expect(events.every((event:any)=>event.severity!=='violation')).toBe(true);
+    await expect(page.locator('#integrity-toast')).toContainText('Close any browser side panel');
+    await page.clock.runFor(2000);
+    expect(await page.evaluate(()=>(window as any).layoutEvents.filter((e:any)=>e.event_type==='screen_layout_obstructed').length)).toBe(1);
+    await page.evaluate(()=>(window as any).layoutAudit.restore());await page.clock.runFor(500);
+    expect(await page.evaluate(()=>(window as any).layoutEvents.some((e:any)=>e.event_type==='screen_layout_restored'))).toBe(true);
+  }else expect(events.filter((event:any)=>event.event_type==='screen_layout_obstructed')).toHaveLength(0);
+ });
+}
+
+test('retry popup stays hidden during invitation and opens after playback',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'retry'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.retryAudit=payload=>{callScreen.style.display='flex';handleControlMessage(payload)};`});});
+ await page.goto('/interview.html?id=retry');await expect.poll(()=>page.evaluate(()=>!!(window as any).retryAudit)).toBe(true);
+ await page.evaluate(()=>(window as any).retryAudit({type:'support_retry',state:'offered'}));
+ await expect(page.locator('#support-retry-controls')).toBeHidden();
+ await page.evaluate(()=>(window as any).retryAudit({type:'support_retry',state:'awaiting_choice'}));
+ await expect(page.locator('#support-retry-controls')).toBeVisible();
+ await expect(page.locator('#support-retry-yes')).toBeEnabled();
+ await page.evaluate(()=>(window as any).retryAudit({type:'support_retry',state:'complete'}));
+ await expect(page.locator('#support-retry-controls')).toBeHidden();
+});
