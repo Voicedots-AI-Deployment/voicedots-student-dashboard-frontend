@@ -8,8 +8,13 @@
 - Included models:
   - Google MediaPipe Face Landmarker float16 model, version 1
   - Google MediaPipe Object Detector, EfficientDet-Lite0 (int8), version 1 —
-    used only for its "person" category, as a backstop that counts bodies
-    (not faces) so someone facing away from the camera is still detected
+    browser fallback for person and cell-phone detection
+  - Google MediaPipe Object Detector, EfficientDet-Lite2 (float32), version 1 —
+    worker fallback if quantized CPU model initialization fails
+  - Google MediaPipe Object Detector, EfficientDet-Lite2 (int8), version 1 —
+    primary worker model, CPU delegate, person and cell-phone categories
+    Source: https://storage.googleapis.com/mediapipe-models/object_detector/efficientdet_lite2/int8/1/efficientdet_lite2.tflite
+    SHA-256: b3f50554cb0ea559e90328845f7d9ba4d13c8bff372914d24e06bc8bb72fa896
 
 These files are vendored so browser-side person detection does not depend on
 access to jsDelivr or Google Storage during an interview.

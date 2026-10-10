@@ -138,3 +138,11 @@ test('pending placement video offers recovery only for this session local chunks
  await page.reload();await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
  await expect(page.getByRole('link',{name:'Recover saved video upload'})).toHaveAttribute('href','/interview.html?id=resume-1&session_id=s1');
 });
+
+test('released placement video is available on the report overview as well as questions', async({page})=>{
+ await setup(page);await page.goto('/reports/s1');
+ await expect(page.getByLabel('Interview video')).toHaveAttribute('src',/recording.webm/);
+ await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
+ await expect(page.getByLabel('Interview video')).toHaveCount(1);
+ await expect(page.getByLabel('Interview video')).toHaveAttribute('src',/recording.webm/);
+});

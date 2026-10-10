@@ -73,7 +73,7 @@ test('partial crop detections of the candidate are not counted as a second perso
  expect(results.distinct).toBe(false);
 });
 
-test('one face and ambiguous body detections stay review-only throughout the call',async({page})=>{
+test('one clear face suppresses ambiguous body reminders while two faces still warn',async({page})=>{
  await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'student-1'},csrf_token:'test'}}));
  await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`
  window.visionAudit={setup:async()=>{
@@ -89,7 +89,7 @@ test('one face and ambiguous body detections stay review-only throughout the cal
  for(let i=0;i<8;i++){await page.evaluate(()=>(window as any).visionAudit.tick());await page.waitForTimeout(850);}
  const events=await page.evaluate(()=>(window as any).visionEvents);
  expect(events.filter((e:any)=>e.event_type==='multiple_people_visible')).toHaveLength(0);
- expect(events.some((e:any)=>e.event_type==='multiple_people_unconfirmed'&&e.severity==='info')).toBe(true);
+ expect(events.filter((e:any)=>e.event_type==='multiple_people_unconfirmed')).toHaveLength(0);
  expect(await page.evaluate(()=>(window as any).visionAudit.passing())).toBe(true);
  await page.evaluate(()=>(window as any).visionAudit.faces(2));
  for(let i=0;i<8;i++){await page.evaluate(()=>(window as any).visionAudit.tick());await page.waitForTimeout(850);}
