@@ -6,6 +6,7 @@ self.onmessage = async ({data}) => {
     if (type === "init") {
       const vision = await import("/vendor/mediapipe/vision_bundle.mjs");
       const fileset = await vision.FilesetResolver.forVisionTasks("/vendor/mediapipe/wasm");
+      fileset.wasmLoaderPath += "?v=proctor-log-routing-20261010";
       let failure;
       // Quantized CPU inference avoids silent GPU-delegate misses and uses
       // substantially less model memory than the float32 Lite2 asset.

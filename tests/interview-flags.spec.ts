@@ -188,3 +188,34 @@ test('phone evidence still warns in poor lighting with slow object inference',as
  expect(events.filter((e:any)=>e.event_type==='phone_usage_detected')).toHaveLength(1);
  expect(events.filter((e:any)=>e.event_type==='multiple_people_visible')).toHaveLength(0);
 });
+
+
+for(const failure of ['ended-without-event','surface-changed']) {
+ test(`monitor-share watchdog catches ${failure} once in real time`,async({page})=>{
+  await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'screen-watch'},csrf_token:'test'}}));
+  await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`
+   window.screenWatch={start:()=>{
+    proctoringActive=true;callScreen.style.display='flex';sessionCompletedCleanly=false;preflightCancelled=false;
+    const track=new EventTarget();track.readyState='live';track.muted=false;track.surface='monitor';track.getSettings=()=>({displaySurface:track.surface});
+    screenStream={getVideoTracks:()=>[track]};window.screenTrack=track;window.screenEvents=[];
+    ws={readyState:WebSocket.OPEN,send:text=>window.screenEvents.push(JSON.parse(text))};bindScreenShareEnded(track);
+   }};
+  `});});
+  await page.goto('/interview.html?id=screen-watch');await expect.poll(()=>page.evaluate(()=>!!(window as any).screenWatch)).toBe(true);
+  await page.clock.install();await page.evaluate(()=>(window as any).screenWatch.start());
+  await page.clock.runFor(500);expect(await page.evaluate(()=>(window as any).screenEvents.length)).toBe(0);
+  await page.evaluate(failure=>{const track=(window as any).screenTrack;if(failure==='ended-without-event')track.readyState='ended';else track.surface='window';},failure);
+  await page.clock.runFor(2000);
+  const events=await page.evaluate(()=>(window as any).screenEvents);
+  expect(events.filter((e:any)=>e.type==='required_media_state'&&e.state==='lost')).toHaveLength(1);
+  expect(events.filter((e:any)=>e.event_type==='screen_share_ended')).toHaveLength(1);
+ });
+}
+
+test('expired user activation never invokes fullscreen or logs a browser error',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'fullscreen-test'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.fullscreenCheck=requestInterviewFullscreen;`});});
+ await page.goto('/interview.html?id=fullscreen-test');await expect.poll(()=>page.evaluate(()=>!!(window as any).fullscreenCheck)).toBe(true);
+ const result=await page.evaluate(async()=>{let calls=0;Object.defineProperty(navigator,'userActivation',{configurable:true,value:{isActive:false}});document.documentElement.requestFullscreen=async()=>{calls++};return {entered:await (window as any).fullscreenCheck(),calls};});
+ expect(result).toEqual({entered:false,calls:0});
+});
