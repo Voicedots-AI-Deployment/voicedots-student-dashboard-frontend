@@ -2301,3 +2301,28 @@ dialog.modal.calendar-dialog:has(#calendar-event-form-title){width:min(560px,cal
 .career-role-grid{grid-template-columns:repeat(3,minmax(0,1fr));gap:12px}.career-role-evidence{align-self:flex-start}.career-role-card>h3{font-weight:500}.career-discovery-input textarea{font-weight:400}.career-report-history .section-heading{margin-bottom:10px}.career-report-history .record{padding:12px 0}@media(max-width:1100px){.career-role-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}@media(max-width:640px){.career-role-grid{grid-template-columns:minmax(0,1fr)}}
 
 .career-discovery .panel{margin-bottom:0}
+
+/* Spacious resume clarification for both interview modes. */
+.interview-practice-page .resume-clarification-panel {
+  width: 100%; max-width: 1080px; padding: 32px; box-sizing: border-box;
+  text-align: left;
+}
+.resume-clarification-panel > h2 { margin: 0; line-height: 1.35; }
+.resume-clarification-panel > p { margin: 12px 0 28px; line-height: 1.6; }
+.resume-clarification-panel form { max-width: none; display: grid; gap: 24px; }
+.dashboard-content .resume-clarification-panel .resume-clarification-card {
+  display: block; border: 1px solid var(--border); border-radius: 16px;
+  padding: 24px; margin: 0; background: var(--surface, transparent);
+}
+.resume-clarification-card legend { padding: 0 8px; margin: 0; font-size: 17px; font-weight: 600; line-height: 1.5; overflow-wrap: anywhere; }
+.resume-clarification-card label { display: grid; gap: 10px; margin: 0 0 20px; line-height: 1.5; }
+.resume-clarification-card label:last-child { margin-bottom: 0; }
+.resume-clarification-card textarea { width: 100%; min-height: 160px; padding: 14px 16px; line-height: 1.6; resize: vertical; box-sizing: border-box; }
+.resume-clarification-panel form > .button { margin: 0; justify-self: start; min-height: 44px; }
+@media(max-width:640px) {
+  .interview-practice-page .resume-clarification-panel { padding: 20px 16px; }
+  .dashboard-content .resume-clarification-panel .resume-clarification-card { padding: 18px 14px; border-radius: 12px; }
+  .resume-clarification-panel form { gap: 20px; }
+  .resume-clarification-card textarea { min-height: 150px; }
+  .resume-clarification-panel form > .button { width: 100%; justify-self: stretch; justify-content: center; }
+}

@@ -497,7 +497,7 @@ export function Practice() {
       )}
 
       {preparation ? (
-        <section className="panel preparation-panel" aria-live="polite">
+        <section className={`panel preparation-panel${needsClarification ? " resume-clarification-panel" : ""}`} aria-live="polite">
           {pending && <>
             <LoaderCircle className={pollError ? "" : "spin"} size={32} />
             <h2>{stage || "Preparing your interview"}</h2>
@@ -523,11 +523,11 @@ export function Practice() {
             <h2>A little more about your experience</h2>
             <p>{preparation.message}</p>
             <form onSubmit={clarify}>
-              {preparation.prompts?.map((prompt, i) => <fieldset key={prompt.entry_id || i}>
+              {preparation.prompts?.map((prompt, i) => <fieldset className="resume-clarification-card" key={prompt.entry_id || i}>
                 <legend>{prompt.name}</legend>
                 {prompt.missing_fields.map((field, j) => <label key={field}>
                   {field === "how" ? "What tools and methods did you use?" : field === "ownership" ? "What was your personal contribution?" : field === "result" ? "What was the outcome?" : humanize(field)}
-                  <textarea name={`${i}-${j}`} required={preparation.clarification_required} maxLength={4000}/>
+                  <textarea rows={6} name={`${i}-${j}`} required={preparation.clarification_required} maxLength={4000}/>
                 </label>)}
               </fieldset>)}
               <button className="button primary" disabled={busy}>Save and continue</button>
