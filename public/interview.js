@@ -2137,6 +2137,29 @@ function setupIntegrityMonitoring() {
   });
   window.addEventListener("focus", () => clearTimeout(blurTimer));
 
+  // Browser side panels cannot be named from a page. Observe only a
+  // sustained width obstruction, normalized by height so browser zoom
+  // and display scaling do not look like a panel. Review evidence only.
+  let layoutSamples = 0, layoutObstructed = false;
+  setInterval(() => {
+    if (!proctoringActive || !_isCallScreenActive() || !document.fullscreenElement || sessionCompletedCleanly) {
+      layoutSamples = 0; return;
+    }
+    const screenRatio = window.screen.width / window.screen.height;
+    const viewportRatio = window.innerWidth / window.innerHeight;
+    const restricted = Number.isFinite(screenRatio) && screenRatio > 0 &&
+      viewportRatio / screenRatio < .85 && window.innerHeight > 300;
+    layoutSamples = restricted ? layoutSamples + 1 : 0;
+    if (layoutSamples >= 3 && !layoutObstructed) {
+      layoutObstructed = true;
+      _sendIntegrityEvent("screen_layout_obstructed", "info", {review_only:true,screen_ratio:screenRatio,viewport_ratio:viewportRatio});
+      showIntegrityNotice("Close any browser side panel or split view and keep the interview across the full screen.", true);
+    } else if (!restricted && layoutObstructed) {
+      layoutObstructed = false;
+      _sendIntegrityEvent("screen_layout_restored", "info", {review_only:true});
+    }
+  }, 500);
+
   document.addEventListener("fullscreenchange", () => {
     if (!document.fullscreenElement && _isCallScreenActive()) {
       recordIntegrityViolation("fullscreen_exit", "Fullscreen interview mode was exited.");
@@ -2981,7 +3004,7 @@ function handleControlMessage(payload) {
     case "support_retry": {
       supportRetryState = payload.state;
       const controls = document.getElementById("support-retry-controls");
-      if (controls) controls.hidden = !["offered", "awaiting_choice", "submitted"].includes(payload.state);
+      if (controls) controls.hidden = !["awaiting_choice", "submitted"].includes(payload.state);
       const status = document.getElementById("support-retry-status");
       if (status) status.textContent = payload.state === "awaiting_choice"
         ? "Say yes to try again, or no to continue. You can also choose below."
