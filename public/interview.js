@@ -537,6 +537,7 @@ function stopPanelBlinkLoop(controller) {
 
 async function requestInterviewFullscreen() {
   if (document.fullscreenElement) return true;
+  if (navigator.userActivation && !navigator.userActivation.isActive) return false;
   try {
     await document.documentElement.requestFullscreen();
     return true;
@@ -598,7 +599,10 @@ function setupPrejoinFlow() {
       ws.send(JSON.stringify({ type: "support_retry_choice", choice }));
     });
   }
-  pjJoinBtn?.addEventListener("click", () => void runPreflight());
+  pjJoinBtn?.addEventListener("click", () => {
+    void requestInterviewFullscreen();
+    void runPreflight();
+  });
   recordingConsentEl?.addEventListener("change", renderPreflight);
   document.getElementById("pj-cam-retry")?.addEventListener("click", () => void retryPreflight("camera"));
   document.getElementById("pj-mic-retry")?.addEventListener("click", () => void retryPreflight("microphone"));
@@ -800,7 +804,8 @@ async function runPreflight() {
     await photoVerifier.load(currentSessionId);
     if (!photoVerifier.isReady()) throw new Error("Identity verification could not be confirmed. Retry verification.");
     stopMicLevelTest();
-    try { await document.documentElement.requestFullscreen?.(); } catch {}
+    // Fullscreen must be requested from a click, never after network setup.
+    // The join button already requested it while user activation was live.
     prejoinScreen.style.display = "none";
     callScreen.style.display = "block";
     liveChip.style.display = "inline-flex";
@@ -1044,6 +1049,7 @@ async function loadFaceDetector() {
     try {
       const vision = await import(VISION_MODULE_URL);
       const fileset = await vision.FilesetResolver.forVisionTasks(VISION_WASM_URL);
+      fileset.wasmLoaderPath += "?v=proctor-log-routing-20261010";
       let lastError = null;
       for (const delegate of ["GPU", "CPU"]) {
         try {
@@ -1142,6 +1148,7 @@ async function loadPersonDetector() {
       } catch (error) { workerObjectFailed = true; console.warn("Worker object check unavailable; using the fast detector.", error); }
       const vision = await import(VISION_MODULE_URL);
       const fileset = await vision.FilesetResolver.forVisionTasks(VISION_WASM_URL);
+      fileset.wasmLoaderPath += "?v=proctor-log-routing-20261010";
       let lastError = null;
       for (const delegate of ["GPU", "CPU"]) {
         try {
@@ -1798,7 +1805,6 @@ function setupCallControls() {
         // Fullscreen is requested from this direct button gesture and again
         // after the native picker returns. This restores the immersive call
         // even when stopping the previous share also exited fullscreen.
-        await requestInterviewFullscreen();
         const capture = await acquireEntireScreenShare();
         screenStream = capture.stream;
         isScreenSharing = true;
@@ -1807,7 +1813,7 @@ function setupCallControls() {
         if (ws && ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "required_media_state", media: "screen_share", state: "restored" }));
         }
-        await requestInterviewFullscreen();
+        if (navigator.userActivation?.isActive) await requestInterviewFullscreen();
       } catch (err) {
         isScreenSharing = false;
         showIntegrityNotice(err.message || "Screen sharing must be restored.");
@@ -1846,12 +1852,15 @@ function setupCallControls() {
   }
 }
 
+let screenShareWatchdog = null;
 function bindScreenShareEnded(track) {
+  if (screenShareWatchdog !== null) { clearInterval(screenShareWatchdog); screenShareWatchdog = null; }
   if (!track) return;
   let lossHandled = false;
   const handleLoss = () => {
     if (lossHandled) return;
     lossHandled = true;
+    if (screenShareWatchdog !== null) { clearInterval(screenShareWatchdog); screenShareWatchdog = null; }
     isScreenSharing = false;
     if (screenStream && !screenStream.getVideoTracks().some((item) => item.readyState === "live")) {
       screenStream = null;
@@ -1881,6 +1890,18 @@ function bindScreenShareEnded(track) {
     }
   };
   track.addEventListener("ended", handleLoss, { once: true });
+  // Browser/OS capture failures do not always dispatch ended. Verify the
+  // same active monitor track, without inferring other apps or captures.
+  let mutedSince = null;
+  screenShareWatchdog = setInterval(() => {
+    if (sessionCompletedCleanly || preflightCancelled || !screenStream?.getVideoTracks().includes(track)) {
+      clearInterval(screenShareWatchdog); screenShareWatchdog = null; return;
+    }
+    const settings = track.getSettings?.() || {};
+    if (track.readyState !== "live" || (settings.displaySurface && settings.displaySurface !== "monitor")) { handleLoss(); return; }
+    mutedSince = track.muted ? (mutedSince ?? Date.now()) : null;
+    if (mutedSince !== null && Date.now()-mutedSince >= 1500) handleLoss();
+  }, 500);
   // Some browsers temporarily mute a display track before firing `ended`,
   // and a few never deliver `ended` after an OS-level capture failure. A
   // short confirmation window catches that loss without flagging a single
@@ -2312,6 +2333,7 @@ function resetPlaybackQueue() {
 }
 
 function stopScreenShareCapture() {
+  if (screenShareWatchdog !== null) { clearInterval(screenShareWatchdog); screenShareWatchdog = null; }
   if (screenStream) {
     screenStream.getTracks().forEach((track) => {
       try { track.stop(); } catch {}

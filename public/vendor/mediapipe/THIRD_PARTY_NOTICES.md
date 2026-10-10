@@ -18,3 +18,7 @@
 
 These files are vendored so browser-side person detection does not depend on
 access to jsDelivr or Google Storage during an interview.
+
+Local loader adjustment (10 October 2026): only known benign native XNNPACK
+INFO / graph-initialization warnings are routed to console.debug. Unknown
+stderr lines remain console.error. Model and inference behavior are unchanged.

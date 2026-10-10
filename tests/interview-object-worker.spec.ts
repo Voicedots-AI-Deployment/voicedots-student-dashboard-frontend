@@ -1,6 +1,7 @@
 import {test,expect} from '@playwright/test';
 test('real proctor object model runs in a worker while the UI stays responsive',async({page})=>{
  test.setTimeout(120000);
+ const initializationErrors:string[]=[];page.on('console',message=>{if(message.type()==='error')initializationErrors.push(message.text())});
  await page.route('**/interview.js*',route=>route.abort());
  await page.goto('/interview.html');
  const result=await page.evaluate(async()=>{
@@ -20,6 +21,7 @@ test('real proctor object model runs in a worker while the UI stays responsive',
   }finally{clearInterval(heartbeat);worker.terminate()}
  });
  expect(result.detections).toBe(0);expect(result.uiTicks).toBeGreaterThan(0);
+ expect(initializationErrors.filter(text=>text.includes("XNNPACK"))).toEqual([]);
 });
 
 test('failed proctor worker falls back to a real detector without treating stale data as passing',async({page})=>{

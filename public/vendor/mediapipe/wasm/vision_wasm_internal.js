@@ -147,7 +147,17 @@ if (ENVIRONMENT_IS_WEB || ENVIRONMENT_IS_WORKER) {
 
 var out = console.log.bind(console);
 
-var err = console.error.bind(console);
+// MediaPipe emits harmless native INFO/W initialization lines on stderr.
+// Route only these known messages; genuine inference errors remain errors.
+var err = function(message) {
+  var text = String(message);
+  if (/^INFO: Created TensorFlow Lite XNNPACK delegate for CPU\.$/.test(text) ||
+      (/^W\d/.test(text) && /FaceBlendshapesGraph acceleration to xnnpack|OpenGL error checking is disabled/.test(text))) {
+    console.debug(text);
+  } else {
+    console.error(message);
+  }
+};
 
 // end include: shell.js
 // include: preamble.js
