@@ -759,8 +759,8 @@ async function runPreflight() {
         await waitForPreflight(() => hasLiveTrack("audio"), "Your default microphone is unavailable. Allow access or select a working microphone.", 5000);
         startMicLevelTest();
         await micTestContext?.resume();
-        await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running",
-          "Your default microphone could not start. Allow access or select another microphone.", 10000);
+        await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running" && micSignalDetected,
+          "No microphone audio was detected. Say a few words, check that your microphone is not muted, or select another microphone.", 10000);
       }),
       Promise.all([cameraCheck, networkCheck]).then(async () => {
         if (preflightChecks.camera === "passed" && preflightId) {
@@ -2969,6 +2969,11 @@ function handleControlMessage(payload) {
       });
       break;
     }
+
+    case "transcription_recovery":
+      clearProcessingStatus();
+      if (aiRoleEl) aiRoleEl.textContent = payload.detail || "Restoring speech recognition…";
+      break;
 
     case "microphone_recovery":
       microphoneCaptureStatus(payload.detail || "Reconnecting microphone audio…");

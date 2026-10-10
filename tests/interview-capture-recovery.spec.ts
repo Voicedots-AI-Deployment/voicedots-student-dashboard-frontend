@@ -18,6 +18,7 @@ test.beforeEach(async({page})=>{
         async suspend(){await audioContext.suspend();},
         state(){return audioContext.state;},
         fail(){micProcessor.onprocessorerror();},
+        async recognition(){const previous=micProcessor;handleControlMessage({type:"transcription_recovery",detail:"Restoring speech recognition."});await new Promise(resolve=>setTimeout(resolve,100));return {sameProcessor:previous===micProcessor,stillListening:!aiSpeaking};},
         kind:preflightFailureKind,
         listening(){aiSpeaking=true;activePlaybackSources.clear();handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});return aiSpeaking;},
         gate(){aiSpeaking=true;activePlaybackSources.add({});handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});const value=aiSpeaking;activePlaybackSources.clear();aiSpeaking=false;return value;},
@@ -46,5 +47,14 @@ test('worklet error rebuilds capture and listening cannot cut audible playback',
   expect(await page.evaluate(()=>(window as any).captureRecovery.gate())).toBe(true);
   expect(await page.evaluate(()=>(window as any).captureRecovery.listening())).toBe(false);
   expect(await page.evaluate(()=>(window as any).captureRecovery.kind('AudioWorklet microphone failed'))).toBe('microphone');
+  await page.evaluate(()=>(window as any).captureRecovery.close());
+});
+
+test('recognition reconnect leaves the working PCM microphone capture running',async({page})=>{
+  await page.evaluate(()=>(window as any).captureRecovery.start());
+  await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.count())).toBeGreaterThan(2);
+  const before=await page.evaluate(()=>(window as any).captureRecovery.count());
+  expect(await page.evaluate(()=>(window as any).captureRecovery.recognition())).toEqual({sameProcessor:true,stillListening:true});
+  await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.count())).toBeGreaterThan(before+2);
   await page.evaluate(()=>(window as any).captureRecovery.close());
 });

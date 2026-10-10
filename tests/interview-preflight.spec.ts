@@ -468,12 +468,12 @@ test('temporary finalization failure retries automatically without reuploading c
 });
 
 
-test("silent default microphone starts automatically without a device picker", async ({page})=>{
- await prepare(page,"silent");
+test("silent default microphone fails the signal check without starting an interview", async ({page})=>{
+ const {counts}=await prepare(page,"silent");
  await page.getByRole("button",{name:"Start AI Interview",exact:true}).click();
-  await completeScreenSharing(page);
- await expect.poll(()=>page.evaluate(()=>(window as any).starts),{timeout:15000}).toBe(1);
- await expect(page.locator("#pj-panel-2")).toBeHidden();
+ await expect(page.locator("#pj-panel-2")).toContainText("No microphone audio was detected",{timeout:20000});
+ expect(counts.create).toBe(0);
+ await expect(page.locator("#pj-panel-2")).toBeVisible();
  const calls=await page.evaluate(()=>(window as any).mediaCalls);
  expect(calls).toHaveLength(1);expect(calls[0].audio.deviceId).toEqual({ideal:"default"});
 });
