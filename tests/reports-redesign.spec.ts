@@ -124,3 +124,17 @@ test('expired secure video link recovers and refresh preserves playback position
  await expect.poll(()=>video.evaluate((v:HTMLVideoElement)=>v.currentTime)).toBeGreaterThanOrEqual(5);
  await expect.poll(()=>video.evaluate((v:HTMLVideoElement)=>v.error)).toBeNull();
 });
+
+
+test('pending placement video offers recovery only for this session local chunks',async({page})=>{
+ await setup(page);
+ await page.route('**/api/student/reports',route=>route.fulfill({json:{reports:[{...base,submission_id:'resume-1'}]}}));
+ await page.route('**/recording',route=>route.fulfill({json:{status:'recording',playback_url:null,message:'The recording upload has not finished.'}}));
+ await page.goto('/reports/s1');
+ await page.evaluate(async()=>{
+  const db=await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open('voicedots-interview-recording-v1',1);r.onupgradeneeded=()=>{r.result.createObjectStore('chunks',{keyPath:'id'});r.result.createObjectStore('meta',{keyPath:'id'});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+  await new Promise<void>((resolve,reject)=>{const tx=db.transaction('chunks','readwrite');tx.objectStore('chunks').put({id:'s1:segment:0',session:'s1',blob:new Blob(['video'])});tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);});db.close();
+ });
+ await page.reload();await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
+ await expect(page.getByRole('link',{name:'Recover saved video upload'})).toHaveAttribute('href','/interview.html?id=resume-1&session_id=s1');
+});

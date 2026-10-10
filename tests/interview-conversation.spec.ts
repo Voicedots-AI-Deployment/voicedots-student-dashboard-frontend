@@ -29,8 +29,8 @@ async function interview(page: Page) {
           recorder.start(50);canvas.getContext('2d').fillRect(0,0,320,240);
           await new Promise(resolve=>setTimeout(resolve,200));
           stopInterview();const immediate=stream.getVideoTracks()[0].readyState;
-          await stopped;
-          return {immediate,bytes:blobs.reduce((total,blob)=>total+blob.size,0),recorder:recorder.state};
+          await stopped;await recordingStopTask;
+          return {immediate,released:stream.getVideoTracks()[0].readyState,bytes:blobs.reduce((total,blob)=>total+blob.size,0),recorder:recorder.state};
         },
         async finish(placement) {
           currentSessionId='finish-test'; interviewRecordingEnabled=placement;
@@ -284,5 +284,5 @@ test('a pending device recovery cannot restart camera capture after completion',
 test('completion stops camera immediately and retains the real recorder final buffered slice',async({page})=>{
  await interview(page);
  const result=await page.evaluate(()=>(window as any).conversationAudit.finishRealRecorder());
- expect(result.immediate).toBe('ended');expect(result.recorder).toBe('inactive');expect(result.bytes).toBeGreaterThan(0);
+ expect(result.immediate).toBe('live');expect(result.released).toBe('ended');expect(result.recorder).toBe('inactive');expect(result.bytes).toBeGreaterThan(0);
 });

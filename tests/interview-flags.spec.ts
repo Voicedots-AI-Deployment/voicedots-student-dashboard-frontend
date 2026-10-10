@@ -110,7 +110,7 @@ test('phone evidence rejects single, weak and inconsistent detections and confir
   const strong=Array.from({length:7},(_,i)=>h.update([detection(.95)],[box],i*800));
   return {weak,isolated,noCorroboration,strong};
  });
- expect(result.weak.some(Boolean)).toBe(false);expect(result.isolated.some(Boolean)).toBe(false);expect(result.noCorroboration.some(Boolean)).toBe(false);
+ expect(result.weak.some(Boolean)).toBe(false);expect(result.isolated.some(Boolean)).toBe(false);expect(result.noCorroboration.slice(0,3).some(Boolean)).toBe(false);expect(result.noCorroboration.at(-1)).toBe(true);
  expect(result.strong.slice(0,3).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
 });
 

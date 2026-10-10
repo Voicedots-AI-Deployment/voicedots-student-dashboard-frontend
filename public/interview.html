@@ -248,14 +248,14 @@
     .skill-evidence{width:100%;padding:10px;border-radius:10px;background:var(--surf2);font-size:.8rem;display:flex;flex-wrap:wrap;justify-content:space-between;gap:8px}
     .skill-evidence strong{color:var(--accent-bright);font-size:.72rem}.skill-evidence p{width:100%;margin:0;color:var(--muted);line-height:1.5}
     .skill-group summary{margin:12px 0;color:var(--accent-bright);font-size:.8rem;cursor:pointer}
-    /* Compact panels follow the configured interviewer count. */
-    .interview-grid[data-panel-count="1"]{grid-template-columns:minmax(0,1.3fr) minmax(260px,1fr);grid-template-rows:1fr;max-width:1040px;align-items:center}
-    .interview-grid[data-panel-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr)) minmax(260px,.9fr);grid-template-rows:1fr;align-items:center}
-    .interview-grid[data-panel-count="3"]{grid-template-columns:repeat(3,minmax(0,1fr)) minmax(240px,.9fr);grid-template-rows:1fr;align-items:center}
-    .interview-grid[data-panel-count="1"] .panel-agent,.interview-grid[data-panel-count="2"] .panel-agent,.interview-grid[data-panel-count="3"] .panel-agent{height:auto;aspect-ratio:4/3;width:100%}
+    /* Fill the available stage without shrinking fewer interviewers. */
+    .interview-grid[data-panel-count="1"]{grid-template-columns:minmax(0,1.3fr) minmax(260px,.85fr);grid-template-rows:minmax(0,1fr);max-width:1200px;align-items:stretch}
+    .interview-grid[data-panel-count="2"]{grid-template-columns:repeat(2,minmax(0,1fr)) minmax(240px,.65fr);grid-template-rows:minmax(0,1fr);align-items:stretch}
+    .interview-grid[data-panel-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));max-width:1100px;align-items:stretch}
+    .interview-grid[data-panel-count="1"] .panel-agent,.interview-grid[data-panel-count="2"] .panel-agent,.interview-grid[data-panel-count="3"] .panel-agent{height:100%;aspect-ratio:auto;width:100%}
     .interview-grid[data-panel-count="1"] .pip{grid-column:2;grid-row:1}
     .interview-grid[data-panel-count="2"] .pip{grid-column:3;grid-row:1}
-    .interview-grid[data-panel-count="3"] .pip{grid-column:4;grid-row:1}
+    .interview-grid[data-panel-count="3"] .pip{grid-column:2;grid-row:2;height:100%;aspect-ratio:auto;align-self:stretch}
     .pj-panel h3{margin:0 0 14px;font-size:1.1rem;font-weight:600;line-height:1.4}
     .pj-panel label{display:block;margin-top:14px;color:var(--muted);font-size:.8rem;font-weight:400}
     .pj-panel select{font-family:inherit;font-size:.85rem;font-weight:400;min-height:42px;box-sizing:border-box}
@@ -263,7 +263,7 @@
     .pj-panel [role="alert"]:empty,.mic-status:empty{display:none}
     .vision-checks{margin:0 0 16px;align-items:stretch}.vision-check{display:flex;align-items:center;justify-content:center;min-height:40px;font-weight:500}
     @media(max-width:1100px){.interview-grid[data-panel-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));max-width:940px}.interview-grid[data-panel-count="3"] .pip{grid-column:2;grid-row:2}}
-    @media(max-width:700px){.interview-grid[data-panel-count="1"],.interview-grid[data-panel-count="2"],.interview-grid[data-panel-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:none;gap:10px}.interview-grid[data-panel-count="1"] .pip,.interview-grid[data-panel-count="2"] .pip,.interview-grid[data-panel-count="3"] .pip{grid-column:auto;grid-row:auto;width:100%}.pj-panel{padding:22px}.vision-checks{gap:6px}.vision-check{padding:8px 5px;font-size:.65rem}}
+    @media(max-width:700px){.interview-grid[data-panel-count="1"],.interview-grid[data-panel-count="2"],.interview-grid[data-panel-count="3"]{height:100%}.interview-grid[data-panel-count="1"],.interview-grid[data-panel-count="2"],.interview-grid[data-panel-count="3"]{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-rows:repeat(2,minmax(0,1fr));gap:10px}.interview-grid[data-panel-count="1"] .pip,.interview-grid[data-panel-count="2"] .pip,.interview-grid[data-panel-count="3"] .pip{grid-column:auto;grid-row:auto;width:100%}.pj-panel{padding:22px}.vision-checks{gap:6px}.vision-check{padding:8px 5px;font-size:.65rem}}
   .pj-panel button[hidden]{display:none!important}
 </style>
   <link rel="icon" href="/voicedotslogo.svg" type="image/svg+xml" />
@@ -610,6 +610,7 @@
         <div id="results-question-reviews"></div>
       </div>
 
+      <p id="results-recording-status" class="recording-status" role="status" aria-live="polite" hidden></p>
       <!-- Actions -->
       <div style="display:flex;gap:12px;justify-content:center;">
         <a id="results-download-link" href="#" class="pj-btn pj-btn-primary" style="text-decoration:none;" hidden>Download Report</a>
@@ -625,6 +626,6 @@
 
   <script src="/student-api-config.js"></script>
   <script src="/interview-theme.js"></script>
-  <script type="module" src="interview.js?v=interview-listening-20261010"></script>
+  <script type="module" src="interview.js?v=interview-support-recording-panels-20261010"></script>
 </body>
 </html>

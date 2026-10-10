@@ -405,6 +405,7 @@ async function tryResumeCompletedSessionOnLoad() {
     setRequiredInterviewRounds(agents.size);
     for (let round = 1; round <= requiredInterviewRounds; round += 1) completedRounds.add(round);
     sessionCompletedCleanly = true;
+    await restorePendingInterviewRecording().catch(error => console.warn("Local video recovery unavailable", error));
     if (prejoinScreen) prejoinScreen.style.display = "none";
     if (callScreen) callScreen.style.display = "none";
     finishAndGenerateReport();
@@ -1327,16 +1328,24 @@ function updatePhoneEvidence(detections, corroborating, now) {
   const full = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
   const crop = corroborating.find((box, index) => Number(box.confidence) >= .75 &&
     corroborating.some((other, otherIndex) => index !== otherIndex && Number(other.confidence) >= .75 && boxIoU(box, other) >= .3));
-  const box = full?.boundingBox || crop;
-  const confidence = full ? Number(full.categories[0].score) : Number(crop?.confidence);
-  if (!box) { phoneEvidence = null; return false; }
+  // High-confidence phones outside the crops require four temporal observations.
+  const temporal = strong.find(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= .85));
+  const box = full?.boundingBox || crop || temporal?.boundingBox;
+  const confidence = full ? Number(full.categories.find(c => c.categoryName === "cell phone").score) : crop ? Number(crop.confidence) : Number(temporal?.categories.find(c => c.categoryName === "cell phone")?.score);
+  const requiredCount = full || crop ? 2 : 4;
+  if (!box) {
+    if (phoneEvidence && now - phoneEvidence.last > 1500) phoneEvidence = null;
+    return false;
+  }
   if (!phoneEvidence || now - phoneEvidence.last > 8000 || boxIoU(phoneEvidence.box, box) < .2) {
-    phoneEvidence = {since:now,last:now,count:1,box,confidence};
+    phoneEvidence = {since:now,last:now,count:1,box,confidence,requiredCount};
   } else {
+    if (now <= phoneEvidence.last) return false;
     phoneEvidence.last=now;phoneEvidence.count++;phoneEvidence.box=box;
+    phoneEvidence.requiredCount=Math.max(phoneEvidence.requiredCount,requiredCount);
     phoneEvidence.confidence=Math.min(phoneEvidence.confidence,confidence);
   }
-  return phoneEvidence.count >= 2 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
+  return phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
 }
 
 function warnVisionSignal(type, message, details) {
@@ -1492,7 +1501,7 @@ async function analyzeCameraFrame() {
   }
   // Only a corroborated sequence can indicate a phone; an isolated detection
   // or a stale worker result never accumulates into a misconduct warning.
-  phoneDetected = !!phoneEvidence && phoneEvidence.count >= 2 && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 8000;
+  phoneDetected = !!phoneEvidence && phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 1500;
   // Do not flash back to "one person" when the smaller background detection
   // drops for a frame. Keep the multi-person result briefly so the candidate
   // must present a consistently clear single-person frame before proceeding.
@@ -2357,6 +2366,8 @@ function handleBinaryFrame(data) {
 }
 
 function setRecordingStatus(message, error = false) {
+  const completedStatus = document.getElementById("results-recording-status");
+  if (completedStatus) { completedStatus.hidden = !message || !interviewRecordingEnabled; completedStatus.textContent = message; }
   if (recordingStatusEl) {
     recordingStatusEl.hidden = !message;
     recordingStatusEl.textContent = message;
@@ -2445,7 +2456,7 @@ async function uploadRecordingPart(chunks) {
   const metaId = `${currentSessionId}:${recordingSegmentId}`;
   await recordingDbTransaction(["meta", "chunks"], transaction => {
     transaction.objectStore("meta").put({ id: metaId, session: currentSessionId,
-      segment: recordingSegmentId, startedAt: recordingStartedAt, nextPart: nextPartNumber, parts: nextParts });
+      segment: recordingSegmentId, startedAt: recordingStartedAt, mimeType: recordingMimeType, duration: recordingFinalDuration, nextPart: nextPartNumber, parts: nextParts });
     for (const row of chunks) transaction.objectStore("chunks").delete(row.id);
   });
   recordingPartMetadata = nextParts;
@@ -2480,6 +2491,26 @@ async function clearRecordingQueue() {
   const chunks = await pendingRecordingChunks();
   for (const row of chunks) await recordingDbRequest("chunks", "readwrite", store => store.delete(row.id));
   await recordingDbRequest("meta", "readwrite", store => store.delete(`${currentSessionId}:${recordingSegmentId}`));
+}
+
+async function restorePendingInterviewRecording() {
+  // Recover this completed session only; never attach another student's queue.
+  const metas = await recordingDbRequest("meta", "readonly", store => store.getAll());
+  const chunks = (await recordingDbRequest("chunks", "readonly", store => store.getAll())) || [];
+  const owned = chunks.filter(row => row.session === currentSessionId).sort((a,b)=>a.createdAt-b.createdAt);
+  const meta = (metas || []).filter(row => row.session === currentSessionId)
+    .sort((a,b) => b.startedAt - a.startedAt)[0];
+  if (!meta && !owned.length) return;
+  recordingSegmentId = meta?.segment || owned[owned.length - 1].segment;
+  const remaining = owned.filter(row => row.segment === recordingSegmentId);
+  if (!remaining.length && !meta?.parts?.length) return;
+  recordingStartedAt = meta?.startedAt || Math.min(...remaining.map(row => row.createdAt));
+  recordingMimeType = meta?.mimeType || remaining[0]?.blob.type || "video/webm";
+  recordingPartMetadata = meta?.parts || [];
+  recordingPartNumber = meta?.nextPart || 1;
+  recordingFinalDuration = meta?.duration ?? Math.max(0,Math.floor((Math.max(recordingStartedAt,...remaining.map(row => row.createdAt)) - recordingStartedAt)/1000));
+  recordingFinalizePending = true;
+  setRecordingStatus("Interview ended · recovering the saved video upload…");
 }
 
 function selectInterviewRecordingMimeType(isSupported = type => MediaRecorder.isTypeSupported(type)) {
@@ -2542,6 +2573,11 @@ async function startInterviewRecording() {
     const startedData = await started.json().catch(() => ({}));
     const serverStartedAt = Date.parse(String(startedData.started_at || ""));
     if (Number.isFinite(serverStartedAt)) recordingServerClockOffsetMs = serverStartedAt - Date.now();
+    await recordingDbRequest("meta", "readwrite", store => store.put({
+      id: `${currentSessionId}:${recordingSegmentId}`, session: currentSessionId,
+      segment: recordingSegmentId, startedAt: recordingStartedAt, mimeType: recordingMimeType,
+      nextPart: 1, parts: [], duration: null,
+    }));
     sessionStorage.setItem(`vd_interview_recording_consent_${currentSessionId}`, "true");
     // Capture a low-resolution recording-only camera track. The live proctor
     // pipeline keeps the original camera stream and its existing quality.
@@ -2600,7 +2636,12 @@ function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}
   const recorder = interviewRecorder;
   if (!recorder) {
     afterCaptureStopped();
-    return Promise.resolve();
+    return finalize && recordingFinalizePending ? finalizePendingInterviewRecording() : Promise.resolve();
+  }
+  if (finalize) {
+    recordingFinalizePending = true;
+    recordingFinalDuration ??= Math.floor((Date.now() - recordingStartedAt) / 1000);
+    setRecordingStatus("Interview ended · saving the secure recording…");
   }
   recordingStopTask = (async () => {
     if (recorder.state !== "inactive") {
@@ -2616,6 +2657,14 @@ function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}
     afterCaptureStopped();
     await recordingPersistenceQueue.catch(() => {});
     await recordingUploadQueue;
+    if (finalize && recordingSegmentId) {
+      await recordingDbRequest("meta", "readwrite", store => store.put({
+        id: `${currentSessionId}:${recordingSegmentId}`, session: currentSessionId,
+        segment: recordingSegmentId, startedAt: recordingStartedAt, mimeType: recordingMimeType,
+        duration: recordingFinalDuration, nextPart: recordingPartNumber, parts: recordingPartMetadata,
+      })).catch(() => {});
+    }
+
     if (!finalize) return;
     if (recordingDataDropped) {
       await markRecordingFailed();
@@ -2676,6 +2725,18 @@ async function savePendingInterviewRecording() {
   }
 }
 window.addEventListener("online",()=>{if(recordingFinalizePending&&!recordingStopTask)void finalizePendingInterviewRecording();});
+window.addEventListener("beforeunload", event => {
+  if (!recordingFinalizePending && !interviewRecorder) return;
+  event.preventDefault(); event.returnValue = "";
+});
+document.addEventListener("click", async event => {
+  const link = event.target.closest?.("a[href]");
+  if (!link || (!recordingFinalizePending && !recordingStopTask)) return;
+  event.preventDefault();
+  if (recordingStopTask) await recordingStopTask;
+  else await finalizePendingInterviewRecording();
+  if (!recordingFinalizePending) window.location.assign(link.href);
+});
 
 // ============================================================
 // CONTROL MESSAGES
@@ -3124,9 +3185,7 @@ function stopInterview() {
   // Stop the recorder before releasing capture devices. Its final buffered
   // slice can persist/upload after the live camera and microphone stop.
   void stopInterviewRecording(true, cleanupInterviewMedia);
-  // MediaRecorder.stop() has already queued its final buffered slice. Upload
-  // can continue without holding live camera/microphone permissions open.
-  cleanupInterviewMedia();
+  // Release devices in the stop callback, after the final recorder data event.
   stopScreenShareCapture();
   exitInterviewFullscreen();
 }

@@ -524,3 +524,28 @@ test("screen capture requires a fresh click without the removed remote-app warni
   await expect.poll(()=>counts.create).toBe(1);
   expect(counts.identity).toBe(1);
 });
+
+
+test("completed placement reload recovers its final local video chunk", async ({page})=>{
+  await prepare(page);
+  let uploaded=0, finalParts:any[]=[];
+  await page.route("**/api/interview/recovery-session",route=>route.fulfill({json:{status:"completed",turns:[{agent_type:"hr"}]}}));
+  await page.route("**/recording/parts/*/*/authorize",route=>route.fulfill({json:{url:"https://r2.invalid/recovery"}}));
+  await page.route("https://r2.invalid/**",route=>route.abort());
+  await page.route(/\/recording\/parts\/[^/]+\/\d+$/,route=>{uploaded=route.request().postDataBuffer()?.length || 0;return route.fulfill({json:{ETag:"recovered-etag"}});});
+  await page.route("**/recording/finalize",route=>{finalParts=route.request().postDataJSON().parts;return route.fulfill({json:{status:"processing"}});});
+  await page.evaluate(async()=>{
+    const db=await new Promise<IDBDatabase>((resolve,reject)=>{const r=indexedDB.open("voicedots-interview-recording-v1",1);r.onupgradeneeded=()=>{r.result.createObjectStore("meta",{keyPath:"id"});r.result.createObjectStore("chunks",{keyPath:"id"});};r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error);});
+    await new Promise<void>((resolve,reject)=>{const tx=db.transaction(["meta","chunks"],"readwrite");
+      tx.objectStore("meta").put({id:"recovery-session:segment",session:"recovery-session",segment:"segment",startedAt:Date.now()-20000,duration:20,mimeType:"video/webm",nextPart:1,parts:[]});
+      tx.objectStore("chunks").put({id:"recovery-session:segment:0",session:"recovery-session",segment:"segment",sequence:0,createdAt:Date.now(),blob:new Blob([new Uint8Array(1024)],{type:"video/webm"})});
+      tx.oncomplete=()=>resolve();tx.onerror=()=>reject(tx.error);
+    });db.close();
+  });
+  await page.goto("/interview.html?id=sub-1&session_id=recovery-session");
+  await expect.poll(()=>uploaded).toBe(1024);
+  await expect.poll(()=>finalParts.length).toBe(1);
+  expect(finalParts[0].ETag || finalParts[0].etag).toBe("recovered-etag");
+  await expect(page.locator("#results-recording-status")).toContainText("processing");
+  await expect(page.locator("#prejoin-screen")).toBeHidden();
+});
