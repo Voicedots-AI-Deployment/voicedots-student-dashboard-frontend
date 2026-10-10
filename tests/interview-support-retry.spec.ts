@@ -21,9 +21,10 @@ for (const viewport of [{width:1440,height:900},{width:390,height:844}]) {
    const h=(window as any).retryAudit;h.start();
    h.handle({type:'support_retry',state:'offered',question_text:'How did you check the labels?'});
   });
-  await expect(page.locator('#support-retry-controls')).toBeVisible();
-  await expect(page.getByRole('button',{name:'Yes, try again'})).toBeDisabled();
+  await expect(page.locator('#support-retry-controls')).toBeHidden();
+  await expect(page.getByRole('button',{name:'Yes, try again',includeHidden:true})).toBeDisabled();
   await page.evaluate(()=>(window as any).retryAudit.handle({type:'support_retry',state:'awaiting_choice'}));
+  await expect(page.locator('#support-retry-controls')).toBeVisible();
   await expect(page.locator('#support-retry-status')).toContainText('Say yes');
   await page.getByRole('button',{name:'Yes, try again'}).click();
   expect(await page.evaluate(()=>(window as any).retryMessages)).toEqual([{type:'support_retry_choice',choice:'retry'}]);
