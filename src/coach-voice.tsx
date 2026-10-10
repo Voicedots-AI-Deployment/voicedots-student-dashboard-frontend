@@ -7,7 +7,7 @@ export function CoachVoice({planId,onComplete}:{planId:string;onComplete:()=>voi
  useEffect(()=>()=>{generation.current++;cleanup.current()},[planId]);
  async function start(){
   const token=++generation.current;setActive(true);setMuted(false);mute.current=false;setStatus('Connecting…');
-  let stream:MediaStream|undefined,ctx:AudioContext|undefined,ws:WebSocket|undefined;let sources=new Set<AudioBufferSourceNode>(),epoch=0,next=0;let ack:ReturnType<typeof setTimeout>|undefined;
+  let stream:MediaStream|undefined,ctx:AudioContext|undefined,ws:WebSocket|undefined;let sources=new Set<AudioBufferSourceNode>(),epoch=0,next=0,outputSampleRate=48000;let ack:ReturnType<typeof setTimeout>|undefined;
   const stopAudio=()=>{clearTimeout(ack);sources.forEach(s=>{try{s.stop()}catch{}});sources.clear();next=ctx?.currentTime||0};
   const stop=()=>{stopAudio();if(ws){ws.onclose=null;ws.onmessage=null;if(ws.readyState===WebSocket.OPEN)ws.send(JSON.stringify({type:'end_interview'}));ws.close()}stream?.getTracks().forEach(t=>t.stop());if(ctx&&ctx.state!=='closed')void ctx.close()};
   cleanup.current=stop;
@@ -21,9 +21,9 @@ export function CoachVoice({planId,onComplete}:{planId:string;onComplete:()=>voi
    const node=new AudioWorkletNode(ctx,'pcm-capture-processor',{processorOptions:{targetSampleRate:16000}}),silent=ctx.createGain();silent.gain.value=0;ctx.createMediaStreamSource(stream).connect(node);node.connect(silent);silent.connect(ctx.destination);
    node.port.onmessage=e=>{if(ws?.readyState!==WebSocket.OPEN||mute.current||ws.bufferedAmount>256000)return;const values=e.data as Float32Array,bytes=new ArrayBuffer(values.length*2),view=new DataView(bytes);values.forEach((v,i)=>view.setInt16(i*2,Math.max(-1,Math.min(1,v))*(v<0?32768:32767),true));ws.send(bytes)};
    ws.onmessage=e=>{if(!ctx||token!==generation.current)return;
-    if(e.data instanceof ArrayBuffer){const view=new DataView(e.data);if(view.byteLength<6||view.getUint32(0,false)!==epoch)return;const count=Math.floor((view.byteLength-4)/2),buffer=ctx.createBuffer(1,count,48000),data=buffer.getChannelData(0);for(let i=0;i<count;i++)data[i]=view.getInt16(4+i*2,true)/32768;const source=ctx.createBufferSource();source.buffer=buffer;source.connect(ctx.destination);next=Math.max(next,ctx.currentTime+.025);source.start(next);next+=buffer.duration;sources.add(source);source.onended=()=>sources.delete(source);return}
+    if(e.data instanceof ArrayBuffer){const view=new DataView(e.data);if(view.byteLength<6||view.getUint32(0,false)!==epoch)return;const count=Math.floor((view.byteLength-4)/2),buffer=ctx.createBuffer(1,count,outputSampleRate),data=buffer.getChannelData(0);for(let i=0;i<count;i++)data[i]=view.getInt16(4+i*2,true)/32768;const source=ctx.createBufferSource();source.buffer=buffer;source.connect(ctx.destination);next=Math.max(next,ctx.currentTime+.025);source.start(next);next+=buffer.duration;sources.add(source);source.onended=()=>sources.delete(source);return}
     let p;try{p=JSON.parse(e.data)}catch{return}
-    if(p.type==='tts_begin'){stopAudio();epoch=p.audio_epoch;setCaption(p.text);setStatus('Coach is speaking')}
+    if(p.type==='tts_begin'){stopAudio();epoch=p.audio_epoch;outputSampleRate=[24000,48000].includes(Number(p.sample_rate))?Number(p.sample_rate):48000;setCaption(p.text);setStatus('Coach is speaking')}
     if(p.type==='tts_end'&&p.audio_epoch===epoch){const ended=epoch;clearTimeout(ack);ack=setTimeout(()=>{if(ws?.readyState===WebSocket.OPEN&&epoch===ended){ws.send(JSON.stringify({type:'playback_complete',audio_epoch:ended}));setStatus('Listening to you')}},Math.max(0,(next-ctx.currentTime)*1000)+70)}
     if(p.type==='barge_in'||p.type==='audio_epoch'){stopAudio();epoch=p.audio_epoch;setStatus('Listening to you')}
     if(p.type==='partial_transcript'||p.type==='final_transcript')setCaption(p.text||'');
