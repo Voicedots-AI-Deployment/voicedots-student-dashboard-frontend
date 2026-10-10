@@ -1896,6 +1896,7 @@ function showIncompleteInterview(reason, completed = 0, required = TOTAL_INTERVI
   if (incompleteScreen) incompleteScreen.style.display = "flex";
   if (incompleteMessage) {
     const candidateEnded = reason === "candidate_requested" || reason === "candidate_ended" || reason === "proctor_terminated";
+    if (candidateEnded && completed > 0) void showInterviewExperienceFeedback();
     incompleteMessage.textContent = candidateEnded
       ? (detail || (reason === "proctor_terminated"
         ? `This placement interview ended under the AI-proctor policy after ${completed} of ${required} required rounds. Your completed responses were saved. Placement staff can review the recorded event.`
@@ -3154,6 +3155,7 @@ async function finishAndGenerateReport() {
   }
   reportGenerationStarted = true;
   stopInterview();
+  void showInterviewExperienceFeedback();
   if (callScreen) callScreen.style.display = "none";
   if (liveChip) liveChip.style.display = "none";
   if (interviewRecordingEnabled) {
@@ -3530,4 +3532,51 @@ for (const video of [lobbyVideoEl, candidateVideoEl]) {
 function escHtml(str) {
   if (!str) return "";
   return String(str).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+}
+
+
+async function showInterviewExperienceFeedback() {
+  if (!currentSessionId || document.getElementById("interview-experience-feedback")) return;
+  const endpoint = `${_HTTP_BASE}/api/student/interview/${encodeURIComponent(currentSessionId)}/experience-feedback`;
+  try {
+    let response = await studentFetch(endpoint, {signal:AbortSignal.timeout(10000)});
+    const persistenceDeadline=Date.now()+30000;
+    while (response.status === 409 && Date.now()<persistenceDeadline) {
+      await new Promise(resolve=>setTimeout(resolve,1000));
+      response=await studentFetch(endpoint, {signal:AbortSignal.timeout(10000)});
+    }
+    if (!response.ok) return;
+    const data=await response.json();
+    if (data.submitted || !Array.isArray(data.questions)) return;
+    const overlay=document.createElement("div");overlay.id="interview-experience-feedback";
+    overlay.style.cssText="position:fixed;inset:0;z-index:10000;background:#070812c9;display:grid;place-items:center;padding:20px;overflow:auto";
+    const form=document.createElement("form");form.setAttribute("role","dialog");form.setAttribute("aria-modal","true");form.setAttribute("aria-labelledby","experience-feedback-title");
+    form.style.cssText="width:min(100%,580px);max-height:90vh;overflow:auto;padding:28px;background:#171622;color:#fff;border:1px solid #393646;border-radius:20px;box-shadow:0 24px 80px #0006";
+    const title=document.createElement("h2");title.id="experience-feedback-title";title.textContent="How was your interview?";form.appendChild(title);
+    const intro=document.createElement("p");intro.textContent="Share your experience to help us improve. Every question is optional, and you can skip. This feedback does not affect your score or placement decision. Your placement team can view feedback for placement interviews.";intro.style.cssText="line-height:1.5;color:#bbb8ca;margin:12px 0 20px";form.appendChild(intro);
+    for (const question of data.questions) {
+      const label=document.createElement("label");label.style.cssText="display:block;margin:14px 0;font-size:14px";
+      const text=document.createElement("span");text.textContent=question.label;label.appendChild(text);
+      const select=document.createElement("select");select.name=question.key;select.style.cssText="display:block;width:100%;margin-top:7px;padding:10px;border-radius:8px;background:#242232;color:#fff;border:1px solid #484256";
+      for(const [value,caption] of [["","Choose a rating (optional)"],["1","1 · Poor"],["2","2 · Fair"],["3","3 · Good"],["4","4 · Very good"],["5","5 · Excellent"]]){const option=document.createElement("option");option.value=value;option.textContent=caption;select.appendChild(option);}
+      label.appendChild(select);form.appendChild(label);
+    }
+    const commentLabel=document.createElement("label");commentLabel.textContent="What worked well, or what should we improve? (optional)";
+    const comments=document.createElement("textarea");comments.name="comments";comments.maxLength=2000;comments.rows=3;comments.style.cssText="display:block;width:100%;box-sizing:border-box;margin-top:8px;padding:10px;background:#242232;color:#fff;border:1px solid #484256;border-radius:8px";commentLabel.appendChild(comments);form.appendChild(commentLabel);
+    const status=document.createElement("p");status.setAttribute("role","status");form.appendChild(status);
+    const actions=document.createElement("div");actions.style.cssText="display:flex;gap:12px;justify-content:flex-end;margin-top:20px";
+    const skip=document.createElement("button");skip.type="button";skip.className="btn btn-secondary";skip.textContent="Skip feedback";
+    const submit=document.createElement("button");submit.type="submit";submit.className="btn btn-primary";submit.textContent="Submit feedback";
+    actions.append(skip,submit);form.appendChild(actions);overlay.appendChild(form);document.body.appendChild(overlay);skip.focus();
+    skip.onclick=()=>{overlay.remove();void studentFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({skipped:true}),signal:AbortSignal.timeout(10000)}).catch(()=>{});};
+    form.onsubmit=async event=>{
+      event.preventDefault();const payload={comments:comments.value.trim()};
+      for(const question of data.questions){const select=form.elements.namedItem(question.key);if(select?.value)payload[question.key]=Number(select.value);}
+      if(Object.keys(payload).length===1&&!payload.comments){status.textContent="Choose at least one rating, add a comment, or skip feedback.";return;}
+      submit.disabled=true;status.textContent="Saving your feedback…";
+      try{const saved=await studentFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});if(!saved.ok)throw new Error("Your feedback could not be saved. Retry or skip.");overlay.remove();}
+      catch(error){status.textContent=error.message||"Feedback could not be saved. Retry or skip.";submit.disabled=false;}
+    };
+    overlay.addEventListener("keydown",event=>{if(event.key==="Escape")skip.click();if(event.key==="Tab"){const controls=[...form.querySelectorAll('select,textarea,button')].filter(el=>!el.disabled);const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
+  } catch { /* Optional feedback must never block interview completion. */ }
 }
