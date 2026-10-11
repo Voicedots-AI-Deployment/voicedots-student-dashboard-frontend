@@ -559,3 +559,42 @@ test("a pending resume deep link keeps its selected resume when a section is cli
  await page.route("**/api/student/resume-studio/resumes/rs-2",async route=>{await new Promise(resolve=>setTimeout(resolve,300));return route.fulfill({json:other})});
  await page.goto("/resume-studio?resume=rs-2");await page.getByRole("tab",{name:"Resume editor",exact:true}).click();await expect(page.getByLabel("Professional headline",{exact:true})).toHaveValue("Requested headline");await expect(page.getByRole("button",{name:"Choose resume",exact:true})).toContainText("Requested resume");
 });
+
+test("a resume over one page offers Fit to one page beside the page count and shows the proposal",async({page})=>{
+ await mockResumeStudio(page);
+ const fitCalls:unknown[]=[];
+ await page.route("**/api/student/resume-studio/resumes/rs-1/preview",async route=>{
+  if(route.request().method()!=="POST")return route.fallback();
+  return route.fulfill({contentType:"text/html",body:`<!doctype html><html><body><main class="rd"><h1>Asha</h1></main><script>parent.postMessage({type:"resume-preview",pages:2,height:2264},"*")</script></body></html>`});
+ });
+ await page.route("**/api/student/resume-studio/resumes/rs-1/fit",async route=>{
+  fitCalls.push(route.request().postDataJSON());
+  const draft={title:"Resume 1",personal_details:{full_name:"Asha"},sections:[]};
+  return route.fulfill({json:{pages_before:2,pages_after:1,steps:["Reduced section spacing","Body text 10.5pt"],removed_skills:[],document:draft,presentation:{},requires_apply:true,source_revision:1}});
+ });
+ await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.getByLabel("Full name").fill("Asha");
+ await expect(page.locator(".rs-preview-page-size")).toHaveText("2 pages · A4");
+ const fit=page.locator(".rs-preview-head").getByRole("button",{name:"Fit to one page"});
+ await expect(fit).toBeVisible();
+ await fit.click();
+ await expect(page.getByRole("tab",{name:"Design & templates"})).toHaveAttribute("aria-selected","true");
+ await expect(page.locator(".rs-fit-result")).toContainText("Fit proposal · 2 → 1 pages");
+ await expect(page.locator(".rs-fit-result")).toContainText("Reduced section spacing");
+ expect(fitCalls).toEqual([{target_pages:1,job_description:""}]);
+});
+
+test("a one-page resume does not show the fit button",async({page})=>{
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.getByLabel("Full name").fill("Asha Preview");
+ await expect(page.locator(".rs-preview-page-size")).toHaveText("1 page · A4");
+ await expect(page.locator(".rs-preview-head").getByRole("button",{name:"Fit to one page"})).toHaveCount(0);
+});
+
+test("project and experience entries carry a plain writing tip",async({page})=>{
+ await mockResumeStudio(page);await page.goto("/resume-studio");await page.getByRole("button",{name:/Open Resume 1/}).click();await page.getByRole("tab",{name:"Resume editor"}).click();
+ await page.getByRole("button",{name:"Add content"}).click();await page.getByRole("button",{name:/^Projects/}).click();
+ const section=page.locator(".rs-content-section").last();if(!await section.locator(".rs-entry").count())await section.getByRole("button",{name:/^Add Project/}).click();
+ const tip=page.locator(".rs-content-section").last().locator(".rs-writing-tip");
+ await expect(tip).toContainText("Write what you did, how you did it, which part was yours, and what changed because of it.");
+});
