@@ -303,17 +303,18 @@
           <li data-check="network" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Connection</strong><small>Waiting</small></span></li>
           <li data-check="screen" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Screen sharing</strong><small>Waiting</small></span></li>
         </ol>
+        <div class="pf-side">
         <div class="cam-preview" id="cam-preview" hidden>
           <video id="lobby-video" autoplay muted playsinline></video>
           <div class="cam-overlay" id="cam-overlay"><span>Waiting for camera access…</span></div>
-          <div class="pf-liveness" id="pf-liveness" hidden><span class="pf-arrow" aria-hidden="true">←</span><strong id="pf-liveness-text"></strong></div>
+          <div class="pf-liveness" id="pf-liveness" hidden>
+            <svg class="pf-head-guide" viewBox="0 0 64 64" aria-hidden="true"><path d="M17 51c2-7 8-10 15-10s13 3 15 10"/><ellipse cx="32" cy="24" rx="13" ry="17"/><path class="pf-head-nose" d="M32 20v9l4 1"/><path d="M25 21h1m12 0h1"/></svg>
+            <span class="pf-turn-copy"><strong id="pf-liveness-text"></strong><small>Keep your face in view · turn gently</small></span>
+            <span class="pf-arrow" aria-hidden="true">←</span>
+            <span class="pf-turn-progress" aria-hidden="true"><i></i><i></i><i></i></span>
+          </div>
         </div>
-        </div>
-        <p id="preflight-requirements" style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
-        <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand my answers will be transcribed for evaluation. Placement interviews are also video recorded and may be reviewed by authorized placement staff.</span></label>
-        <p id="recording-status" class="recording-status" role="status" aria-live="polite" hidden></p>
-        <button class="pj-btn pj-btn-primary" id="pj-join-btn" type="button" disabled>Start AI Interview</button>
-      </div>
+        <div class="pf-recovery">
       <div class="pj-panel" id="pj-panel-1">
         <h3>Camera check</h3>
         <p id="cam-error" role="alert"></p>
@@ -331,6 +332,7 @@
       </div>
       <div class="pj-panel" id="pj-noise-panel">
         <h3>Quiet room check</h3><p id="pj-noise-error" role="alert"></p>
+        <p class="pf-noise-limit">Microphone estimate · keep background noise at 70 or below.</p>
         <button class="pj-btn pj-btn-ghost" id="pj-noise-retry" type="button">Measure again</button>
       </div>
       <div class="pj-panel" id="pj-liveness-panel">
@@ -355,6 +357,15 @@
         <p id="pj-fullscreen-error" role="alert"></p>
         <button class="pj-btn pj-btn-primary" id="pj-fullscreen-start" type="button">Enter full screen and start</button>
       </div>
+        </div>
+        </div>
+        </div>
+        <p id="preflight-requirements" style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
+        <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand my answers will be transcribed for evaluation. Placement interviews are also video recorded and may be reviewed by authorized placement staff.</span></label>
+        <p id="recording-status" class="recording-status" role="status" aria-live="polite" hidden></p>
+        <button class="pj-btn pj-btn-primary" id="pj-join-btn" type="button" disabled>Start AI Interview</button>
+      </div>
+
     </div>
   </div>
 

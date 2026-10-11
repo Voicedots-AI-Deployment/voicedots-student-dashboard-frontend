@@ -72,7 +72,7 @@ async function prepare(page: Page, failure = "") {
         // The quiet-room check opens an unfiltered feed: that one carries the
         // room noise (quiet unless a test makes it loud).
         const roomCheck = typeof constraints.audio === "object" && (constraints.audio as MediaTrackConstraints).noiseSuppression === false;
-        gain.gain.value = roomCheck ? (w.failure === "noisy" ? .8 : .0003) : ["microphone", "silent"].includes(w.failure) ? 0 : .8;
+        gain.gain.value = roomCheck ? (w.failure === "noisy" ? .8 : w.failure === "medium-noise" ? .02 : .0003) : ["microphone", "silent"].includes(w.failure) ? 0 : .8;
         if (!roomCheck) w.environmentMicGain = gain;
         const destination = context.createMediaStreamDestination();
         oscillator.connect(gain).connect(destination);
@@ -516,7 +516,7 @@ test("setup and microphone recovery stay aligned on desktop and mobile",async({p
  await expect(page.locator('#pj-mic-retry')).toBeEnabled();
  await expect(page.locator('#lobby-video')).toHaveCSS('object-fit','contain');
  const preview=await page.locator('#cam-preview').boundingBox();
- expect(preview!.width / preview!.height).toBeCloseTo(4 / 3, 1);
+ expect(preview!.width / preview!.height).toBeCloseTo(16 / 9, 1);
  await expect(page.locator('#mic-select')).toHaveValue('');
  await page.screenshot({path:'/root/voicedots/artifacts/interview-camera-frame-20261008/microphone-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});
@@ -688,6 +688,27 @@ test("a noisy room blocks the interview with its noise level until it is quiet",
   await expect(page.locator('#pf-steps [data-check="noise"]')).toHaveAttribute("data-state", "passed", { timeout: 15000 });
   await completeScreenSharing(page);
   await expect.poll(() => counts.create).toBe(1);
+});
+
+test("room noise below the requested 70 limit can continue", async ({ page }) => {
+  await prepare(page, "medium-noise");
+  await simulateFace(page, "live");
+  await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await expect(page.locator('#pf-steps [data-check="noise"]')).toHaveAttribute("data-state", "passed", { timeout: 15000 });
+});
+
+test("environment recovery and turn guidance fit a laptop viewport", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await prepare(page, "network");
+  await simulateFace(page, "live");
+  await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await expect(page.locator("#pj-network-error")).toBeVisible();
+  await expect(page.getByRole("button", { name: "Retry readiness check" })).toBeEnabled({ timeout: 15000 });
+  const recovery = await page.getByRole("button", { name: "Retry readiness check" }).boundingBox();
+  const preview = await page.locator("#cam-preview").boundingBox();
+  expect(recovery!.y + recovery!.height).toBeLessThanOrEqual(768);
+  expect(preview!.y + preview!.height).toBeLessThanOrEqual(768);
+  await page.screenshot({ path: "../.local/ui/environment-recovery-horizontal.png", fullPage: true });
 });
 
 test("duplicate Windows microphone entries are shown once and a working one is chosen automatically", async ({ page }) => {

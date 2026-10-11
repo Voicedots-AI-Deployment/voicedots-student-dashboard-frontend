@@ -286,3 +286,44 @@ li[data-loud="true"] .pf-meter i { background: #f87171; }
 .pf-progress span { display: block; width: 30%; height: 100%; background: linear-gradient(90deg,transparent,#a78bfa,transparent); animation: pf-progress-slide 2s ease-in-out infinite; }
 @keyframes pf-progress-slide { from { transform: translateX(-100%); } to { transform: translateX(440%); } }
 @media (prefers-reduced-motion: reduce) { .pf-mic-bar { height: 4px !important; transition: none; } .pf-progress span { animation: none; width: 100%; } }
+
+/* A compact setup workspace; recovery stays beside the camera. */
+#prejoin-screen { padding: 14px 20px; align-items: center; }
+.prejoin-card:has(#pf-steps:not([hidden])) { max-width: 1180px; }
+.prejoin-card > .pj-panel { padding: 22px; }
+.pf-layout:has(#pf-steps:not([hidden])) { grid-template-columns: minmax(270px,.8fr) minmax(0,1.35fr); gap: 22px; align-items: start; }
+.pf-side { min-width: 0; }
+.pf-layout #cam-preview { position: relative !important; top: auto !important; margin: 0 auto !important; width: min(100%,569px,71vh); max-width: none; aspect-ratio: 16/9 !important; height: auto !important; max-height: min(320px,40vh) !important; min-height: 0 !important; }
+.pf-steps { margin: 0; gap: 5px; }
+.pf-steps li { padding: 6px 10px; border-radius: 9px; grid-template-columns: 24px 1fr; gap: 10px; }
+.pf-icon { width: 24px; height: 24px; }
+.pf-text strong { font-size: .78rem; }
+.pf-text small { font-size: .67rem; }
+.pf-mic-activity { margin-top: 4px; padding: 2px 8px; border: 0; background: transparent !important; }
+.pf-mic-wave { height: 25px; }
+.pf-mic-caption { margin-top: 1px; font-size: .6rem; }
+.pf-recovery:has(.pj-panel.active) { margin-top: 12px; border: 1px solid var(--border); border-radius: 12px; background: var(--surf2); }
+.pf-recovery .pj-panel.active { padding: 14px; border: 0; animation: none; }
+.pf-recovery h3 { font-size: .9rem; }
+.pf-recovery p { font-size: .78rem; margin: 4px 0 10px; }
+.pf-recovery .pj-btn { padding: 10px 14px; min-height: 38px; }
+#preflight-requirements { font-size: .69rem !important; margin: 12px 0 8px !important; }
+.recording-consent { padding: 8px 10px; font-size: .7rem; margin: 8px 0 !important; }
+#pj-join-btn { padding: 11px 16px; }
+.pf-liveness { bottom: 14px; left: 14px; right: 14px; padding: 10px 12px; display: grid; grid-template-columns: 42px 1fr 30px; gap: 6px 12px; border: 1px solid rgba(196,181,253,.25); background: rgba(14,11,24,.94); border-radius: 12px; }
+.pf-liveness[hidden] { display: none; }
+.pf-head-guide { width: 42px; height: 42px; fill: none; stroke: #c4b5fd; stroke-width: 2.3; stroke-linecap: round; transform-origin: center; }
+.pf-turn-copy { display: grid; gap: 4px; text-align: left; }
+.pf-turn-copy strong { font-size: .8rem; }
+.pf-turn-copy small { color: #b2a9c6; font-size: .65rem; }
+.pf-liveness .pf-arrow { width: 28px; height: 28px; font-size: 19px; animation: none !important; background: transparent; }
+.pf-turn-progress { grid-column: 2; display: flex; gap: 5px; }
+.pf-turn-progress i { width: 20px; height: 3px; background: #514765; border-radius: 3px; }
+.pf-turn-progress i.done { background: #6ee7b7; }
+.pf-turn-progress i.active { background: #c4b5fd; }
+.pf-liveness[data-side="left"] .pf-head-guide { animation: pf-head-left 2.4s ease-in-out infinite; }
+.pf-liveness[data-side="right"] .pf-head-guide { animation: pf-head-right 2.4s ease-in-out infinite; }
+@keyframes pf-head-left { 50% { transform: perspective(100px) rotateY(-32deg) translateX(-3px); } }
+@keyframes pf-head-right { 50% { transform: perspective(100px) rotateY(32deg) translateX(3px); } }
+@media (prefers-reduced-motion: reduce) { .pf-head-guide { animation: none !important; } }
+@media (max-width: 700px) { #prejoin-screen { padding: 12px; } .prejoin-card > .pj-panel { padding: 16px; } .pf-layout:has(#pf-steps:not([hidden])) { display: flex; flex-direction: column; gap: 14px; } .pf-side { order: -1; width: 100%; } .pf-steps { width: 100%; } .pf-layout .cam-preview { max-height: 260px; } }

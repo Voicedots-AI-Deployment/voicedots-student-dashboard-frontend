@@ -203,7 +203,7 @@ const CORE_CHECKS = ["camera", "microphone", "noise", "liveness", "identity", "n
 // Background noise is measured on a raw (unfiltered) microphone feed. The
 // value is dBFS; the dB shown to students adds a nominal microphone offset,
 // so it is an estimate, not a calibrated sound level.
-const NOISE_MAX_DBFS = -40;
+const NOISE_MAX_DBFS = -24; // 70 on the displayed estimate (94 offset), not calibrated SPL.
 const NOISE_DISPLAY_OFFSET = 94;
 const NOISE_SAMPLE_MS = 3000;
 let lastNoiseDb = null;
@@ -889,8 +889,11 @@ async function checkLiveness() {
   if (!faceLandmarker) return;
   const sides = Math.random() < 0.5 ? ["left", "right"] : ["right", "left"];
   try {
-    for (const side of [...sides, "center"]) {
+    for (const [step, side] of [...sides, "center"].entries()) {
       showLivenessPrompt(side);
+      document.querySelectorAll(".pf-turn-progress i").forEach((dot, index) => {
+        dot.classList.toggle("done", index < step); dot.classList.toggle("active", index === step);
+      });
       preflightStatus(side === "center" ? "Look back at the camera." : `Follow the arrow: slowly turn your head ${side}.`);
       await waitForPreflight(() => {
         if (faceCountDetected !== 1) return false;
