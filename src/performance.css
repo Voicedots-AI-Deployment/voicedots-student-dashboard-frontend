@@ -1,0 +1,126 @@
+/* My performance dashboard. Uses the portal's existing tokens and accents. */
+.perf-page { display: grid; }
+.perf-page .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.perf-kpis .stat-card p { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 10px; }
+.perf-columns { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 24px; }
+.perf-columns-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.perf-columns > .panel { min-width: 0; }
+
+.perf-delta { display: inline-flex; align-items: center; gap: 3px; padding: 2px 7px; border-radius: 999px; font-size: 10px; font-weight: 600; white-space: nowrap; }
+.perf-delta.up { background: #e6f5ed; color: #167447; }
+.perf-delta.down { background: #fdecef; color: #a63a4a; }
+.perf-delta.neutral { background: var(--soft); color: var(--muted); }
+.dark .perf-delta.up { background: #173526; color: #7fd8a7; }
+.dark .perf-delta.down { background: #3a1d24; color: #f0a3b1; }
+
+/* Score trend */
+.perf-chart { margin: 0; color: var(--primary); }
+.perf-chart svg { display: block; width: 100%; height: auto; overflow: visible; }
+.perf-grid line { stroke: var(--border); stroke-width: 1; }
+.perf-grid.ready line { stroke: #b496df; stroke-dasharray: 4 4; }
+.perf-grid text, .perf-point text { fill: var(--muted); font-size: 10px; font-family: Poppins, sans-serif; }
+.perf-grid-label { fill: #b496df; font-size: 10px; font-family: Poppins, sans-serif; }
+.perf-line { fill: none; stroke: var(--primary); stroke-width: 2.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; animation: perf-draw 1s cubic-bezier(.22, .8, .24, 1) backwards; }
+.perf-area { animation: vd-fade .9s ease .3s backwards; }
+.perf-point circle { stroke: var(--card); stroke-width: 2.5; transition: r .2s ease; animation: vd-fade .35s ease .5s backwards; }
+.perf-point.placement circle { fill: var(--primary); }
+.perf-point.practice circle { fill: #b496df; }
+.perf-point circle:hover { r: 8; }
+.perf-chart figcaption { display: flex; flex-wrap: wrap; gap: 16px; margin-top: 10px; font-size: 11px; color: var(--muted); }
+.perf-legend { display: inline-flex; align-items: center; gap: 7px; }
+.perf-legend:before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--primary); }
+.perf-legend.practice:before { background: #b496df; }
+.perf-summary { margin-top: 14px; font-size: 12px; color: var(--muted); line-height: 1.7; }
+.perf-summary strong { color: var(--text); }
+@keyframes perf-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+
+/* Readiness ring and axes */
+.perf-ring { position: relative; width: 140px; height: 140px; margin: 4px auto 8px; }
+.perf-ring svg { width: 100%; height: 100%; transform: rotate(-90deg); }
+.perf-ring circle { fill: none; stroke: var(--soft); stroke-width: 11; }
+.perf-ring circle.value { stroke: var(--primary); stroke-linecap: round; stroke-dasharray: var(--value) 100; animation: perf-ring 1s cubic-bezier(.22, .8, .24, 1) backwards; }
+@keyframes perf-ring { from { stroke-dasharray: 0 100; } }
+.perf-ring > div { position: absolute; inset: 0; display: grid; place-content: center; text-align: center; }
+.perf-ring strong { font-size: 32px; font-weight: 500; line-height: 1; }
+.perf-ring span { font-size: 11px; color: var(--muted); }
+.perf-ring-label { text-align: center; font-size: 13px; font-weight: 600; color: var(--primary); margin-bottom: 18px; }
+.perf-axes { display: grid; gap: 12px; margin: 0; }
+.perf-axes > div { display: grid; gap: 6px; }
+.perf-axes dt { font-size: 12px; }
+.perf-axes dt small { color: var(--muted); font-size: 10px; }
+.perf-axes dd { display: grid; grid-template-columns: 1fr 34px; align-items: center; gap: 10px; margin: 0; font-size: 12px; font-weight: 600; text-align: right; }
+.perf-meter { height: 8px; border-radius: 999px; background: var(--soft); overflow: hidden; }
+.perf-meter span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #b496df, var(--primary)); transform-origin: left; animation: perf-grow .9s cubic-bezier(.22, .8, .24, 1) backwards; }
+@keyframes perf-grow { from { transform: scaleX(0); } }
+.perf-drive-scores { display: grid; gap: 8px; margin: 18px 0 0; padding: 14px 0 0; border-top: 1px solid var(--border); list-style: none; }
+.perf-drive-scores li { display: grid; grid-template-columns: auto 1fr auto; align-items: baseline; gap: 8px; font-size: 12px; }
+.perf-drive-scores small { color: var(--muted); font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
+/* Skills */
+.perf-skill-list { display: grid; gap: 13px; margin: 0; padding: 0; list-style: none; }
+.perf-skill-list li { display: grid; grid-template-columns: minmax(120px, 190px) 1fr 86px 72px; align-items: center; gap: 14px; font-size: 12px; }
+.perf-skill-list li > strong { font-weight: 600; text-align: right; }
+.perf-skill-list li > .perf-delta { justify-self: start; }
+.perf-skill-list.compact { margin-top: 18px; }
+.perf-skill-list.compact li { grid-template-columns: minmax(110px, 150px) 1fr 50px; }
+
+/* Strengths, focus and actions */
+.perf-chip-group { margin-bottom: 16px; }
+.perf-chip-group h3 { display: flex; align-items: center; gap: 7px; font-size: 13px; font-weight: 600; }
+.perf-chip-group h3 svg { color: var(--primary); }
+.perf-chip-group .muted { margin-top: 8px; font-size: 12px; }
+.perf-actions { display: grid; gap: 9px; margin: 4px 0 18px; padding-left: 18px; font-size: 12px; line-height: 1.55; }
+.perf-actions li::marker { color: var(--primary); font-weight: 600; }
+.perf-actions strong { display: block; font-weight: 600; }
+.perf-actions span { color: var(--muted); }
+.perf-links { display: flex; flex-wrap: wrap; gap: 10px; }
+
+/* Communication */
+.perf-comm-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin: 0; }
+.perf-comm-grid > div { padding: 15px; border-radius: 12px; background: var(--soft); }
+.perf-comm-grid dt { display: flex; align-items: center; gap: 7px; font-size: 11px; color: var(--muted); }
+.perf-comm-grid dt svg { color: var(--primary); }
+.perf-comm-grid dd { margin: 10px 0 6px; font-size: 24px; font-weight: 500; line-height: 1; }
+.perf-comm-grid dd small { font-size: 11px; color: var(--muted); font-weight: 400; }
+.perf-comm-grid > div > small { font-size: 11px; color: var(--muted); }
+.perf-fillers { margin-top: 14px; font-size: 12px; }
+
+/* Activity */
+.perf-bars { display: grid; grid-template-columns: repeat(8, minmax(0, 1fr)); align-items: end; gap: 10px; }
+.perf-bars > div { display: grid; gap: 7px; text-align: center; }
+.perf-bar-track { display: flex; align-items: flex-end; height: 120px; }
+.perf-bars span { display: block; width: 100%; max-width: 34px; margin: 0 auto; border-radius: 8px 8px 3px 3px; background: linear-gradient(180deg, var(--primary), #b496df); transform-origin: bottom; animation: perf-rise .6s cubic-bezier(.22, .8, .24, 1) backwards; }
+.perf-bars span.perf-bar-empty { background: var(--soft); }
+.perf-bars small { font-size: 10px; color: var(--muted); }
+@keyframes perf-rise { from { transform: scaleY(0); } }
+
+/* Placement journey */
+.perf-timeline { display: grid; margin: 0; padding: 0; list-style: none; }
+.perf-timeline li { display: grid; grid-template-columns: 14px 1fr auto; align-items: center; gap: 12px; padding: 11px 0; }
+.perf-timeline li + li { border-top: 1px solid var(--border); }
+.perf-timeline li > div { display: grid; gap: 3px; min-width: 0; }
+.perf-timeline strong { font-size: 12px; font-weight: 600; overflow-wrap: anywhere; }
+.perf-timeline small { font-size: 11px; color: var(--muted); }
+.perf-timeline b { font-size: 16px; font-weight: 600; color: var(--primary); }
+.perf-timeline-dot { width: 10px; height: 10px; border-radius: 50%; background: var(--primary); box-shadow: 0 0 0 4px var(--soft); }
+.perf-upcoming { display: grid; grid-template-columns: 1fr auto; gap: 4px 12px; align-items: center; margin-top: 16px; padding: 14px; border-radius: 12px; background: var(--soft); font-size: 12px; }
+.perf-upcoming span { grid-column: 1; color: var(--muted); font-size: 11px; }
+.perf-upcoming .button { grid-row: 1 / 3; grid-column: 2; }
+
+@media (max-width: 1100px) {
+  .perf-columns, .perf-columns-even { grid-template-columns: 1fr; }
+}
+@media (max-width: 760px) {
+  .perf-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .perf-skill-list li { grid-template-columns: 1fr auto; gap: 6px 12px; }
+  .perf-skill-list li > span { grid-column: 1; grid-row: 1; }
+  .perf-skill-list li > .perf-meter { grid-column: 1 / -1; grid-row: 2; }
+  .perf-skill-list li > strong { grid-column: 2; grid-row: 1; }
+  .perf-skill-list li > .perf-delta { grid-column: 1 / -1; grid-row: 3; justify-self: start; }
+  .perf-bars { gap: 6px; }
+}
+@media (max-width: 420px) {
+  .perf-kpis { grid-template-columns: 1fr; }
+  .perf-comm-grid { grid-template-columns: 1fr; }
+}
+.perf-timeline li.perf-timeline-empty { display: block; color: var(--muted); font-size: 12px; }

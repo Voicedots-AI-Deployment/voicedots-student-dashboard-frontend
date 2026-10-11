@@ -12,6 +12,7 @@ import {
   Compass,
   FileText,
   House,
+  ChartLine,
   LogOut,
   Menu,
   Mic,
@@ -44,6 +45,7 @@ import { CoachSession } from "./coach-session";
 import { CareerCoach } from "./career-coach";
 import { ResumeStudio } from "./resume-studio";
 import { ProfileSetupPrompt } from "./profile-setup";
+import { Performance } from "./performance";
 
 type PendingPhotoLogin = {
   email: string;
@@ -273,6 +275,7 @@ function Login() {
 
 const nav = [
   { to: "/", label: "Overview", icon: House },
+  { to: "/performance", label: "My performance", icon: ChartLine },
   { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/practice", label: "Interview practice", icon: Mic },
@@ -475,6 +478,7 @@ export function App() {
           <ProfileSetupPrompt />
           <Routes>
             <Route path="/" element={<Overview />} />
+            <Route path="/performance" element={<Performance />} />
             <Route path="/login" element={<Navigate to="/" replace />} />
             <Route
               path="/practice"
