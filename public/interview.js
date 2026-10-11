@@ -3737,81 +3737,148 @@ async function showInterviewExperienceFeedback() {
     if (!response.ok) return;
     const data=await response.json();
     if (data.submitted || !Array.isArray(data.questions)) return;
+    const esc = escHtml;
+    const limit = Number(data.text_limit) || 500;
+    const words = Array.isArray(data.rating_labels) && data.rating_labels.length === 5 ? data.rating_labels : ["Very poor", "Poor", "Average", "Good", "Excellent"];
+    const context = data.context || {};
+    const when = context.completed_at && !Number.isNaN(Date.parse(context.completed_at))
+      ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }).format(new Date(context.completed_at))
+      : "Today";
+    const total = data.questions.length + 1;
+    const ratingRow = (question, index) => `
+      <fieldset class="xf-q" data-q="${esc(question.key)}">
+        <legend>${index + 1}. ${esc(question.label)}${index === 0 ? ' <em aria-label="required">*</em>' : ""}</legend>
+        <div class="xf-rate">
+          <div class="xf-stars" role="radiogroup" aria-label="${esc(question.label)}" data-name="${esc(question.key)}">${[1, 2, 3, 4, 5].map(value =>
+            `<label class="xf-star"><input type="radio" name="${esc(question.key)}" value="${value}" aria-label="${value} star${value === 1 ? "" : "s"}, ${esc(words[value - 1])}"><span aria-hidden="true">★</span></label>`).join("")}</div>
+          <span class="xf-word" aria-hidden="true"></span>
+        </div>
+        <ol class="xf-scale" aria-hidden="true">${words.map((word, i) => `<li>${i + 1} - ${esc(word)}</li>`).join("")}</ol>
+        <p class="xf-error" role="alert"></p>
+      </fieldset>`;
     const overlay = document.createElement("div");
     overlay.id = "interview-experience-feedback";
     overlay.className = "xf-overlay";
-    const form = document.createElement("form");
-    form.className = "xf-card";
-    form.setAttribute("role", "dialog");
-    form.setAttribute("aria-modal", "true");
-    form.setAttribute("aria-labelledby", "experience-feedback-title");
-    form.noValidate = true;
-    const RATING_WORDS = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
-    form.innerHTML = `
-      <div class="xf-head">
-        <span class="xf-badge" aria-hidden="true">★</span>
-        <div><h2 id="experience-feedback-title">How was your interview?</h2>
-        <p>Tap a star for anything you want to rate. Everything is optional and does not affect your score or placement decision.</p></div>
-      </div>
-      <div class="xf-questions"></div>
-      <label class="xf-comment"><span>What worked well, or what should we improve? (optional)</span>
-        <textarea name="comments" maxlength="2000" rows="3" placeholder="For example: the questions were clear, but the voice cut out once."></textarea></label>
-      <p class="xf-status" role="status"></p>
-      <div class="xf-actions">
-        <button type="button" class="pj-btn pj-btn-ghost xf-skip">Skip feedback</button>
-        <button type="submit" class="pj-btn pj-btn-primary xf-submit">Submit feedback</button>
-      </div>
-      <p class="xf-note">Your placement team can view feedback for placement interviews.</p>`;
-    const list = form.querySelector(".xf-questions");
-    for (const question of data.questions) {
-      const group = document.createElement("fieldset");
-      group.className = "xf-question";
-      group.setAttribute("role", "radiogroup");
-      group.setAttribute("aria-label", question.label);
-      const legend = document.createElement("legend");
-      legend.textContent = question.label;
-      const stars = document.createElement("div");
-      stars.className = "xf-stars";
-      const word = document.createElement("span");
-      word.className = "xf-word";
-      word.setAttribute("aria-hidden", "true");
-      for (let value = 1; value <= 5; value += 1) {
-        const star = document.createElement("label");
-        star.className = "xf-star";
-        star.innerHTML = `<input type="radio" name="${escHtml(question.key)}" value="${value}" aria-label="${value} star${value === 1 ? "" : "s"}, ${RATING_WORDS[value]}"><span aria-hidden="true">★</span>`;
-        stars.appendChild(star);
-      }
-      stars.addEventListener("change", event => {
-        const value = Number(event.target.value);
-        stars.querySelectorAll(".xf-star").forEach((star, index) => star.classList.toggle("on", index < value));
-        word.textContent = RATING_WORDS[value];
-        group.classList.add("rated");
-      });
-      stars.appendChild(word);
-      group.append(legend, stars);
-      list.appendChild(group);
-    }
-    overlay.appendChild(form);
+    overlay.innerHTML = `
+      <div class="xf-shell" role="dialog" aria-modal="true" aria-labelledby="experience-feedback-title">
+        <form class="xf-form" novalidate>
+          <header class="xf-bar">
+            <div class="topbar-brand xf-brand"><img src="/voicedotslogo.svg" alt="" width="30" height="30"><span class="topbar-name">oiceDots</span></div>
+            <span class="xf-bar-note"><span aria-hidden="true">✓</span> Interview saved</span>
+          </header>
+          <div class="xf-body">
+            <div class="xf-head">
+              <span class="xf-badge" aria-hidden="true">★</span>
+              <div>
+                <h2 id="experience-feedback-title">Interview Completed! Share Your Feedback</h2>
+                <p class="xf-sub">Takes about 30 seconds. Only the first rating is required, and your feedback never affects your result.</p>
+              </div>
+            </div>
+            <dl class="xf-context">
+              <div><dt>Interview type</dt><dd>${esc(context.interview_type || "AI interview")}</dd></div>
+              <div><dt>Role</dt><dd>${esc(context.role || "Not specified")}</dd></div>
+              <div><dt>Drive</dt><dd>${esc(context.drive || "Self practice")}</dd></div>
+              <div><dt>Date</dt><dd>${esc(when)}</dd></div>
+            </dl>
+            <div class="xf-progress" aria-hidden="true"><span class="xf-progress-bar"><i></i></span><span class="xf-progress-text">0 of ${total} answered · about 30 seconds</span></div>
+            <div class="xf-list">
+              ${data.questions.map(ratingRow).join("")}
+              <fieldset class="xf-q" data-q="recommend"><legend>${data.questions.length + 1}. How likely are you to recommend this AI interview experience to other students?</legend>
+                <div class="xf-range"><div class="xf-range-ends"><span>Not likely</span><output class="xf-range-value" aria-live="polite">Not selected</output><span>Extremely likely</span></div>
+                <input type="range" name="recommend" min="0" max="10" step="1" value="5" aria-label="How likely are you to recommend this AI interview experience? 0 to 10">
+                <div class="xf-range-ticks">${Array.from({ length: 11 }, (_, n) => `<button type="button" data-score="${n}" tabindex="-1">${n}</button>`).join("")}</div></div></fieldset>
+              <fieldset class="xf-q" data-q="improvements"><legend>What could we improve? <span>(Optional, choose any)</span></legend>
+                <div class="xf-chips">${(data.improvement_options || []).map(option => `<label class="xf-chip"><input type="checkbox" name="improvements" value="${esc(option.key)}"><span>${esc(option.label)}</span></label>`).join("")}</div>
+                <input class="xf-other" name="improvement_other" maxlength="200" placeholder="Tell us what else to improve..." aria-label="Please specify the other improvement" hidden>
+                <p class="xf-error" role="alert"></p></fieldset>
+              <fieldset class="xf-q" data-q="comments"><legend>Additional Comments <span>(Optional)</span></legend>
+                <div class="xf-text"><textarea name="comments" maxlength="${limit}" rows="3" aria-label="Additional comments" placeholder="Share any other thoughts, suggestions, or feedback..."></textarea><span class="xf-count">0/${limit}</span></div></fieldset>
+            </div>
+          </div>
+          <footer class="xf-actions">
+            <p class="xf-status" role="status"></p>
+            <button type="button" class="pj-btn pj-btn-ghost xf-skip">Skip for now</button>
+            <button type="submit" class="pj-btn pj-btn-primary xf-submit">Submit Feedback</button>
+          </footer>
+        </form>
+      </div>`;
     document.body.appendChild(overlay);
-    const comments = form.elements.namedItem("comments");
+    const form = overlay.querySelector("form");
     const status = form.querySelector(".xf-status");
-    const skip = form.querySelector(".xf-skip");
     const submit = form.querySelector(".xf-submit");
-    skip.focus();
+    const skip = form.querySelector(".xf-skip");
+    const range = form.querySelector('input[name="recommend"]');
+    const rangeValue = form.querySelector(".xf-range-value");
+    const other = form.querySelector(".xf-other");
+    let recommend = null;
+    const checked = name => form.querySelector(`input[name="${name}"]:checked`);
+    function updateProgress() {
+      const answered = data.questions.filter(question => checked(question.key)).length + (recommend == null ? 0 : 1);
+      form.querySelector(".xf-progress-bar i").style.width = `${Math.round(answered / total * 100)}%`;
+      form.querySelector(".xf-progress-text").textContent = answered === total ? "All answered — thank you!" : `${answered} of ${total} answered · about 30 seconds`;
+    }
+    function clearError(name) {
+      const question = form.querySelector(`[data-q="${name}"]`);
+      question?.classList.remove("invalid");
+      const error = question?.querySelector(".xf-error");
+      if (error) error.textContent = "";
+    }
+    function showError(name, message) {
+      const question = form.querySelector(`[data-q="${name}"]`);
+      question?.classList.add("invalid");
+      const error = question?.querySelector(".xf-error");
+      if (error) error.textContent = message;
+    }
+    const setRecommend = value => {
+      recommend = Number(value);
+      range.value = String(recommend);
+      rangeValue.textContent = `${recommend} / 10`;
+      form.querySelector(".xf-range").classList.add("chosen");
+      form.querySelectorAll(".xf-range-ticks button").forEach(button => button.classList.toggle("on", Number(button.dataset.score) === recommend));
+      updateProgress();
+    };
+    range.addEventListener("input", () => setRecommend(range.value));
+    form.querySelectorAll(".xf-range-ticks button").forEach(button => button.addEventListener("click", () => setRecommend(button.dataset.score)));
+    form.querySelectorAll(".xf-stars").forEach(group => group.addEventListener("change", event => {
+      const value = Number(event.target.value);
+      group.querySelectorAll(".xf-star").forEach((star, index) => star.classList.toggle("on", index < value));
+      const word = group.parentElement.querySelector(".xf-word");
+      word.textContent = words[value - 1];
+      word.dataset.level = String(value);
+      clearError(group.dataset.name);
+      updateProgress();
+    }));
+    form.querySelectorAll('input[name="improvements"]').forEach(box => box.addEventListener("change", () => {
+      box.closest(".xf-chip").classList.toggle("on", box.checked);
+      const otherChecked = form.querySelector('input[name="improvements"][value="other"]')?.checked;
+      other.hidden = !otherChecked;
+      if (otherChecked) other.focus(); else other.value = "";
+      clearError("improvements");
+    }));
+    other.addEventListener("input", () => clearError("improvements"));
+    const comments = form.elements.namedItem("comments");
+    comments.addEventListener("input", () => { form.querySelector(".xf-count").textContent = `${comments.value.length}/${limit}`; });
     const close = () => { overlay.classList.add("closing"); setTimeout(() => overlay.remove(), 220); };
+    skip.focus();
     skip.onclick = () => {
       overlay.remove();
       void studentFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ skipped: true }), signal: AbortSignal.timeout(10000) }).catch(() => {});
     };
     form.onsubmit = async event => {
       event.preventDefault();
-      const payload = { comments: comments.value.trim() };
-      for (const question of data.questions) {
-        const chosen = form.querySelector(`input[name="${CSS.escape(question.key)}"]:checked`);
-        if (chosen) payload[question.key] = Number(chosen.value);
+      const improvements = [...form.querySelectorAll('input[name="improvements"]:checked')].map(box => box.value);
+      const payload = { recommend, improvements, improvement_other: other.value.trim(), comments: comments.value.trim() };
+      for (const question of data.questions) payload[question.key] = checked(question.key) ? Number(checked(question.key).value) : null;
+      const first = data.questions[0]?.key;
+      if (first && payload[first] == null) {
+        showError(first, "Please choose a rating to submit, or skip for now.");
+        status.textContent = "The first question is required.";
+        form.querySelector(`[data-q="${first}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
       }
-      if (Object.keys(payload).length === 1 && !payload.comments) {
-        status.textContent = "Choose at least one rating, add a comment, or skip feedback.";
+      if (improvements.includes("other") && !payload.improvement_other) {
+        showError("improvements", "Please tell us what else to improve.");
+        status.textContent = "";
         return;
       }
       submit.disabled = true;
@@ -3819,8 +3886,8 @@ async function showInterviewExperienceFeedback() {
       try {
         const saved = await studentFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000) });
         if (!saved.ok) throw new Error("Your feedback could not be saved. Retry or skip.");
-        form.innerHTML = `<div class="xf-thanks" role="status"><span class="xf-thanks-mark" aria-hidden="true">✓</span><h2>Thank you!</h2><p>Your feedback helps us make every interview better.</p></div>`;
-        setTimeout(close, 1200);
+        form.innerHTML = `<div class="xf-done" role="status"><span class="xf-done-mark" aria-hidden="true">✓</span><h2>Thank you!</h2><p>Your feedback helps us make every AI interview better.</p></div>`;
+        setTimeout(close, 1500);
       } catch (error) {
         status.textContent = error.message || "Feedback could not be saved. Retry or skip.";
         submit.disabled = false;
@@ -3829,10 +3896,10 @@ async function showInterviewExperienceFeedback() {
     overlay.addEventListener("keydown", event => {
       if (event.key === "Escape" && document.body.contains(skip)) skip.click();
       if (event.key === "Tab") {
-        const controls = [...form.querySelectorAll("input,textarea,button")].filter(element => !element.disabled);
-        const first = controls[0], last = controls.at(-1);
-        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
-        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+        const controls = [...form.querySelectorAll("input:not([hidden]),textarea,button:not([disabled])")].filter(element => element.tabIndex !== -1);
+        const firstControl = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === firstControl) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); firstControl.focus(); }
       }
     });
   } catch { /* Optional feedback must never block interview completion. */ }

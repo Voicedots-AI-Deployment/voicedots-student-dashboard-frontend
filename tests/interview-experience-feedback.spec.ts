@@ -1,66 +1,112 @@
-import {test,expect} from '@playwright/test';
-const questions=['clarity','voice','listening','ease','overall'].map(key=>({key,label:`Rate ${key}`}));
+import {test,expect,type Page} from '@playwright/test';
+
+// Stands in for GET experience-feedback; the form is built from this response.
+const questions=[
+ {key:'overall',label:'How would you rate your overall AI interview experience?'},
+ {key:'question_relevance',label:'How relevant were the AI interview questions to your education, skills, experience and career goals?'},
+ {key:'conversation_quality',label:'How natural, interactive and comfortable was your conversation with the AI interviewer?'},
+ {key:'assessment_fairness',label:'How fairly and accurately did the AI interviewer assess your knowledge, skills, communication and experience?'},
+ {key:'feedback_usefulness',label:'How useful was the AI interview feedback in identifying your strengths, areas for improvement and career readiness?'},
+];
+const form={form_version:2,submitted:false,skipped:false,text_limit:500,questions,
+ rating_labels:['Very poor','Poor','Average','Good','Excellent'],
+ improvement_options:[{key:'question_quality',label:'More relevant questions'},{key:'response_speed',label:'Faster responses'},{key:'other',label:'Other'}],
+ context:{interview_type:'Placement interview',role:'Software Developer',drive:'Zoho placement drive',completed_at:'2026-10-08T05:00:00Z'}};
+
 test.beforeEach(async({page})=>{
  await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'student-1'},csrf_token:'csrf'}}));
  await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`\nwindow.experienceTest=()=>{currentSessionId='session-1';return showInterviewExperienceFeedback();};`});});
 });
-test('student can answer optional questions and submit feedback after either interview type',async({page})=>{
- let saved:any=null;
- await page.route('**/experience-feedback',route=>{if(route.request().method()==='POST'){saved=route.request().postDataJSON();return route.fulfill({json:{saved:true}});}return route.fulfill({json:{submitted:false,questions}});});
+
+async function open(page:Page,overrides:Record<string,unknown>={},failPost=false){
+ const posts:any[]=[];
+ await page.route('**/experience-feedback',route=>{
+  if(route.request().method()==='POST'){posts.push(route.request().postDataJSON());return failPost?route.fulfill({status:503,json:{detail:'down'}}):route.fulfill({json:{saved:true}});}
+  return route.fulfill({json:{...form,...overrides}});
+ });
  await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
- const dialog=page.getByRole('dialog',{name:'How was your interview?'});await expect(dialog).toBeVisible();
- await page.screenshot({path:'/root/voicedots/artifacts/interview-feedback-20261010/student-feedback.png',fullPage:true});
- await page.getByRole('button',{name:'Submit feedback',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Choose at least one rating'})).toBeVisible();
- await page.getByRole('radiogroup',{name:'Rate clarity'}).getByRole('radio',{name:/^4 stars/}).check();await expect(page.getByRole('radiogroup',{name:'Rate clarity'}).locator('.xf-star.on')).toHaveCount(4);await page.getByLabel('What worked well').fill('Good questions; voice broke once.');
- await page.getByRole('button',{name:'Submit feedback',exact:true}).click();await expect(dialog).toHaveCount(0);
- expect(saved).toEqual({clarity:4,comments:'Good questions; voice broke once.'});
+ return posts;
+}
+const rate=(page:Page,label:string,stars:number)=>page.getByRole('radiogroup',{name:label}).getByRole('radio',{name:new RegExp(`^${stars} stars?,`)}).check();
+
+test('the form shows the interview details and five quick star questions plus a recommendation',async({page})=>{
+ await open(page);
+ const dialog=page.getByRole('dialog',{name:/Interview Completed!/});await expect(dialog).toBeVisible();
+ const details=dialog.locator('.xf-context');
+ for(const text of ['Placement interview','Software Developer','Zoho placement drive','8 Oct 2026'])await expect(details).toContainText(text);
+ for(const question of questions)await expect(page.getByRole('radiogroup',{name:question.label}).getByRole('radio')).toHaveCount(5);
+ await expect(dialog.locator('.xf-scale').first()).toContainText('1 - Very poor');
+ await expect(page.locator('.xf-range-value')).toHaveText('Not selected');
+ await expect(page.locator('.xf-progress-text')).toHaveText('0 of 6 answered · about 30 seconds');
 });
-test('student can skip feedback without completing questions or blocking the report',async({page})=>{
- let saved:any=null;await page.route('**/experience-feedback',route=>{if(route.request().method()==='POST'){saved=route.request().postDataJSON();return route.fulfill({json:{saved:true}});}return route.fulfill({json:{submitted:false,questions}});});
- await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
- await page.getByRole('button',{name:'Skip feedback'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await expect.poll(()=>saved).toEqual({skipped:true});
+
+test('one star rating is enough to submit, and the choice is named in words',async({page})=>{
+ const posts=await open(page);
+ await rate(page,questions[0].label,4);
+ await expect(page.locator('[data-q="overall"] .xf-word')).toHaveText('Good');
+ await expect(page.locator('.xf-progress-text')).toHaveText('1 of 6 answered · about 30 seconds');
+ await page.getByRole('button',{name:'Submit Feedback'}).click();
+ await expect(page.getByRole('status').filter({hasText:'Thank you!'})).toBeVisible();
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+ expect(posts).toEqual([{recommend:null,improvements:[],improvement_other:'',comments:'',overall:4,question_relevance:null,conversation_quality:null,assessment_fairness:null,feedback_usefulness:null}]);
 });
-test('saved feedback is not solicited again and failure remains skippable',async({page})=>{
- await page.route('**/experience-feedback',route=>route.fulfill({json:{submitted:true,questions}}));
- await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());await expect(page.getByRole('dialog')).toHaveCount(0);
+
+test('the overall rating is required before anything is sent',async({page})=>{
+ const posts=await open(page);
+ await rate(page,questions[2].label,5);
+ await page.getByRole('button',{name:'Submit Feedback'}).click();
+ await expect(page.locator('[data-q="overall"] .xf-error')).toHaveText('Please choose a rating to submit, or skip for now.');
+ expect(posts).toEqual([]);
 });
-test('feedback waits for interview persistence and a failed submission can be skipped',async({page})=>{
+
+test('a full answer sends every rating, the score, chosen tags and comments',async({page})=>{
+ const posts=await open(page);
+ for(const [index,stars] of [5,4,3,4,5].entries())await rate(page,questions[index].label,stars);
+ await page.locator('.xf-range-ticks button[data-score="8"]').click();
+ await expect(page.locator('.xf-range-value')).toHaveText('8 / 10');
+ await expect(page.locator('.xf-progress-text')).toHaveText('All answered — thank you!');
+ await page.getByLabel('Faster responses').check();
+ await page.getByLabel('Other',{exact:true}).check();
+ await page.getByRole('button',{name:'Submit Feedback'}).click();
+ await expect(page.locator('[data-q="improvements"] .xf-error')).toHaveText('Please tell us what else to improve.');
+ await page.getByLabel('Please specify the other improvement').fill('Dark mode');
+ await page.getByLabel('Additional comments').fill('Great panel.');
+ await expect(page.locator('.xf-count')).toHaveText('12/500');
+ await page.getByRole('button',{name:'Submit Feedback'}).click();
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+ expect(posts).toEqual([{recommend:8,improvements:['response_speed','other'],improvement_other:'Dark mode',comments:'Great panel.',
+  overall:5,question_relevance:4,conversation_quality:3,assessment_fairness:4,feedback_usefulness:5}]);
+});
+
+test('student can skip feedback without blocking the report',async({page})=>{
+ const posts=await open(page);
+ await page.getByRole('button',{name:'Skip for now'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+ await expect.poll(()=>posts).toEqual([{skipped:true}]);
+});
+
+test('saved feedback is not solicited again',async({page})=>{
+ await open(page,{submitted:true});await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('feedback waits for interview persistence and a failed submission can be retried or skipped',async({page})=>{
  let checks=0;
  await page.route('**/experience-feedback',route=>{
-  if(route.request().method()==='POST')return route.fulfill({status:503,json:{detail:'temporarily unavailable'}});
-  checks+=1;return checks===1?route.fulfill({status:409,json:{detail:'saving'}}):route.fulfill({json:{submitted:false,questions}});
+  if(route.request().method()==='POST')return route.fulfill({status:503,json:{detail:'down'}});
+  checks+=1;return checks===1?route.fulfill({status:409,json:{detail:'saving'}}):route.fulfill({json:form});
  });
  await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
  await expect(page.getByRole('dialog')).toBeVisible();expect(checks).toBe(2);
- await page.getByRole('radiogroup',{name:'Rate voice'}).getByRole('radio',{name:/^3 stars/}).check();await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
- await expect(page.getByRole('status').filter({hasText:'Retry or skip'})).toBeVisible();
- await page.getByRole('button',{name:'Skip feedback'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+ await rate(page,questions[0].label,3);await page.getByRole('button',{name:'Submit Feedback'}).click();
+ await expect(page.locator('.xf-status')).toHaveText('Your feedback could not be saved. Retry or skip.');
+ await expect(page.getByRole('button',{name:'Submit Feedback'})).toBeEnabled();
+ await page.getByRole('button',{name:'Skip for now'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
-
-test('feedback actions have styled accessible buttons on a narrow screen',async({page})=>{
+test('the form is usable on a phone without horizontal scrolling',async({page})=>{
  await page.setViewportSize({width:390,height:844});
- await page.route('**/experience-feedback',route=>route.fulfill({json:{submitted:false,questions}}));
- await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
- const submit=page.getByRole('button',{name:'Submit feedback',exact:true});
- const skip=page.getByRole('button',{name:'Skip feedback'});
- await submit.scrollIntoViewIfNeeded();
- for(const button of [submit,skip]){const box=await button.boundingBox();expect(box!.height).toBeGreaterThanOrEqual(44);expect(box!.x).toBeGreaterThanOrEqual(0);expect(box!.x+box!.width).toBeLessThanOrEqual(390);}
- expect(await submit.evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
- await page.screenshot({path:'/root/voicedots/artifacts/interview-listening-20261010/feedback-buttons-mobile.png'});
-});
-
-
-test('every question is a five-star group and the thank-you state confirms the save',async({page})=>{
- let saved:any=null;
- await page.route('**/experience-feedback',route=>{if(route.request().method()==='POST'){saved=route.request().postDataJSON();return route.fulfill({json:{saved:true}});}return route.fulfill({json:{submitted:false,questions}});});
- await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
- const groups=page.getByRole('radiogroup');await expect(groups).toHaveCount(questions.length);
- for(const question of questions)await expect(page.getByRole('radiogroup',{name:question.label}).getByRole('radio')).toHaveCount(5);
- await page.getByRole('radiogroup',{name:'Rate overall'}).getByRole('radio',{name:/^5 stars/}).check();
- await expect(page.getByRole('radiogroup',{name:'Rate overall'})).toContainText('Excellent');
- await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
- await expect(page.getByRole('status').filter({hasText:'Thank you!'})).toBeVisible();
- await expect(page.getByRole('dialog')).toHaveCount(0);
- expect(saved).toEqual({overall:5,comments:''});
+ await open(page);
+ await expect(page.getByRole('dialog')).toBeVisible();
+ await expect.poll(()=>page.evaluate(()=>{const o=document.getElementById('interview-experience-feedback')!;return o.scrollWidth<=o.clientWidth;})).toBe(true);
+ const submit=page.getByRole('button',{name:'Submit Feedback'});await submit.scrollIntoViewIfNeeded();
+ const box=await submit.boundingBox();expect(box!.height).toBeGreaterThanOrEqual(44);expect(box!.x+box!.width).toBeLessThanOrEqual(390);
 });
