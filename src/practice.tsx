@@ -31,6 +31,7 @@ import {
   useResource,
 } from "./ui";
 import { PreparationJourney } from "./preparation-journey";
+import { ResumeClarificationSteps, type ClarificationAnswer } from "./resume-clarification";
 
 export function Practice() {
   const { identity } = useAuth();
@@ -362,22 +363,11 @@ export function Practice() {
     }
   }
 
-  async function clarify(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
+  async function clarify(answers?: ClarificationAnswer[]) {
     setBusy(true);
     setError("");
     try {
-      if (event) {
-        const form = new FormData(event.currentTarget);
-        const answers = (preparation?.prompts || [])
-          .flatMap((prompt, i) =>
-            prompt.missing_fields.map((field, j) => ({
-              entry_id: prompt.entry_id || prompt.name,
-              field,
-              value: String(form.get(`${i}-${j}`) || "").trim(),
-            })),
-          )
-          .filter((answer) => answer.value);
+      if (answers) {
         await api(
           `/api/resume/${encodeURIComponent(preparation!.submission_id!)}/amendments`,
           json({
@@ -516,16 +506,8 @@ export function Practice() {
           {needsClarification && <>
             <h2>A little more about your experience</h2>
             <p>{preparation.message}</p>
-            <form onSubmit={clarify}>
-              {preparation.prompts?.map((prompt, i) => <fieldset className="resume-clarification-card" key={prompt.entry_id || i}>
-                <legend>{prompt.name}</legend>
-                {prompt.missing_fields.map((field, j) => <label key={field}>
-                  {field === "how" ? "What tools and methods did you use?" : field === "ownership" ? "What was your personal contribution?" : field === "result" ? "What was the outcome?" : humanize(field)}
-                  <textarea rows={6} name={`${i}-${j}`} required={preparation.clarification_required} maxLength={4000}/>
-                </label>)}
-              </fieldset>)}
-              <button className="button primary" disabled={busy}>Save and continue</button>
-            </form>
+            <ResumeClarificationSteps prompts={preparation.prompts || []} required={Boolean(preparation.clarification_required)}
+              busy={busy} onSubmit={answers => void clarify(answers)} />
             {preparation.can_continue_without_answers && <button className="text-button" disabled={busy} onClick={() => void clarify()}>Continue without optional details</button>}
           </>}
           {!pending && !ready && !needsClarification && preparation.status !== "resume_reupload_required" && <>
