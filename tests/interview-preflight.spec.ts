@@ -73,6 +73,7 @@ async function prepare(page: Page, failure = "") {
         // room noise (quiet unless a test makes it loud).
         const roomCheck = typeof constraints.audio === "object" && (constraints.audio as MediaTrackConstraints).noiseSuppression === false;
         gain.gain.value = roomCheck ? (w.failure === "noisy" ? .8 : .0003) : ["microphone", "silent"].includes(w.failure) ? 0 : .8;
+        if (!roomCheck) w.environmentMicGain = gain;
         const destination = context.createMediaStreamDestination();
         oscillator.connect(gain).connect(destination);
         oscillator.start();
@@ -611,6 +612,46 @@ async function simulateFace(page: Page, mode: "live" | "still") {
     }, 60);
   }, mode);
 }
+
+for (const [width, height] of [[1440, 1000], [390, 844]]) {
+  test(`liveness arrow stays in view with checklist at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height });
+    await prepare(page);
+    await simulateFace(page, "still");
+    await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+    await expect(page.locator("#pf-liveness")).toBeVisible();
+    const camera = await page.locator("#cam-preview").boundingBox();
+    const checklist = await page.locator("#pf-steps").boundingBox();
+    const arrow = await page.locator("#pf-liveness .pf-arrow").boundingBox();
+    expect(camera).not.toBeNull(); expect(checklist).not.toBeNull(); expect(arrow).not.toBeNull();
+    if (width >= 960) expect(checklist!.x + checklist!.width).toBeLessThanOrEqual(camera!.x);
+    else expect(camera!.y + camera!.height).toBeLessThanOrEqual(checklist!.y);
+    expect(arrow!.y).toBeGreaterThanOrEqual(0);
+    expect(arrow!.y + arrow!.height).toBeLessThanOrEqual(height);
+    await page.screenshot({ path: `../.local/ui/preflight-${width}.png`, fullPage: true });
+  });
+}
+
+test("environment microphone waveform follows detected audio and settles in silence", async ({ page }) => {
+  await page.setViewportSize({ width: 1440, height: 1100 });
+  await prepare(page);
+  await simulateFace(page, "still");
+  await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  const meter = page.locator("#mic-activity");
+  await expect(meter).toHaveAttribute("data-signal", "active");
+  await expect(page.locator("#mic-activity-label")).toHaveText("Voice detected");
+  await expect.poll(() => meter.locator(".pf-mic-bar").evaluateAll(bars => Math.max(...bars.map(bar => parseFloat((bar as HTMLElement).style.height))))).toBeGreaterThan(8);
+  await page.evaluate(() => { (window as any).environmentMicGain.gain.value = 0; });
+  await expect(meter).toHaveAttribute("data-signal", "quiet");
+  await expect(page.locator("#mic-activity-label")).toHaveText("Listening for your voice");
+  await expect.poll(() => meter.locator(".pf-mic-bar").evaluateAll(bars => Math.max(...bars.map(bar => parseFloat((bar as HTMLElement).style.height))))).toBeLessThan(5);
+  await page.evaluate(() => { (window as any).environmentMicGain.gain.value = .2; });
+  await expect(meter).toHaveAttribute("data-signal", "active");
+  await expect.poll(() => meter.locator(".pf-mic-bar").evaluateAll(bars => Math.max(...bars.map(bar => parseFloat((bar as HTMLElement).style.height))))).toBeGreaterThan(14);
+  await page.screenshot({ path: "../.local/ui/environment-microphone.png", fullPage: true });
+  await page.emulateMedia({ reducedMotion: "reduce" });
+  expect(await meter.locator(".pf-mic-bar").first().evaluate(bar => getComputedStyle(bar).height)).toBe("4px");
+});
 
 test("a live person passes liveness by following the arrows, and the checklist shows every check", async ({ page }) => {
   const { counts } = await prepare(page);

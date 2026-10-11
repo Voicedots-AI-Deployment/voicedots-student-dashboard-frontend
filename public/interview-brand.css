@@ -259,3 +259,30 @@ li[data-loud="true"] .pf-meter i { background: #f87171; }
 .rs-saved-actions .pj-btn { text-decoration: none; }
 @media (max-width: 560px) { .rs-timeline { grid-template-columns: 1fr; } .rs-timeline li { padding: 0 0 0 30px; justify-items: start; text-align: left; } .rs-timeline li::before { display: none; } .rs-timeline i { left: 0; top: 2px; } }
 @media (prefers-reduced-motion: reduce) { .rg-ring-core, .rs-saved-mark, .rs-timeline i, .report-check .report-check-icon { animation: none !important; } }
+/* Checklist and camera side by side on wide screens, so the liveness arrow
+   on the camera is always in view. */
+.pf-layout { display: grid; gap: 0 24px; }
+@media (min-width: 960px) {
+  .prejoin-card:has(#pf-steps:not([hidden])) { max-width: 960px; }
+  .pf-layout:has(#pf-steps:not([hidden])) { grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr); align-items: start; }
+  .pf-layout:has(#pf-steps:not([hidden])) .cam-preview { position: sticky; top: 12px; margin: 4px 0 16px; max-width: none; }
+}
+@media (max-width: 959px) { .pf-layout .cam-preview { order: -1; } }
+
+/* This waveform follows the microphone analyser; it never loops on its own. */
+.pf-mic-activity { margin-top: 7px; padding: 6px 10px; border: 1px solid rgba(167,139,250,.18); border-radius: 10px; background: rgba(8,7,17,.3); }
+.pf-steps li[data-check="microphone"] .pf-icon { align-self: start; margin-top: 2px; }
+.pf-mic-activity[hidden] { display: none; }
+.pf-mic-wave { height: 32px; display: flex; align-items: center; justify-content: center; gap: 3px; }
+.pf-mic-bar { display: block; width: 3px; height: 4px; flex: 0 0 3px; border-radius: 3px; background: #6f628b; transition: height 85ms linear, background-color 180ms ease; }
+.pf-mic-activity[data-signal="active"] { border-color: rgba(52,211,153,.3); background: linear-gradient(135deg,rgba(16,185,129,.07),rgba(124,58,237,.06)); }
+.pf-mic-activity[data-signal="active"] .pf-mic-bar { background: linear-gradient(to top,#8b5cf6,#6ee7b7); }
+.pf-mic-caption { display: flex; align-items: center; justify-content: center; gap: 6px; margin-top: 6px; color: #b2aac4; font-size: .65rem; }
+.pf-mic-dot { width: 5px; height: 5px; border-radius: 50%; background: #6f628b; }
+.pf-mic-activity[data-signal="active"] .pf-mic-dot { background: #6ee7b7; box-shadow: 0 0 8px rgba(110,231,183,.35); }
+.pf-mic-activity[data-signal="active"] .pf-mic-caption { color: #a7f3d0; }
+#preflight-loading.pf-progress { height: 2px; overflow: hidden; background: rgba(167,139,250,.12); border-radius: 2px; margin: 18px 0; }
+.pf-progress[hidden] { display: none; }
+.pf-progress span { display: block; width: 30%; height: 100%; background: linear-gradient(90deg,transparent,#a78bfa,transparent); animation: pf-progress-slide 2s ease-in-out infinite; }
+@keyframes pf-progress-slide { from { transform: translateX(-100%); } to { transform: translateX(440%); } }
+@media (prefers-reduced-motion: reduce) { .pf-mic-bar { height: 4px !important; transition: none; } .pf-progress span { animation: none; width: 100%; } }

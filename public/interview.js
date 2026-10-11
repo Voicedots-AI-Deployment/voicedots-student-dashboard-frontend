@@ -1966,18 +1966,38 @@ function startMicLevelTest() {
     micAnalyser.fftSize = 64;
     source.connect(micAnalyser);
 
-    const bars = document.querySelectorAll(".mic-bar");
+    const meter = document.getElementById("mic-activity");
+    const wave = meter?.querySelector(".pf-mic-wave");
+    if (wave && !wave.children.length) {
+      for (let i = 0; i < 24; i++) {
+        const bar = document.createElement("span"); bar.className = "pf-mic-bar"; wave.append(bar);
+      }
+    }
+    if (meter) meter.hidden = false;
+    const bars = wave?.querySelectorAll(".pf-mic-bar") || [];
+    const label = document.getElementById("mic-activity-label");
     const dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+    const waveform = new Uint8Array(micAnalyser.fftSize);
+    let level = 0;
 
     function updateBars() {
       if (!micAnalyser) return;
       micAnalyser.getByteFrequencyData(dataArray);
+      micAnalyser.getByteTimeDomainData(waveform);
+      const rms = Math.sqrt(waveform.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / waveform.length);
+      const target = Math.max(0, Math.min(1, (rms - .004) / .12));
+      level += (target - level) * (target > level ? .4 : .14);
+      const signal = level > .04 ? "active" : "quiet";
+      if (meter && meter.dataset.signal !== signal) {
+        meter.dataset.signal = signal;
+        if (label) label.textContent = signal === "active" ? "Voice detected" : "Listening for your voice";
+      }
 
       let sum = dataArray.reduce((total,value) => total+value,0);
       bars.forEach((bar, idx) => {
-        const val = dataArray[idx % dataArray.length] || 0;
-        const height = Math.max(4, Math.min(44, (val / 255) * 44));
-        bar.style.height = `${height}px`;
+        const shape = Math.sin(Math.PI * (idx + 1) / (bars.length + 1));
+        const band = .65 + (dataArray[idx % dataArray.length] || 0) / 255;
+        bar.style.height = `${(4 + level * (8 + 20 * shape) * Math.min(1, band)).toFixed(1)}px`;
       });
 
       if (sum > 60 && !micSignalDetected) {
@@ -2003,6 +2023,13 @@ function stopMicLevelTest() {
     micAnimId = null;
   }
   micAnalyser = null;
+  const meter = document.getElementById("mic-activity");
+  if (meter) {
+    meter.dataset.signal = "off";
+    meter.querySelectorAll(".pf-mic-bar").forEach(bar => { bar.style.height = "4px"; });
+    const label = document.getElementById("mic-activity-label");
+    if (label) label.textContent = "Microphone check complete";
+  }
   if (micTestContext) {
     micTestContext.close().catch(() => {});
     micTestContext = null;

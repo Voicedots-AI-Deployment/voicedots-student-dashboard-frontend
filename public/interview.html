@@ -292,10 +292,11 @@
       <div class="pj-panel active">
         <h2 id="preflight-title" style="font-size:1.3rem;font-weight:800;margin-bottom:12px;">Start AI Interview</h2>
         <p id="preflight-status" role="status" aria-live="polite">We’ll check your camera, microphone, identity and connection, then request your entire screen.</p>
-        <div id="preflight-loading" class="mic-viz" hidden aria-hidden="true"><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div></div>
+        <div id="preflight-loading" class="pf-progress" hidden aria-hidden="true"><span></span></div>
+        <div class="pf-layout">
         <ol class="pf-steps" id="pf-steps" hidden aria-label="Interview checks">
           <li data-check="camera" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Camera</strong><small>Waiting</small></span></li>
-          <li data-check="microphone" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Microphone</strong><small>Waiting</small></span></li>
+          <li data-check="microphone" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Microphone</strong><small>Waiting</small><span class="pf-mic-activity" id="mic-activity" data-signal="off" hidden><span class="pf-mic-wave" aria-hidden="true"></span><span class="pf-mic-caption"><span class="pf-mic-dot" aria-hidden="true"></span><span id="mic-activity-label">Say a few words</span></span></span></span></li>
           <li data-check="noise" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Quiet room</strong><small>Waiting</small><span class="pf-meter" aria-hidden="true"><i></i></span></span></li>
           <li data-check="liveness" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Liveness</strong><small>Waiting</small></span></li>
           <li data-check="identity" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Identity</strong><small>Waiting</small></span></li>
@@ -306,6 +307,7 @@
           <video id="lobby-video" autoplay muted playsinline></video>
           <div class="cam-overlay" id="cam-overlay"><span>Waiting for camera access…</span></div>
           <div class="pf-liveness" id="pf-liveness" hidden><span class="pf-arrow" aria-hidden="true">←</span><strong id="pf-liveness-text"></strong></div>
+        </div>
         </div>
         <p id="preflight-requirements" style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
         <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand my answers will be transcribed for evaluation. Placement interviews are also video recorded and may be reviewed by authorized placement staff.</span></label>
