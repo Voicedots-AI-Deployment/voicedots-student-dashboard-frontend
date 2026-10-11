@@ -36,7 +36,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const refresh = useCallback(async () => {
     setError("");
     try {
-      const result = await api<Identity>("/api/auth/student-me");
+      const result = await api<Identity & { authenticated?: boolean }>("/api/auth/student-me", {
+        headers: { "X-Session-Probe": "1" },
+      });
+      if (result.authenticated === false) {
+        // Signed out: show the login screen without logging a failed request.
+        setIdentity(null);
+        clearStudentData();
+        return;
+      }
       if (!result.student?.id)
         throw new Error(
           "This account does not have a student profile. Contact your placement cell.",

@@ -6,7 +6,11 @@ import {
   Eye,
   EyeOff,
   LockKeyhole,
+  Bot,
   BookOpen,
+  GraduationCap,
+  LayoutGrid,
+  X,
   BriefcaseBusiness,
   CalendarDays,
   Compass,
@@ -46,6 +50,7 @@ import { CareerCoach } from "./career-coach";
 import { ResumeStudio } from "./resume-studio";
 import { ProfileSetupPrompt } from "./profile-setup";
 import { Performance } from "./performance";
+import { AuthInterviewScene } from "./auth-interview-scene";
 
 type PendingPhotoLogin = {
   email: string;
@@ -151,11 +156,7 @@ function Login() {
             Meet your AI interview panel. Find your strengths. Walk into your
             next opportunity prepared.
           </p>
-          <div className="auth-session-preview" aria-hidden="true">
-            <div className="auth-preview-top"><span className="auth-mic"><Mic size={22} /></span><div><strong>A space to find your voice.</strong><span>Your AI interview practice room</span></div></div>
-            <div className="auth-wave">{[14,24,38,21,46,62,36,76,52,30,64,86,54,36,68,48,28,58,40,22,36,18,28,12].map((height, i) => <i key={i} style={{ height }} />)}</div>
-            <div className="auth-preview-bottom"><span>Practice at your pace</span><span><ShieldCheck size={14} /> Built for your growth</span></div>
-          </div>
+          <AuthInterviewScene />
           <div className="auth-features">
             {[
               "Personalized practice interviews",
@@ -182,16 +183,12 @@ function Login() {
             {setupComplete ? "Your account is ready. Sign in with your new password." : setupToken ? setupLinkStatus === "checking" ? "Checking your secure password link…" : setupLinkStatus === "completed" ? "Password already created. Sign in with your password." : setupLinkStatus === "expired" ? "This password link has expired. Request a new one below." : setupLinkStatus === "invalid" ? "This password link is invalid. Request a new one below." : "Choose a strong password to activate your student account or finish resetting it. This secure link can only be used once." : pendingPhoto ? "One more step to finish signing in."
               : faceSignIn ? "Enter your email, then capture a camera photo to sign in." : "Sign in to pick up where you left off."}
           </p>
-          {auth.expired && (
-            <ErrorMessage message="Your session has expired. Sign in again to continue." />
-          )}
-          {auth.error && (
-            <ErrorMessage
-              message={auth.error}
-              retry={() => void auth.refresh()}
-            />
-          )}
-          {error && <ErrorMessage message={error} />}
+          {/* One message at a time: the latest sign-in error, otherwise a
+              session check that can be retried, otherwise the expiry notice. */}
+          {error ? <ErrorMessage message={error} />
+            : auth.error ? <ErrorMessage message={auth.error} retry={() => void auth.refresh()} />
+            : auth.expired ? <ErrorMessage message="Your session has expired. Sign in again to continue." />
+            : null}
           {pendingPhoto ? <>
             <PhotoVerification busy={busy}
               onCapture={(photo) => authenticate({ ...pendingPhoto, replace_active_session: replaceSession }, photo)}
@@ -279,11 +276,11 @@ const nav = [
   { to: "/placements", label: "Placements", icon: BriefcaseBusiness },
   { to: "/calendar", label: "Calendar", icon: CalendarDays },
   { to: "/practice", label: "Interview practice", icon: Mic },
-  { to: "/coach", label: "AI coach", icon: BookOpen },
+  { to: "/coach", label: "AI coach", icon: Bot },
   { to: "/resume-studio", label: "Resume Studio", icon: FileText },
   { to: "/career", label: "Career coach", icon: Compass },
-  { to: "/academics", label: "Marks and attendance", icon: BookOpen },
-  { to: "/erp", label: "My ERP", icon: BookOpen },
+  { to: "/academics", label: "Marks and attendance", icon: GraduationCap },
+  { to: "/erp", label: "My ERP", icon: LayoutGrid },
   { to: "/reports", label: "My reports", icon: FileText },
   { to: "/profile", label: "My profile", icon: UserRound },
 ];
@@ -397,6 +394,11 @@ export function App() {
       <aside ref={sidebarRef} className={`sidebar ${mobileOpen ? "open" : ""}`} aria-label="Student workspace" role={mobileOpen ? "dialog" : undefined} aria-modal={mobileOpen || undefined}>
         <div className="sidebar-brand">
           <Brand />
+          {isMobile && mobileOpen && (
+            <button className="icon-button sidebar-close" aria-label="Close menu" onClick={() => setMobileOpen(false)}>
+              <X size={20} />
+            </button>
+          )}
         </div>
         <div className="sidebar-content">
         <span className="portal-label">STUDENT WORKSPACE</span>
