@@ -56,8 +56,11 @@ async function prepare(page: Page, failure = "") {
       setInterval(() => ctx.fillRect(0, 0, 640, 480), 50);
       return canvas.captureStream(20).getVideoTracks()[0];
     };
+    w.roomChecks = 0;
     navigator.mediaDevices.getUserMedia = async (constraints = {}) => {
-      w.mediaCalls.push(constraints);
+      // The quiet-room check's unfiltered feed is counted on its own.
+      if (typeof constraints.audio === "object" && (constraints.audio as MediaTrackConstraints).noiseSuppression === false) w.roomChecks++;
+      else w.mediaCalls.push(constraints);
       if (constraints.video && w.failure === "camera") throw new DOMException("Camera denied", "NotAllowedError");
       const tracks: MediaStreamTrack[] = [];
       if (constraints.video) tracks.push(videoTrack());
@@ -66,7 +69,10 @@ async function prepare(page: Page, failure = "") {
         const oscillator = context.createOscillator();
         oscillator.frequency.value = 440;
         const gain = context.createGain();
-        gain.gain.value = ["microphone", "silent"].includes(w.failure) ? 0 : .8;
+        // The quiet-room check opens an unfiltered feed: that one carries the
+        // room noise (quiet unless a test makes it loud).
+        const roomCheck = typeof constraints.audio === "object" && (constraints.audio as MediaTrackConstraints).noiseSuppression === false;
+        gain.gain.value = roomCheck ? (w.failure === "noisy" ? .8 : .0003) : ["microphone", "silent"].includes(w.failure) ? 0 : .8;
         const destination = context.createMediaStreamDestination();
         oscillator.connect(gain).connect(destination);
         oscillator.start();
@@ -101,6 +107,7 @@ async function prepare(page: Page, failure = "") {
       };
       const originalWait = waitForPreflight;
       waitForPreflight = (check, message) => originalWait(check, message, 1800);
+      window.__testFace = points => { faceLandmarker = faceLandmarker || {}; latestFaceLandmarks = points; latestFaceLandmarksAt = Date.now(); faceCountDetected = 1; };
       window.__testRecordingSetup = (session, stream, destination) => {
         currentSessionId = session;
         userMediaStream = stream;
@@ -487,14 +494,16 @@ test('temporary finalization failure retries automatically without reuploading c
 });
 
 
-test("silent default microphone fails the signal check without starting an interview", async ({page})=>{
+test("a silent default microphone is replaced by another one before the check fails", async ({page})=>{
  const {counts}=await prepare(page,"silent");
  await page.getByRole("button",{name:"Start AI Interview",exact:true}).click();
  await expect(page.locator("#pj-panel-2")).toContainText("No microphone audio was detected",{timeout:20000});
  expect(counts.create).toBe(0);
  await expect(page.locator("#pj-panel-2")).toBeVisible();
  const calls=await page.evaluate(()=>(window as any).mediaCalls);
- expect(calls).toHaveLength(1);expect(calls[0].audio.deviceId).toEqual({ideal:"default"});
+ // The default is tried first, then each other microphone, before failing.
+ expect(calls).toHaveLength(2);expect(calls[0].audio.deviceId).toEqual({ideal:"default"});
+ expect(calls[1].audio.deviceId).toEqual({exact:"microphone-1"});
 });
 
 test("setup and microphone recovery stay aligned on desktop and mobile",async({page})=>{
@@ -587,4 +596,83 @@ test("completed placement reload recovers its final local video chunk", async ({
   expect(finalParts[0].ETag || finalParts[0].etag).toBe("recovered-etag");
   await expect(page.locator("#results-recording-status")).toContainText("processing");
   await expect(page.locator("#prejoin-screen")).toBeHidden();
+});
+
+// Simulates the face tracker: a live person follows the arrow prompts; a
+// photo or replay stays still.
+async function simulateFace(page: Page, mode: "live" | "still") {
+  await page.evaluate((mode) => {
+    const face = (nose: number) => { const points = Array.from({ length: 264 }, () => ({ x: .5, y: .5 })); points[33] = { x: .4, y: .45 }; points[263] = { x: .6, y: .45 }; points[1] = { x: nose, y: .55 }; return points; };
+    (window as any).__testFace(face(.5));
+    setInterval(() => {
+      const side = document.getElementById("pf-liveness")?.dataset.side;
+      const nose = mode === "still" || document.getElementById("pf-liveness")?.hidden ? .5 : side === "left" ? .57 : side === "right" ? .43 : .5;
+      (window as any).__testFace(face(nose));
+    }, 60);
+  }, mode);
+}
+
+test("a live person passes liveness by following the arrows, and the checklist shows every check", async ({ page }) => {
+  const { counts } = await prepare(page);
+  await simulateFace(page, "live");
+  await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  const steps = page.locator("#pf-steps li");
+  await expect(steps).toHaveCount(7);
+  await expect(page.locator('#pf-steps [data-check="liveness"]')).toHaveAttribute("data-state", "passed", { timeout: 15000 });
+  await expect(page.locator('#pf-steps [data-check="noise"]')).toHaveAttribute("data-state", "passed");
+  await expect(page.locator('#pf-steps [data-check="noise"] small')).toContainText(/Quiet enough · about \d+ dB/);
+  await completeScreenSharing(page);
+  await expect.poll(() => counts.create).toBe(1);
+});
+
+test("a still photo or replay fails liveness and blocks the interview", async ({ page }) => {
+  const { counts } = await prepare(page);
+  await simulateFace(page, "still");
+  await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await expect(page.locator("#pj-liveness-panel")).toContainText("couldn't confirm a live person", { timeout: 15000 });
+  await expect(page.locator('#pf-steps [data-check="liveness"]')).toHaveAttribute("data-state", "failed");
+  await expect(page.locator('#pf-steps [data-check="identity"]')).toHaveAttribute("data-state", "pending");
+  expect(counts.identity).toBe(0);
+  expect(counts.create).toBe(0);
+});
+
+test("a noisy room blocks the interview with its noise level until it is quiet", async ({ page }) => {
+  const { counts, recover } = await prepare(page, "noisy");
+  await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await expect(page.locator("#pj-noise-panel")).toContainText(/too noisy \(about \d+ dB\)/, { timeout: 15000 });
+  await expect(page.locator('#pf-steps [data-check="noise"]')).toHaveAttribute("data-state", "failed");
+  expect(counts.create).toBe(0);
+  await recover();
+  await page.getByRole("button", { name: "Measure again" }).click();
+  await expect(page.locator('#pf-steps [data-check="noise"]')).toHaveAttribute("data-state", "passed", { timeout: 15000 });
+  await completeScreenSharing(page);
+  await expect.poll(() => counts.create).toBe(1);
+});
+
+test("duplicate Windows microphone entries are shown once and a working one is chosen automatically", async ({ page }) => {
+  const { counts } = await prepare(page, "silent");
+  // Windows lists one headset three times; only the laptop microphone picks up sound.
+  await page.evaluate(() => {
+    const w = window as any;
+    navigator.mediaDevices.enumerateDevices = async () => [
+      { kind: "videoinput", deviceId: "camera-1", label: "Camera", groupId: "g-cam" },
+      { kind: "audioinput", deviceId: "default", label: "Default - Headset Mic (USB)", groupId: "g-headset" },
+      { kind: "audioinput", deviceId: "communications", label: "Communications - Headset Mic (USB)", groupId: "g-headset" },
+      { kind: "audioinput", deviceId: "headset", label: "Headset Mic (USB)", groupId: "g-headset" },
+      { kind: "audioinput", deviceId: "laptop", label: "Laptop Mic (Realtek)", groupId: "g-laptop" },
+    ] as MediaDeviceInfo[];
+
+    const original = navigator.mediaDevices.getUserMedia.bind(navigator.mediaDevices);
+    navigator.mediaDevices.getUserMedia = async (constraints: any = {}) => {
+      const exact = constraints.audio?.deviceId?.exact;
+      w.failure = exact === "laptop" ? "" : (exact || constraints.video) ? "silent" : w.failure;
+      return original(constraints);
+    };
+  });
+  await page.getByRole("button", { name: "Start AI Interview", exact: true }).click();
+  await expect(page.locator('#pf-steps [data-check="microphone"]')).toHaveAttribute("data-state", "passed", { timeout: 20000 });
+  await expect(page.locator("#mic-select option")).toHaveText(["System default (Headset Mic (USB))", "Headset Mic (USB)", "Laptop Mic (Realtek)"]);
+  await expect(page.locator("#mic-select")).toHaveValue("laptop");
+  await completeScreenSharing(page);
+  await expect.poll(() => counts.create).toBe(1);
 });

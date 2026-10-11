@@ -263,7 +263,7 @@ test('placement ends capture immediately and shows saved answers without report 
   await page.route('**/evaluation**',route=>{evaluations++;return route.fulfill({status:404,json:{}})});
   expect(await page.evaluate(()=>(window as any).conversationAudit.finish(true))).toBe('ended');
   await expect(page.locator('#report-screen')).toBeHidden();
-  await expect(page.locator('#results-saved-detail')).toContainText('placement cell');
+  await expect(page.locator('#results-saved-detail')).toContainText('placement team');
   expect(evaluations).toBe(0);
 });
 

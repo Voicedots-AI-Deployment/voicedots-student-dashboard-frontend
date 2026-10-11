@@ -197,7 +197,21 @@ let preflightStarted = false;
 let preflightCancelled = false;
 let servicesCheckedAt = 0;
 let identityCheckedAt = 0;
-const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", screen: "pending" };
+const preflightChecks = { camera: "pending", microphone: "pending", noise: "pending", liveness: "pending", identity: "pending", network: "pending", screen: "pending" };
+// Every check that must pass before screen sharing is requested.
+const CORE_CHECKS = ["camera", "microphone", "noise", "liveness", "identity", "network"];
+// Background noise is measured on a raw (unfiltered) microphone feed. The
+// value is dBFS; the dB shown to students adds a nominal microphone offset,
+// so it is an estimate, not a calibrated sound level.
+const NOISE_MAX_DBFS = -40;
+const NOISE_DISPLAY_OFFSET = 94;
+const NOISE_SAMPLE_MS = 3000;
+let lastNoiseDb = null;
+// Liveness: the head must turn toward two prompted sides, in a random order,
+// so a still photo or a replayed recording cannot pass.
+const LIVENESS_TURN_TIMEOUT_MS = 9000;
+let latestFaceLandmarks = null;
+let latestFaceLandmarksAt = 0;
 let supportRetryState = "complete";
 let currentAudioEpoch = 0;
 let playbackTime = 0;
@@ -205,6 +219,11 @@ let playbackCompleteTimer = null;
 let processingStatusTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+// True from a dropped connection until the resumed session sends real
+// interview traffic; "authenticated" arrives before the server's lock check.
+let resumingAfterDrop = false;
+let busyResumeRetries = 0;
+const MAX_BUSY_RESUME_RETRIES = 8;
 let interviewStopRequested = false;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const activePlaybackSources = new Set();
@@ -635,6 +654,8 @@ function setupPrejoinFlow() {
   document.getElementById("pj-mic-retry")?.addEventListener("click", () => void retryPreflight("microphone"));
   photoCaptureBtn?.addEventListener("click", () => void retryPreflight("identity"));
   document.getElementById("pj-network-retry")?.addEventListener("click", () => void retryPreflight("network"));
+  document.getElementById("pj-noise-retry")?.addEventListener("click", () => void retryPreflight("noise"));
+  document.getElementById("pj-liveness-retry")?.addEventListener("click", () => void retryPreflight("liveness"));
   pjShareAllowBtn?.addEventListener("click", () => void retryPreflight("screen"));
   document.getElementById("pj-fullscreen-start")?.addEventListener("click", async () => {
     // Must run inside this click: full screen needs a live user gesture.
@@ -659,11 +680,11 @@ function showPrejoinError(element, message) {
 }
 
 function renderPreflight() {
-  const panels = { camera: pjPanel1, microphone: pjPanel2, identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
+  const panels = { camera: pjPanel1, microphone: pjPanel2, noise: document.getElementById("pj-noise-panel"), liveness: document.getElementById("pj-liveness-panel"), identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
   for (const [key, panel] of Object.entries(panels)) {
     if (panel) panel.classList.toggle("active", preflightChecks[key] === "failed" ||
       (preflightStarted && key === "screen" && preflightChecks[key] !== "passed" &&
-       ["camera", "microphone", "identity", "network"].every(item => preflightChecks[item] === "passed")));
+       CORE_CHECKS.every(item => preflightChecks[item] === "passed")));
     panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
   }
   const fullscreenPanel = document.getElementById("pj-fullscreen-panel");
@@ -672,7 +693,8 @@ function renderPreflight() {
   document.getElementById("preflight-loading").hidden = !preflightBusy;
   pjJoinBtn.disabled = preflightBusy || !recordingConsentEl?.checked;
   pjJoinBtn.hidden = awaitingFullscreen || Object.values(preflightChecks).includes("failed") ||
-    (preflightStarted && ["camera", "microphone", "identity", "network"].every(key => preflightChecks[key] === "passed") && preflightChecks.screen !== "passed");
+    (preflightStarted && CORE_CHECKS.every(key => preflightChecks[key] === "passed") && preflightChecks.screen !== "passed");
+  renderPreflightSteps();
   pjJoinBtn.textContent = preflightBusy ? "Preparing Interview…" : "Start AI Interview";
   document.getElementById("preflight-title").textContent = preflightStarted ? "Preparing Interview" : "Start AI Interview";
 }
@@ -683,7 +705,7 @@ function preflightStatus(message) {
 
 function failPreflight(key, message) {
   preflightChecks[key] = "failed";
-  const errors = { camera: camErrorEl, microphone: micErrorEl, identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), screen: shareErrorEl };
+  const errors = { camera: camErrorEl, microphone: micErrorEl, noise: document.getElementById("pj-noise-error"), liveness: document.getElementById("pj-liveness-error"), identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), screen: shareErrorEl };
   showPrejoinError(errors[key], message);
   renderPreflight();
 }
@@ -744,10 +766,176 @@ async function verifyPreflightIdentity() {
   identityCheckedAt = Date.now();
 }
 
+// Windows lists the same microphone up to three times ("Default - X",
+// "Communications - X" and "X"). Keep one entry per physical device.
+function uniqueDevices(list) {
+  const seen = new Map();
+  for (const device of list) {
+    if (device.deviceId === "default" || device.deviceId === "communications") continue;
+    const key = device.groupId ? `${device.groupId}|${device.label.replace(/^(Default|Communications)\s*-\s*/i, "")}` : device.deviceId;
+    if (!seen.has(key)) seen.set(key, device);
+  }
+  return [...seen.values()];
+}
+
+// Uses the system default microphone; if it picks up no sound, tries each
+// other microphone in turn and keeps the first one that does.
+async function findWorkingMicrophone() {
+  const heard = async (timeout) => {
+    startMicLevelTest();
+    await micTestContext?.resume();
+    try {
+      await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running" && micSignalDetected, "", timeout);
+      return true;
+    } catch (error) {
+      if (preflightCancelled) throw error;
+      return false;
+    }
+  };
+  preflightStatus("Say a few words so we can hear your microphone.");
+  if (await heard(6000)) return;
+  const current = userMediaStream?.getAudioTracks()[0]?.getSettings?.() || {};
+  const { mics } = await populateDeviceSelects();
+  for (const mic of mics) {
+    // Skip the microphone that was just tested (the default resolves to it).
+    if (mic.deviceId === current.deviceId || (current.groupId && mic.groupId === current.groupId)) continue;
+    preflightStatus(`Trying ${mic.label || "another microphone"}… say a few words.`);
+    if (!await attachDeviceTrack("audio", mic.deviceId)) continue;
+    if (micSelectEl) micSelectEl.value = mic.deviceId;
+    if (await heard(4000)) return;
+  }
+  throw new Error("No microphone audio was detected. Say a few words, check that your microphone is not muted, then retry or choose another microphone.");
+}
+
+function showNoiseLevel(db) {
+  const row = document.querySelector('#pf-steps [data-check="noise"]');
+  if (!row) return;
+  const estimate = Math.max(20, Math.round(db + NOISE_DISPLAY_OFFSET));
+  row.style.setProperty("--level", `${Math.max(4, Math.min(100, (db + 80) / 60 * 100))}%`);
+  row.dataset.loud = db > NOISE_MAX_DBFS ? "true" : "false";
+  row.querySelector("small").textContent = `Measuring… about ${estimate} dB`;
+}
+
+// Measures background noise for a few seconds on an unfiltered feed and
+// blocks the interview while the room is too loud.
+async function measureBackgroundNoise() {
+  preflightStatus("Thanks! Now stay quiet for 3 seconds while we measure the background noise.");
+  const deviceId = userMediaStream?.getAudioTracks()[0]?.getSettings?.().deviceId;
+  const raw = await navigator.mediaDevices.getUserMedia({
+    audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : { deviceId: { ideal: "default" } }), echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    video: false,
+  });
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  const context = new AudioContextCtor();
+  try {
+    await context.resume();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    context.createMediaStreamSource(raw).connect(analyser);
+    const buffer = new Float32Array(analyser.fftSize);
+    const samples = [];
+    const until = Date.now() + NOISE_SAMPLE_MS;
+    // Give the student a moment to stop speaking after the microphone check.
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const sampleUntil = Math.max(until, Date.now() + NOISE_SAMPLE_MS - 1000);
+    while (Date.now() < sampleUntil) {
+      if (preflightCancelled) throw new Error("Preparation cancelled.");
+      analyser.getFloatTimeDomainData(buffer);
+      let sum = 0;
+      for (const value of buffer) sum += value * value;
+      const db = 20 * Math.log10(Math.max(Math.sqrt(sum / buffer.length), 1e-6));
+      samples.push(db);
+      showNoiseLevel(db);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    // The median ignores a single cough or click.
+    const median = samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)];
+    lastNoiseDb = Math.max(20, Math.round(median + NOISE_DISPLAY_OFFSET));
+    if (median > NOISE_MAX_DBFS) {
+      throw new Error(`Your room is too noisy (about ${lastNoiseDb} dB). Move somewhere quieter, close doors or windows, then measure again.`);
+    }
+  } finally {
+    raw.getTracks().forEach(track => track.stop());
+    void context.close().catch(() => {});
+  }
+}
+
+// Mirrored like the preview: < 0.5 means the head turned toward the
+// student's left (the left of the screen).
+function headTurnRatio() {
+  const landmarks = latestFaceLandmarks;
+  if (!landmarks || Date.now() - latestFaceLandmarksAt > 1500) return null;
+  const nose = landmarks[1], eyeA = landmarks[33], eyeB = landmarks[263];
+  if (!nose || !eyeA || !eyeB) return null;
+  const a = 1 - eyeA.x, b = 1 - eyeB.x, n = 1 - nose.x;
+  const span = Math.abs(a - b);
+  return span > 0.01 ? (n - Math.min(a, b)) / span : null;
+}
+
+function showLivenessPrompt(side) {
+  const prompt = document.getElementById("pf-liveness");
+  if (!prompt) return;
+  prompt.hidden = !side;
+  if (!side) return;
+  prompt.dataset.side = side;
+  prompt.querySelector(".pf-arrow").textContent = side === "left" ? "←" : side === "right" ? "→" : "•";
+  document.getElementById("pf-liveness-text").textContent =
+    side === "center" ? "Now look back at the camera" : `Slowly turn your head ${side}`;
+}
+
+async function checkLiveness() {
+  // Without face landmarks (an older browser), the multi-frame identity
+  // check that follows is the remaining guard.
+  if (!faceLandmarker) return;
+  const sides = Math.random() < 0.5 ? ["left", "right"] : ["right", "left"];
+  try {
+    for (const side of [...sides, "center"]) {
+      showLivenessPrompt(side);
+      preflightStatus(side === "center" ? "Look back at the camera." : `Follow the arrow: slowly turn your head ${side}.`);
+      await waitForPreflight(() => {
+        if (faceCountDetected !== 1) return false;
+        const ratio = headTurnRatio();
+        if (ratio == null) return false;
+        return side === "left" ? ratio < 0.36 : side === "right" ? ratio > 0.64 : ratio > 0.4 && ratio < 0.6;
+      }, "We couldn't confirm a live person. Keep only your face in view, follow the arrow, then try again.", LIVENESS_TURN_TIMEOUT_MS);
+    }
+  } finally {
+    showLivenessPrompt(null);
+  }
+}
+
+const PREFLIGHT_STEP_TEXT = {
+  camera: { checking: "Checking your camera and lighting…", passed: "Camera ready", failed: "Needs attention" },
+  microphone: { checking: "Say a few words…", passed: "We can hear you", failed: "Needs attention" },
+  noise: { checking: "Stay quiet for 3 seconds…", passed: "", failed: "Too noisy" },
+  liveness: { checking: "Follow the arrow on the camera", passed: "Live person confirmed", failed: "Try again" },
+  identity: { checking: "Matching your profile photo…", passed: "Verified", failed: "Not verified" },
+  network: { checking: "Connecting to the interview service…", passed: "Connected", failed: "Not connected" },
+  screen: { checking: "Waiting for your entire screen…", passed: "Sharing", failed: "Share again" },
+};
+
+function renderPreflightSteps() {
+  const list = document.getElementById("pf-steps");
+  if (!list) return;
+  list.hidden = !preflightStarted;
+  for (const row of list.querySelectorAll("li[data-check]")) {
+    const key = row.dataset.check;
+    let state = preflightChecks[key];
+    if (key === "screen" && state === "pending" && preflightStarted && CORE_CHECKS.every(item => preflightChecks[item] === "passed")) state = "action";
+    if (row.dataset.state === state && !(key === "noise" && state === "passed")) continue;
+    row.dataset.state = state;
+    const text = state === "action" ? "Click Share entire screen below"
+      : key === "noise" && state === "passed" ? `Quiet enough${lastNoiseDb ? ` · about ${lastNoiseDb} dB` : ""}`
+      : PREFLIGHT_STEP_TEXT[key]?.[state] || "Waiting";
+    row.querySelector("small").textContent = text;
+  }
+}
+
 async function checkPreflightItem(key, action) {
   if (preflightChecks[key] === "passed") return;
   preflightChecks[key] = "checking";
-  try { await action(); preflightChecks[key] = "passed"; }
+  renderPreflightSteps();
+  try { await action(); preflightChecks[key] = "passed"; renderPreflightSteps(); }
   catch (error) { failPreflight(key, error.message); }
 }
 
@@ -758,8 +946,10 @@ async function retryPreflight(key) {
   renderPreflight();
   if (key === "camera") {
     preflightChecks.identity = "pending";
+    preflightChecks.liveness = "pending";
     await attachDeviceTrack("video", camSelectEl.value);
   }
+  if (key === "liveness") preflightChecks.identity = "pending";
   if (key === "microphone") {
     await attachDeviceTrack("audio", micSelectEl.value);
     micLevelDetected = false;
@@ -798,24 +988,28 @@ async function runPreflight() {
           "A clear camera feed with one person is required. Check your camera and lighting.", 25000);
       });
     const networkCheck = checkPreflightItem("network", checkReadiness);
+    // Camera and connection checks run in the background; the steps that
+    // need the student (speak, stay quiet, turn your head) go one at a time
+    // so the instructions never compete.
+    const soundChecks = checkPreflightItem("microphone", async () => {
+      await devices;
+      await waitForPreflight(() => hasLiveTrack("audio"), "Your default microphone is unavailable. Allow access or select a working microphone.", 5000);
+      await findWorkingMicrophone();
+    }).then(async () => {
+      if (preflightChecks.microphone === "passed") await checkPreflightItem("noise", measureBackgroundNoise);
+    });
     await Promise.all([
       cameraCheck,
       networkCheck,
-      checkPreflightItem("microphone", async () => {
-        await devices;
-        await waitForPreflight(() => hasLiveTrack("audio"), "Your default microphone is unavailable. Allow access or select a working microphone.", 5000);
-        startMicLevelTest();
-        await micTestContext?.resume();
-        await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running" && micSignalDetected,
-          "No microphone audio was detected. Say a few words, check that your microphone is not muted, or select another microphone.", 10000);
-      }),
-      Promise.all([cameraCheck, networkCheck]).then(async () => {
+      soundChecks,
+      Promise.all([cameraCheck, networkCheck, soundChecks]).then(async () => {
         if (preflightChecks.camera === "passed" && preflightId) {
-          await checkPreflightItem("identity", verifyPreflightIdentity);
+          await checkPreflightItem("liveness", checkLiveness);
+          if (preflightChecks.liveness === "passed") await checkPreflightItem("identity", verifyPreflightIdentity);
         }
       }),
     ]);
-    if (["camera", "microphone", "identity", "network"].some(key => preflightChecks[key] !== "passed")) return;
+    if (CORE_CHECKS.some(key => preflightChecks[key] !== "passed")) return;
     if (preflightChecks.screen !== "passed") {
       preflightStatus("Click Share entire screen below. Select Entire Screen in the browser picker.");
       return; // getDisplayMedia must run directly from its own user click.
@@ -892,15 +1086,17 @@ async function populateDeviceSelects() {
     const fill = (select, list, kind) => {
       if (!select) return;
       const current = select.value;
+      const physical = uniqueDevices(list);
+      const defaultLabel = (list.find(d => d.deviceId === "default")?.label || "").replace(/^Default\s*-\s*/i, "");
       select.innerHTML = list.length
-        ? (kind === "Microphone" ? '<option value="">System default microphone</option>' : "") + list.map((d, i) => `<option value="${d.deviceId}">${d.label || (kind + " " + (i + 1))}</option>`).join("")
+        ? (kind === "Microphone" ? `<option value="">System default${defaultLabel ? ` (${escHtml(defaultLabel)})` : " microphone"}</option>` : "") + physical.map((d, i) => `<option value="${d.deviceId}">${escHtml(d.label || (kind + " " + (i + 1)))}</option>`).join("")
         : `<option value="">No ${kind} found</option>`;
       if (current && list.some((d) => d.deviceId === current)) select.value = current;
       else if (kind === "Microphone") select.value = "";
     };
     fill(camSelectEl, cams, "Camera");
     fill(micSelectEl, mics, "Microphone");
-    return { cams, mics };
+    return { cams, mics: uniqueDevices(mics) };
   } catch (err) {
     console.warn("Could not enumerate devices:", err);
     return { cams: [], mics: [] };
@@ -930,6 +1126,7 @@ function updatePrejoinReadiness() {
   if (!preflightStarted || _isCallScreenActive()) return;
   if (!cameraTrackLive && preflightChecks.camera === "passed") {
     preflightChecks.identity = "pending";
+    preflightChecks.liveness = "pending";
     failPreflight("camera", "Camera disconnected. Select a camera and retry.");
   }
   if (!microphoneTrackLive && preflightChecks.microphone === "passed") failPreflight("microphone", "Microphone disconnected. Select a microphone and retry.");
@@ -1482,6 +1679,8 @@ async function analyzeCameraFrame() {
     faceCountDetected = 0;
   }
 
+  latestFaceLandmarks = faceCountDetected === 1 ? landmarks : null;
+  latestFaceLandmarksAt = Date.now();
   faceQualityRegion = faceRegion(landmarks);
   const luminance = frameLighting(sourceVideo);
   lightingPassing = luminance >= 40 && luminance <= 235;
@@ -2874,6 +3073,7 @@ document.addEventListener("click", async event => {
 // ============================================================
 
 function handleControlMessage(payload) {
+  if (payload.type !== "authenticated" && resumingAfterDrop) { resumingAfterDrop = false; busyResumeRetries = 0; }
   switch (payload.type) {
     case "authenticated":
       reconnectAttempts = 0;
@@ -3133,16 +3333,28 @@ function handleControlMessage(payload) {
       showIntegrityNotice(payload.detail || "The placement interview ended under the AI-proctor policy set by placement staff.");
       break;
 
-    case "interview_paused":
-      if (rndStatus) rndStatus.textContent = "Paused — restore screen sharing";
+    case "interview_paused": {
+      // Name what was actually lost: camera, microphone or screen sharing.
+      const media = { camera_required: "your camera", microphone_required: "your microphone", screen_share_required: "entire-screen sharing" }[payload.reason] || "the required device";
+      if (rndStatus) rndStatus.textContent = `Paused — restore ${media}`;
       if (aiRoleEl) aiRoleEl.textContent = "Paused";
-      showIntegrityNotice(payload.detail || "Interview paused. Restore entire-screen sharing to continue.");
+      showIntegrityNotice(payload.detail || `Interview paused. Restore ${media} to continue.`);
       break;
+    }
 
     case "interview_resumed":
       if (rndStatus) rndStatus.textContent = "Connected (Live)";
       if (aiRoleEl) aiRoleEl.textContent = currentAgentRole;
-      showIntegrityNotice("Screen sharing restored. The interview will continue.");
+      showIntegrityNotice("Everything is connected again. The interview will continue.");
+      break;
+
+    case "session_paused":
+      // The sign-in expired mid-interview; answers so far are saved.
+      showFatalError("Your sign-in expired, so the interview was paused. Your answers so far are saved. Sign in again and resume this interview.");
+      break;
+
+    case "answer_redirect":
+      if (rndStatus) rndStatus.textContent = "Back to the question";
       break;
 
     case "capture_error":
@@ -3250,7 +3462,13 @@ function connectInterviewSocket() {
       recoverCompletedSession();
       return;
     }
-    if (event.code === 4429) {
+    // During an automatic reconnect the server may still be releasing this
+    // tab's previous connection for a few seconds, so "already active" is
+    // retried with the normal backoff. On a first connection it really is
+    // another browser.
+    const resumeStillReleasing = event.code === 4429 && interviewHasStarted && resumingAfterDrop && busyResumeRetries < MAX_BUSY_RESUME_RETRIES;
+    if (resumeStillReleasing) busyResumeRetries += 1;
+    if (event.code === 4429 && !resumeStillReleasing) {
       showFatalError("This interview is already active in another browser. Close the other interview before resuming here.");
       return;
     }
@@ -3266,8 +3484,9 @@ function connectInterviewSocket() {
       showFatalError("The connection could not be restored after several attempts. Your completed answers are saved; reload this page to resume.");
       return;
     }
-    const delayMs = Math.min(10000, 1000 * (2 ** reconnectAttempts));
+    const delayMs = resumeStillReleasing ? 2000 : Math.min(10000, 1000 * (2 ** reconnectAttempts));
     reconnectAttempts += 1;
+    resumingAfterDrop = true;
     if (rndStatus) rndStatus.textContent = `Connection lost — resuming in ${Math.ceil(delayMs / 1000)}s…`;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -3384,8 +3603,11 @@ function markReportStepDone(id) {
   const el = document.getElementById(id);
   if (!el || el.classList.contains("done")) return;
   el.classList.add("done");
-  const icon = el.querySelector(".report-check-icon");
-  if (icon) icon.textContent = "✓";
+  el.dataset.state = "done";
+  const next = document.getElementById(REPORT_STEP_IDS[REPORT_STEP_IDS.indexOf(id) + 1]);
+  if (next && next.dataset.state === "pending") next.dataset.state = "checking";
+  const done = REPORT_STEP_IDS.filter(step => document.getElementById(step)?.classList.contains("done")).length;
+  document.querySelector(".rg-ring")?.style.setProperty("--progress", String(Math.round(done / REPORT_STEP_IDS.length * 100)));
 }
 
 async function loadEvaluationResults() {
@@ -3511,10 +3733,20 @@ function renderResponsesSaved(report) {
     if (el) el.style.display = "none";
   });
   if (resultsSavedNotice) resultsSavedNotice.style.display = "block";
+  const placement = report.report_type === "placement_drive";
+  const title = document.getElementById("results-saved-title");
+  const timeline = document.getElementById("results-saved-timeline");
+  const primary = document.getElementById("results-saved-primary");
+  if (title) title.textContent = placement ? "Interview submitted" : "Interview saved";
+  if (timeline) timeline.hidden = !placement;
+  if (primary) {
+    primary.textContent = placement ? "Go to My reports" : "Start another practice";
+    primary.setAttribute("href", placement ? "/reports" : "/practice");
+  }
   if (resultsSavedDetail) {
-    resultsSavedDetail.textContent = report.report_type === "placement_drive"
-      ? "We've recorded your answers for this placement interview. Your placement cell will review the outcome — you don't need to do anything else."
-      : "We've recorded your answers for this practice interview. There wasn't enough of an answered conversation this time to generate a scored evaluation — try another practice round whenever you're ready.";
+    resultsSavedDetail.textContent = placement
+      ? "Your answers are recorded. Your placement team reviews every interview and will release your result. You don't need to do anything else; it will appear in My reports."
+      : "We've recorded your answers. There wasn't enough of an answered conversation this time to score it, so try another practice round whenever you're ready.";
   }
   if (resultsDownloadLink) resultsDownloadLink.hidden = true;
 }
