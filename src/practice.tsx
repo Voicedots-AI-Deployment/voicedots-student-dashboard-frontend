@@ -481,7 +481,7 @@ export function Practice() {
       )}
 
       {preparation ? (
-        <section className={`panel preparation-panel${needsClarification ? " resume-clarification-panel" : ""}`} aria-live="polite">
+        <section className={`panel preparation-panel${pending ? " preparation-horizontal" : ""}${needsClarification ? " resume-clarification-panel" : ""}`} aria-live="polite">
           {pending && <>
             <PreparationJourney stage={stageKey} placement={mode === "placement"}
               panel={mode === "placement" ? panel.map(person => ({ track: person.track, role: person.role }))

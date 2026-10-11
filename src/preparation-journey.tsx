@@ -42,15 +42,15 @@ export function PreparationJourney({ stage, panel, placement }: { stage?: string
     const timer = window.setInterval(() => setTip(value => (value + 1) % TIPS.length), 6000);
     return () => window.clearInterval(timer);
   }, []);
-  // Each panelist "arrives" as preparation moves forward.
-  const arrived = Math.max(1, Math.ceil(((current + 1) / PREPARATION_STEPS.length) * panel.length));
+  const StageIcon = PREPARATION_STEPS[current].icon;
   return <div className="prep-journey" data-stage={PREPARATION_STEPS[current].key}>
-    <div className="prep-orb" aria-hidden="true">
-      <span className="prep-ring one" /><span className="prep-ring two" /><span className="prep-ring three" />
-      <div className="prep-core">{[0, 1, 2, 3, 4].map(bar => <i key={bar} style={{ animationDelay: `${bar * 0.12}s` }} />)}</div>
+    <div className="prep-header">
+      <div className="prep-stage-mark" aria-hidden="true"><StageIcon size={28} /></div>
+      <div><span className="eyebrow">{placement ? "PREPARING YOUR PLACEMENT INTERVIEW" : "PREPARING YOUR PRACTICE INTERVIEW"}</span>
+        <h2 aria-live="polite">{PREPARATION_STEPS[current].label}</h2>
+        <p className="prep-note">Step {current + 1} of {PREPARATION_STEPS.length} · Progress follows your saved preparation.</p>
+      </div>
     </div>
-    <span className="eyebrow">{placement ? "PREPARING YOUR PLACEMENT INTERVIEW" : "PREPARING YOUR PRACTICE INTERVIEW"}</span>
-    <h2 aria-live="polite">{PREPARATION_STEPS[current].label}</h2>
     <div className="prep-progress" role="progressbar" aria-label="Interview preparation" aria-valuemin={1} aria-valuemax={PREPARATION_STEPS.length} aria-valuenow={current + 1} aria-valuetext={`Step ${current + 1} of ${PREPARATION_STEPS.length}`}>
       <span style={{ width: `${((current + 0.5) / PREPARATION_STEPS.length) * 100}%` }} />
     </div>
@@ -64,7 +64,7 @@ export function PreparationJourney({ stage, panel, placement }: { stage?: string
       </li>;
     })}</ol>
     {panel.length > 0 && <div className="prep-panel" aria-label="Your interview panel">
-      {panel.map((member, index) => <figure key={`${member.track}-${index}`} className={index < arrived ? "arrived" : ""} style={{ animationDelay: `${index * 0.15}s` }}>
+      {panel.map((member, index) => <figure key={`${member.track}-${index}`} className="arrived">
         <span className="prep-avatar">{STILLS[member.track] ? <img src={STILLS[member.track]} alt="" /> : member.role.slice(0, 1)}</span>
         <figcaption>{member.role}</figcaption>
       </figure>)}

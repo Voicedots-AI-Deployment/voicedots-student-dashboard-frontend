@@ -53,6 +53,31 @@ async function mockPortal(page: Page, options: { resumes?: boolean; drives?: unk
   });
 }
 
+test("preparation stages use a horizontal layout that fits the laptop window", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await mockPortal(page);
+  const progress = { status: "in_progress", operation_id: "horizontal", submission_id: "prep", stage: "preparing_role_context" };
+  await page.route("**/api/student/interview/start", route => route.fulfill({ status: 202, json: progress }));
+  await page.route("**/api/student/interview/preparation/**", route => route.fulfill({ status: 202, json: progress }));
+  await page.goto("/practice");
+  await page.getByLabel("Target role", { exact: true }).fill("Backend Developer");
+  await page.getByRole("button", { name: "Start practice interview", exact: true }).click();
+  await expect(page.locator(".prep-journey")).toBeVisible();
+  const boxes = await page.locator(".prep-steps li").evaluateAll(items => items.map(item => ({ x: item.getBoundingClientRect().x, y: item.getBoundingClientRect().y })));
+  expect(boxes).toHaveLength(4);
+  expect(Math.max(...boxes.map(b => b.y)) - Math.min(...boxes.map(b => b.y))).toBeLessThan(3);
+  expect(boxes[3].x).toBeGreaterThan(boxes[0].x);
+  const card = await page.locator(".preparation-panel").boundingBox();
+  expect(card!.y + card!.height).toBeLessThanOrEqual(768);
+  await page.screenshot({ path: "../.local/ui/preparation-horizontal.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".dashboard-body")).toHaveCSS("margin-left", "0px");
+  const mobile = await page.locator(".preparation-panel").boundingBox();
+  expect(mobile!.x + mobile!.width).toBeLessThanOrEqual(390);
+  expect(mobile!.y + mobile!.height).toBeLessThanOrEqual(844);
+  await page.screenshot({ path: "../.local/ui/preparation-mobile.png", fullPage: true });
+});
+
 test("Practice mode uses editable setup, one Main Resume and the standard four-person panel", async ({ page }) => {
   await mockPortal(page, { practiceAttempts: [{ submission_id: "practice-sub", session_id: "practice-session", target_role: "Quant Engineer", submitted_at: "2026-10-04T12:00:00Z", duration_minutes: 30 }] });
   await page.goto("/practice");
