@@ -4,62 +4,48 @@ import {
   Activity, ArrowRight, Award, BookOpen, ChartLine, Flame, Gauge, MessageSquareText, Mic, Minus, Target,
   TrendingDown, TrendingUp, Trophy,
 } from "lucide-react";
-import type { Dashboard, Report } from "./api";
 import { Empty, PageHeading, ResourceState, date, useResource } from "./ui";
 import "./performance.css";
 
-// Every number on this page comes from the student's own released reports and
-// readiness index. Nothing is estimated: a missing value is shown as missing.
+// Display only. Every number is computed by GET /api/student/performance from
+// the student's own released reports and readiness index; a missing value is
+// shown as missing, never estimated here.
 
-const DIMENSION_LABELS: Record<string, string> = {
-  communication: "Communication",
-  resume_ownership: "Resume ownership",
-  confidence_conduct: "Confidence",
-  structured_thinking: "Structured thinking",
-  domain_knowledge: "Domain knowledge",
-  applied_evidence: "Applied examples",
-  role_awareness: "Role awareness",
+export type PerformancePoint = { session_id: string | null; at: string; score: number; placement: boolean; label: string };
+type Skill = { dimension: string; label: string; average: number | null; latest: number | null; change: number | null };
+type Communication = {
+  speaking_speed_wpm: number | null; pace_label: string | null; filler_word_count: number | null; filler_change: number | null;
+  top_filler_words: string[]; scores: Record<string, number | null>;
 };
-const DIMENSIONS = Object.keys(DIMENSION_LABELS);
+export type PerformanceData = {
+  generated_at: string;
+  pending_release_count: number;
+  has_results: boolean;
+  readiness: {
+    overall_score: number | null; label: string | null; status: string | null;
+    axes: Array<{ axis: string; score: number | null; weight: number | null }>;
+    drives: Array<{ drive_id: string; company_name: string | null; role_title: string | null; best_score: number | null }>;
+  };
+  open_opportunities: Array<{ drive_id: string; company_name: string | null; role_title: string | null }>;
+  summary: null | {
+    released_count: number; placement_count: number; practice_count: number;
+    latest: PerformancePoint & { change: number | null; label_readiness: string | null };
+    recent_average: { score: number; count: number; label: string | null };
+    best: PerformancePoint;
+    first_to_latest_change: number | null;
+  };
+  trend: PerformancePoint[];
+  skills: Skill[];
+  strengths: string[];
+  focus: string[];
+  actions: Array<{ focus: string | null; action: string }>;
+  communication: Communication | null;
+  activity: { weeks: Array<{ week_start: string; week_end: string; count: number }>; active_weeks: number };
+  placement_results: PerformancePoint[];
+};
 
-export type ScoredReport = { id: string; at: number; score: number; placement: boolean; label: string; report: Report };
-
-export function readinessLabel(score: number) {
-  return score >= 70 ? "Interview ready" : score >= 55 ? "Approaching ready" : score >= 40 ? "Developing" : "Not ready yet";
-}
-
-export function scoredReports(reports: Report[]): ScoredReport[] {
-  return reports
-    .filter(item => typeof item.report?.overall_score === "number" && item.report?.status !== "awaiting_release")
-    .map(item => ({
-      id: item.session_id || item.evaluation_id,
-      at: Date.parse(item.completed_at || item.created_at) || 0,
-      score: item.report!.overall_score as number,
-      placement: Boolean(item.drive_id),
-      label: item.company_name ? `${item.company_name} · ${item.target_role || "Placement"}` : item.target_role || "Practice interview",
-      report: item,
-    }))
-    .sort((a, b) => a.at - b.at);
-}
-
-export function dimensionPercentages(report: Report): Record<string, number> {
-  const view = report.report;
-  const values: Record<string, number> = {};
-  for (const item of [...(view?.core_dimensions || []), ...(view?.domain_dimensions || [])]) {
-    const percentage = typeof item.percentage === "number" ? item.percentage : typeof item.band === "number" ? item.band * 25 : null;
-    if (percentage != null) values[item.dimension] = percentage;
-  }
-  return values;
-}
-
-export function weeklyActivity(points: ScoredReport[], now = Date.now(), weeks = 8) {
-  const week = 7 * 24 * 3600 * 1000;
-  return Array.from({ length: weeks }, (_, index) => {
-    const end = now - (weeks - 1 - index) * week;
-    const start = end - week;
-    return { start, count: points.filter(point => point.at > start && point.at <= end).length };
-  });
-}
+const AXIS_LABELS: Record<string, string> = { interview_readiness: "Placement interviews", resume_readiness: "Resume quality" };
+const pointKey = (point: PerformancePoint) => `${point.session_id}-${point.at}`;
 
 function Delta({ value, suffix = " pts" }: { value: number | null; suffix?: string }) {
   if (value == null) return <span className="perf-delta neutral">First result</span>;
@@ -70,7 +56,7 @@ function Delta({ value, suffix = " pts" }: { value: number | null; suffix?: stri
   </span>;
 }
 
-function TrendChart({ points }: { points: ScoredReport[] }) {
+function TrendChart({ points }: { points: PerformancePoint[] }) {
   // Draw in real pixels at the container's width so labels keep their size on phones.
   const frame = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(640);
@@ -103,14 +89,14 @@ function TrendChart({ points }: { points: ScoredReport[] }) {
       <text className="perf-grid-label" x={left + 6} y={y(70) - 5}>Interview ready</text>
       {area && <path className="perf-area" d={area} fill="url(#perf-trend-fill)" />}
       {points.length > 1 && <path className="perf-line" d={line} pathLength={1} />}
-      {points.map((point, index) => <g key={point.id} className={`perf-point ${point.placement ? "placement" : "practice"}`}>
-        <circle cx={x(index)} cy={y(point.score)} r={point.placement ? 6 : 5}><title>{`${point.label} · ${date(new Date(point.at).toISOString())} · ${Math.round(point.score)}`}</title></circle>
+      {points.map((point, index) => <g key={pointKey(point)} className={`perf-point ${point.placement ? "placement" : "practice"}`}>
+        <circle cx={x(index)} cy={y(point.score)} r={point.placement ? 6 : 5}><title>{`${point.label} · ${date(point.at)} · ${Math.round(point.score)}`}</title></circle>
         {(index % labelEvery === 0 || index === points.length - 1) && <text x={x(index)} y={height - 8} textAnchor={points.length > 1 && index === points.length - 1 ? "end" : points.length > 1 && index === 0 ? "start" : "middle"}>{new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" }).format(new Date(point.at))}</text>}
       </g>)}
     </svg>
     <figcaption><span className="perf-legend placement">Placement interview</span><span className="perf-legend practice">Practice interview</span></figcaption>
     <table className="visually-hidden"><caption>Interview scores</caption><thead><tr><th>Date</th><th>Interview</th><th>Score</th></tr></thead>
-      <tbody>{points.map(point => <tr key={point.id}><td>{date(new Date(point.at).toISOString())}</td><td>{point.label}</td><td>{Math.round(point.score)}</td></tr>)}</tbody></table>
+      <tbody>{points.map(point => <tr key={pointKey(point)}><td>{date(point.at)}</td><td>{point.label}</td><td>{Math.round(point.score)}</td></tr>)}</tbody></table>
   </figure>;
 }
 
@@ -121,7 +107,7 @@ function Meter({ value, label }: { value: number | null; label: string }) {
 }
 
 export function Performance() {
-  const resource = useResource<Dashboard>("/api/student/dashboard");
+  const resource = useResource<PerformanceData>("/api/student/performance");
   const data = resource.data;
   return <>
     <PageHeading eyebrow="TRACK YOUR GROWTH" title="My performance">
@@ -131,64 +117,46 @@ export function Performance() {
   </>;
 }
 
-function PerformanceBody({ data }: { data: Dashboard }) {
-  const points = scoredReports(data.reports);
-  const pending = data.reports.length - points.length;
-  if (!points.length) {
+function PerformanceBody({ data }: { data: PerformanceData }) {
+  const pending = data.pending_release_count;
+  const summary = data.summary;
+  if (!data.has_results || !summary) {
     return <section className="panel"><Empty title="Your performance dashboard is waiting for its first result" action>
       {pending ? "Your completed interviews are still being reviewed. Results appear here once they are released." : "Complete a practice interview to see your scores, skills and progress here."}
     </Empty></section>;
   }
 
-  const latest = points[points.length - 1];
-  const previous = points.length > 1 ? points[points.length - 2] : null;
-  const recent = points.slice(-5);
-  const average = recent.reduce((sum, point) => sum + point.score, 0) / recent.length;
-  const best = points.reduce((top, point) => point.score > top.score ? point : top, points[0]);
-  const placements = points.filter(point => point.placement).length;
-  const readiness = data.readiness?.overall_score ?? null;
-
-  const firstDimensions = dimensionPercentages(points[0].report);
-  const latestDimensions = dimensionPercentages(latest.report);
-  const averageDimensions = Object.fromEntries(DIMENSIONS.map(key => {
-    const values = recent.map(point => dimensionPercentages(point.report)[key]).filter((value): value is number => typeof value === "number");
-    return [key, values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null];
-  })) as Record<string, number | null>;
-  const ranked = DIMENSIONS.filter(key => averageDimensions[key] != null).sort((a, b) => (averageDimensions[b]! - averageDimensions[a]!));
-  const strengths = ranked.filter(key => averageDimensions[key]! >= 70).slice(0, 3);
-  const focus = [...ranked].reverse().filter(key => averageDimensions[key]! < 70).slice(0, 3);
-
-  const communication = points.map(point => point.report.report?.communication).filter(Boolean);
-  const latestCommunication = latest.report.report?.communication;
-  const firstFillers = points[0].report.report?.communication?.filler_word_count;
-  const activity = weeklyActivity(points);
-  const busiest = Math.max(1, ...activity.map(week => week.count));
-  const activeWeeks = activity.filter(week => week.count > 0).length;
-  const actions = latest.report.report?.priority_improvement_areas?.flatMap(area => (area.actions || []).map(action => ({ focus: area.focus, action }))).slice(0, 4) || [];
-  const interviewAxis = (data.readiness as unknown as { interview_readiness?: { drives?: Array<{ drive_id: string; company_name?: string; role_title?: string; best_score: number }> } })?.interview_readiness;
-  const upcoming = data.drives.filter(drive => drive.status === "active" && drive.interview_action && !["completed", "blocked", "not_assigned"].includes(drive.interview_action));
+  const readiness = data.readiness.overall_score;
+  const points = data.trend;
+  const multiple = summary.released_count > 1;
+  const recentCount = summary.recent_average.count;
+  const skillLabel = (key: string) => data.skills.find(skill => skill.dimension === key)?.label ?? key.replace(/_/g, " ");
+  const communication = data.communication;
+  const weeks = data.activity.weeks;
+  const busiest = Math.max(1, ...weeks.map(week => week.count));
+  const opportunities = data.open_opportunities;
 
   return <div className="perf-page">
     <section className="stats-grid perf-kpis" aria-label="Performance summary">
       <article className="stat-card"><div className="stat-label"><span>Placement readiness</span><Gauge size={18} /></div>
         <strong>{readiness == null ? "—" : Math.round(readiness)}</strong>
-        <p>{readiness == null ? "Complete a placement interview to unlock" : readinessLabel(readiness)}</p></article>
+        <p>{readiness == null ? "Complete a placement interview to unlock" : data.readiness.label}</p></article>
       <article className="stat-card"><div className="stat-label"><span>Latest score</span><ChartLine size={18} /></div>
-        <strong>{Math.round(latest.score)}</strong><p><Delta value={previous ? latest.score - previous.score : null} /> vs previous</p></article>
-      <article className="stat-card"><div className="stat-label"><span>Average (last {recent.length})</span><Activity size={18} /></div>
-        <strong>{Math.round(average)}</strong><p>{readinessLabel(average)}</p></article>
+        <strong>{Math.round(summary.latest.score)}</strong><p><Delta value={summary.latest.change} /> vs previous</p></article>
+      <article className="stat-card"><div className="stat-label"><span>Average (last {recentCount})</span><Activity size={18} /></div>
+        <strong>{Math.round(summary.recent_average.score)}</strong><p>{summary.recent_average.label}</p></article>
       <article className="stat-card"><div className="stat-label"><span>Best score</span><Trophy size={18} /></div>
-        <strong>{Math.round(best.score)}</strong><p>{best.label}</p></article>
+        <strong>{Math.round(summary.best.score)}</strong><p>{summary.best.label}</p></article>
     </section>
 
     <div className="perf-columns">
       <section className="panel perf-trend">
         <div className="section-heading"><div><span className="eyebrow">SCORE TREND</span><h2>Your interview scores</h2>
-          <p>{points.length} released interview{points.length === 1 ? "" : "s"} · {placements} placement · {points.length - placements} practice{pending ? ` · ${pending} awaiting release` : ""}</p></div>
+          <p>{summary.released_count} released interview{summary.released_count === 1 ? "" : "s"} · {summary.placement_count} placement · {summary.practice_count} practice{pending ? ` · ${pending} awaiting release` : ""}</p></div>
           <Link to="/reports">All reports <ArrowRight size={15} /></Link></div>
         <TrendChart points={points} />
-        <p className="perf-summary">{points.length > 1
-          ? <>Your score moved from <strong>{Math.round(points[0].score)}</strong> to <strong>{Math.round(latest.score)}</strong> (<Delta value={latest.score - points[0].score} />) since your first released interview.</>
+        <p className="perf-summary">{multiple && points.length
+          ? <>Your score moved from <strong>{Math.round(points[0].score)}</strong> to <strong>{Math.round(summary.latest.score)}</strong> (<Delta value={summary.first_to_latest_change} />) since your first released interview.</>
           : "Complete another interview to see how your score changes."}</p>
       </section>
 
@@ -199,70 +167,65 @@ function PerformanceBody({ data }: { data: Dashboard }) {
             <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="50" /><circle className="value" cx="60" cy="60" r="50" pathLength={100} /></svg>
             <div><strong>{Math.round(readiness)}</strong><span>/ 100</span></div>
           </div>
-          <p className="perf-ring-label">{readinessLabel(readiness)}</p>
-          <dl className="perf-axes">{Object.entries(data.readiness.axis_scores || {}).map(([axis, value]) => <div key={axis}>
-            <dt>{axis === "interview_readiness" ? "Placement interviews" : axis === "resume_readiness" ? "Resume quality" : axis.replace(/_/g, " ")}
-              {(data.readiness as unknown as { weights?: Record<string, number> }).weights?.[axis] != null && <small> · {(data.readiness as unknown as { weights: Record<string, number> }).weights[axis]}% weight</small>}</dt>
-            <dd><Meter value={value} label={axis.replace(/_/g, " ")} /><span>{Math.round(value)}</span></dd>
+          <p className="perf-ring-label">{data.readiness.label}</p>
+          <dl className="perf-axes">{data.readiness.axes.map(({ axis, score, weight }) => <div key={axis}>
+            <dt>{AXIS_LABELS[axis] ?? axis.replace(/_/g, " ")}{weight != null && <small> · {weight}% weight</small>}</dt>
+            <dd><Meter value={score} label={axis.replace(/_/g, " ")} /><span>{score == null ? "—" : Math.round(score)}</span></dd>
           </div>)}</dl>
-          {interviewAxis?.drives?.length ? <ul className="perf-drive-scores">{interviewAxis.drives.map(drive => <li key={drive.drive_id}><span>{drive.company_name}</span><small>{drive.role_title}</small><strong>{Math.round(drive.best_score)}</strong></li>)}</ul> : null}
+          {data.readiness.drives.length ? <ul className="perf-drive-scores">{data.readiness.drives.map(drive => <li key={drive.drive_id}><span>{drive.company_name}</span><small>{drive.role_title}</small><strong>{drive.best_score == null ? "—" : Math.round(drive.best_score)}</strong></li>)}</ul> : null}
         </>}
       </section>
     </div>
 
     <section className="panel perf-skills">
       <div className="section-heading"><div><span className="eyebrow">SKILLS</span><h2>How each skill is developing</h2>
-        <p>Average of your last {recent.length} interview{recent.length === 1 ? "" : "s"}, with the change since your first one.</p></div></div>
-      <ul className="perf-skill-list">{DIMENSIONS.map(key => {
-        const value = averageDimensions[key];
-        const change = latestDimensions[key] != null && firstDimensions[key] != null && points.length > 1 ? latestDimensions[key] - firstDimensions[key] : null;
-        return <li key={key}><span>{DIMENSION_LABELS[key]}</span><Meter value={value} label={DIMENSION_LABELS[key]} />
-          <strong>{value == null ? "Not assessed" : `${Math.round(value)}%`}</strong>{points.length > 1 && <Delta value={change} suffix="%" />}</li>;
-      })}</ul>
+        <p>Average of your last {recentCount} interview{recentCount === 1 ? "" : "s"}, with the change since your first one.</p></div></div>
+      <ul className="perf-skill-list">{data.skills.map(skill => <li key={skill.dimension}><span>{skill.label}</span><Meter value={skill.average} label={skill.label} />
+        <strong>{skill.average == null ? "Not assessed" : `${Math.round(skill.average)}%`}</strong>{multiple && <Delta value={skill.change} suffix="%" />}</li>)}</ul>
     </section>
 
     <div className="perf-columns perf-columns-even">
       <section className="panel perf-focus">
         <div className="section-heading"><div><span className="eyebrow">STRENGTHS AND FOCUS</span><h2>Where to put your effort</h2></div></div>
         <div className="perf-chip-group"><h3><Award size={16} /> Consistent strengths</h3>
-          {strengths.length ? <div className="focus-chips">{strengths.map(key => <span className="pill" key={key}>{DIMENSION_LABELS[key]}</span>)}</div> : <p className="muted">No skill is consistently at 70% yet. Keep going.</p>}</div>
+          {data.strengths.length ? <div className="focus-chips">{data.strengths.map(key => <span className="pill" key={key}>{skillLabel(key)}</span>)}</div> : <p className="muted">No skill is consistently at 70% yet. Keep going.</p>}</div>
         <div className="perf-chip-group"><h3><Target size={16} /> Focus next</h3>
-          {focus.length ? <div className="focus-chips">{focus.map(key => <span className="pill" key={key}>{DIMENSION_LABELS[key]}</span>)}</div> : <p className="muted">Every assessed skill is above 70% on average.</p>}</div>
-        {actions.length > 0 && <ol className="perf-actions">{actions.map(item => <li key={`${item.focus}-${item.action}`}><strong>{item.focus}</strong><span>{item.action}</span></li>)}</ol>}
+          {data.focus.length ? <div className="focus-chips">{data.focus.map(key => <span className="pill" key={key}>{skillLabel(key)}</span>)}</div> : <p className="muted">Every assessed skill is above 70% on average.</p>}</div>
+        {data.actions.length > 0 && <ol className="perf-actions">{data.actions.map(item => <li key={`${item.focus}-${item.action}`}><strong>{item.focus}</strong><span>{item.action}</span></li>)}</ol>}
         <div className="perf-links"><Link className="button primary small" to="/practice"><Mic size={14} /> Practice an interview</Link><Link className="button secondary small" to="/coach"><BookOpen size={14} /> Prepare with AI Coach</Link></div>
       </section>
 
       <section className="panel perf-communication">
         <div className="section-heading"><div><span className="eyebrow">COMMUNICATION</span><h2>How you speak</h2><p>From your latest interview.</p></div></div>
         <dl className="perf-comm-grid">
-          <div><dt><MessageSquareText size={15} /> Speaking pace</dt><dd>{latestCommunication?.speaking_speed_wpm ? <>{latestCommunication.speaking_speed_wpm} <small>words/min</small></> : "Not measured"}</dd><small>{latestCommunication?.pace_label ? `${latestCommunication.pace_label} pace` : "Needs timed answers"}</small></div>
-          <div><dt><Flame size={15} /> Filler words</dt><dd>{latestCommunication?.filler_word_count ?? "—"}</dd><small>{typeof firstFillers === "number" && typeof latestCommunication?.filler_word_count === "number" && points.length > 1 ? <Delta value={latestCommunication.filler_word_count - firstFillers} suffix="" /> : "In the latest interview"}</small></div>
+          <div><dt><MessageSquareText size={15} /> Speaking pace</dt><dd>{communication?.speaking_speed_wpm ? <>{communication.speaking_speed_wpm} <small>words/min</small></> : "Not measured"}</dd><small>{communication?.pace_label ? `${communication.pace_label} pace` : "Needs timed answers"}</small></div>
+          <div><dt><Flame size={15} /> Filler words</dt><dd>{communication?.filler_word_count ?? "—"}</dd><small>{communication?.filler_change != null ? <Delta value={communication.filler_change} suffix="" /> : "In the latest interview"}</small></div>
         </dl>
-        {latestCommunication?.scores && <ul className="perf-skill-list compact">{Object.entries(latestCommunication.scores).map(([key, value]) => <li key={key}><span>{key.replace(/_/g, " ").replace(/^./, c => c.toUpperCase())}</span><Meter value={value ?? null} label={key} /><strong>{value == null ? "—" : `${Math.round(value)}%`}</strong></li>)}</ul>}
-        {latestCommunication?.top_filler_words?.length ? <p className="muted perf-fillers">Most used: {latestCommunication.top_filler_words.map(word => `“${word}”`).join(", ")}</p> : communication.length > 0 && <p className="muted perf-fillers">No filler words detected in your latest interview.</p>}
+        {communication && Object.keys(communication.scores).length > 0 && <ul className="perf-skill-list compact">{Object.entries(communication.scores).map(([key, value]) => <li key={key}><span>{key.replace(/_/g, " ").replace(/^./, c => c.toUpperCase())}</span><Meter value={value} label={key} /><strong>{value == null ? "—" : `${Math.round(value)}%`}</strong></li>)}</ul>}
+        {communication?.top_filler_words.length ? <p className="muted perf-fillers">Most used: {communication.top_filler_words.map(word => `“${word}”`).join(", ")}</p> : communication && <p className="muted perf-fillers">No filler words detected in your latest interview.</p>}
       </section>
     </div>
 
     <div className="perf-columns perf-columns-even">
       <section className="panel perf-activity">
-        <div className="section-heading"><div><span className="eyebrow">CONSISTENCY</span><h2>Practice activity</h2><p>Interviews per week over the last 8 weeks · active in {activeWeeks} of 8 weeks.</p></div></div>
-        <div className="perf-bars" role="img" aria-label={`Interviews per week: ${activity.map(week => week.count).join(", ")}`}>
-          {activity.map((week, index) => <div key={week.start} title={`Week of ${date(new Date(week.start + 86400000).toISOString())}: ${week.count}`}>
+        <div className="section-heading"><div><span className="eyebrow">CONSISTENCY</span><h2>Practice activity</h2><p>Interviews per week over the last {weeks.length} weeks · active in {data.activity.active_weeks} of {weeks.length} weeks.</p></div></div>
+        <div className="perf-bars" role="img" aria-label={`Interviews per week: ${weeks.map(week => week.count).join(", ")}`}>
+          {weeks.map((week, index) => <div key={week.week_start} title={`Week ending ${date(week.week_end)}: ${week.count}`}>
             <div className="perf-bar-track"><span style={{ height: `${week.count ? Math.max(12, week.count / busiest * 100) : 4}%`, animationDelay: `${index * 40}ms` }} className={week.count ? "" : "perf-bar-empty"} /></div>
-            <small>{index === activity.length - 1 ? "Now" : `${activity.length - 1 - index}w`}</small>
+            <small>{index === weeks.length - 1 ? "Now" : `${weeks.length - 1 - index}w`}</small>
           </div>)}
         </div>
       </section>
 
       <section className="panel perf-placements">
         <div className="section-heading"><div><span className="eyebrow">PLACEMENTS</span><h2>Your placement journey</h2></div><Link to="/placements">Placements <ArrowRight size={15} /></Link></div>
-        <ul className="perf-timeline">{points.filter(point => point.placement).reverse().map(point => <li key={point.id}>
-          <span className="perf-timeline-dot" /><div><strong>{point.label}</strong><small>{date(new Date(point.at).toISOString())}</small></div><b>{Math.round(point.score)}</b>
+        <ul className="perf-timeline">{data.placement_results.map(point => <li key={pointKey(point)}>
+          <span className="perf-timeline-dot" /><div><strong>{point.label}</strong><small>{date(point.at)}</small></div><b>{Math.round(point.score)}</b>
         </li>)}
-          {!placements && <li className="perf-timeline-empty">No placement interview results yet.</li>}
+          {!data.placement_results.length && <li className="perf-timeline-empty">No placement interview results yet.</li>}
         </ul>
-        {upcoming.length > 0 && <div className="perf-upcoming"><strong>{upcoming.length} open opportunit{upcoming.length === 1 ? "y" : "ies"}</strong>
-          <span>{upcoming.map(drive => `${drive.company_name} · ${drive.role_title}`).join(", ")}</span>
+        {opportunities.length > 0 && <div className="perf-upcoming"><strong>{opportunities.length} open opportunit{opportunities.length === 1 ? "y" : "ies"}</strong>
+          <span>{opportunities.map(drive => `${drive.company_name} · ${drive.role_title}`).join(", ")}</span>
           <Link className="button secondary small" to="/placements">View <ArrowRight size={14} /></Link></div>}
       </section>
     </div>
