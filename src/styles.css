@@ -2535,3 +2535,25 @@ input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(-
 }
 /* Search boxes draw focus on their wrapper; the inner input stays plain. */
 :is(.calendar-search, .student-reports-search) input:is(:hover, :focus-visible) { border-color: transparent; box-shadow: none; }
+
+/* Profile photo capture: tips beside a camera with a face outline and a
+   live lighting check. */
+.profile-capture { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 420px); gap: 24px; align-items: start; margin-top: 16px; animation: vd-rise .35s cubic-bezier(.16, 1, .3, 1) backwards; }
+.profile-capture .profile-camera-preview { align-items: stretch; margin: 0; max-width: none; }
+.profile-camera-frame { position: relative; overflow: hidden; border-radius: 14px; background: #15121f; }
+.profile-capture .profile-camera-frame video { width: 100%; max-height: none; border-radius: 0; transform: scaleX(-1); }
+.profile-face-outline { position: absolute; left: 50%; top: 50%; width: 42%; height: 72%; border: 2.5px dashed rgba(255, 255, 255, .85); border-radius: 50%; transform: translate(-50%, -54%); box-shadow: 0 0 0 999px rgba(10, 8, 20, .28); pointer-events: none; }
+.photo-light { display: inline-flex; align-items: center; gap: 6px; align-self: flex-start; margin: 0; padding: 6px 12px; border-radius: 999px; font-size: 12px; font-weight: 600; transition: background-color .25s ease, color .25s ease; }
+.photo-light.ok { background: #e8f8ee; color: #15803d; }
+.photo-light.warn { background: #fff4e5; color: #b45309; }
+.photo-light.wait { background: var(--soft, #f3edff); color: var(--muted); }
+.dark .photo-light.ok { background: #12301f; color: #6ee7b7; }
+.dark .photo-light.warn { background: #3a2a12; color: #fbbf24; }
+.profile-capture .profile-camera-preview p:not(.photo-light) { text-align: left; }
+.photo-tips { display: grid; gap: 10px; margin: 0; padding: 0; list-style: none; }
+.photo-tips li { display: flex; gap: 12px; align-items: flex-start; padding: 12px 14px; border: 1px solid var(--border); border-radius: 12px; background: var(--card); }
+.photo-tips svg { flex: none; margin-top: 2px; color: var(--primary, #7c3aed); }
+.photo-tips span { display: grid; gap: 2px; color: var(--muted); font-size: 12px; line-height: 1.5; }
+.photo-tips strong { color: var(--text); font-size: 13px; font-weight: 600; }
+@media (max-width: 760px) { .profile-capture { grid-template-columns: 1fr; } .profile-capture .profile-camera-preview { order: -1; } }
+@media (prefers-reduced-motion: reduce) { .profile-capture { animation: none; } }

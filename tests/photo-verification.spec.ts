@@ -2,15 +2,17 @@ import { test, expect, type Page } from "@playwright/test";
 
 const identity = { student: { id: "s1", full_name: "Student", email: "student@example.edu", roll_number: "CS01", allow_student_photo_upload: true } };
 
-async function camera(page: Page, denied = false) {
-  await page.addInitScript(({ denied }) => {
+async function camera(page: Page, denied = false, fill = "#000000") {
+  await page.addInitScript(({ denied, fill }) => {
     const state = { stopped: 0 };
     (window as unknown as { cameraState: typeof state }).cameraState = state;
     Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: async () => {
       if (denied) throw new DOMException("Denied", "NotAllowedError");
       const canvas = document.createElement("canvas");
       canvas.width = 640; canvas.height = 480;
-      canvas.getContext("2d")!.fillRect(0, 0, 640, 480);
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = fill;
+      context.fillRect(0, 0, 640, 480);
       const stream = canvas.captureStream(5);
       stream.getTracks().forEach((track) => {
         const stop = track.stop.bind(track);
@@ -18,7 +20,7 @@ async function camera(page: Page, denied = false) {
       });
       return stream;
     } });
-  }, { denied });
+  }, { denied, fill });
 }
 
 async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolean; rosterPhoto?: boolean; photoValidationError?: boolean; photoPermission?: boolean } = {}) {
@@ -255,3 +257,20 @@ test("My Profile hides photo controls when placement manages the photo", async (
   await expect(page.getByRole("button", { name: "Upload photo" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Use webcam" })).toHaveCount(0);
 });
+
+for (const [fill, hint] of [["#000000", "Too dark: face a window or lamp"], ["#9a9a9a", "Good light. Line up your face and capture"]] as const) {
+  test(`profile camera shows a live lighting check (${hint.split(":")[0].split(".")[0]})`, async ({ page }) => {
+    await camera(page, false, fill);
+    await auth(page);
+    await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
+    await page.route("**/api/student/resume-studio/resumes", route => route.fulfill({ json: [] }));
+    await signIn(page);
+    await page.getByRole("button", { name: "Capture and verify" }).click();
+    await page.getByRole("link", { name: "My profile", exact: true }).click();
+    await page.getByRole("button", { name: "Use webcam" }).click();
+    await expect(page.getByRole("list", { name: "Tips for a clear photo" })).toBeVisible();
+    await expect(page.locator(".profile-face-outline")).toBeVisible();
+    await expect(page.locator(".photo-light")).toHaveText(hint);
+  });
+}
+
