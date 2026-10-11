@@ -77,6 +77,7 @@ function Login() {
   const [error, setError] = useState("");
   const [replaceSession, setReplaceSession] = useState(false);
   const [conflict, setConflict] = useState(false);
+  const [photoRejected, setPhotoRejected] = useState("");
   // Credentials remain only in component memory while the camera step is open.
   const [pendingPhoto, setPendingPhoto] = useState<PendingPhotoLogin | null>(null);
   useEffect(() => {
@@ -105,6 +106,7 @@ function Login() {
         return;
       }
       if (code === "ACTIVE_SESSION_EXISTS") setConflict(true);
+      if (code?.startsWith("PHOTO_")) setPhotoRejected(`${code}:${Date.now()}`);
       if (e instanceof ApiError && (e.status === 401 || e.status === 429)) setPendingPhoto(null);
       setError((e as Error).message);
     } finally {
@@ -195,7 +197,7 @@ function Login() {
             })}
           </div>}
           {pendingPhoto ? <>
-            <PhotoVerification busy={busy} rejected={error}
+            <PhotoVerification busy={busy} rejected={photoRejected}
               onCapture={(photo) => authenticate({ ...pendingPhoto, replace_active_session: replaceSession }, photo)}
               onCancel={() => { setPendingPhoto(null); setError(""); setConflict(false); setReplaceSession(false); }} />
             {conflict && <label className="checkbox">
@@ -273,7 +275,11 @@ function Login() {
   );
 }
 
-const PRESENCE_INTERVAL_MS = 45000;
+// Presence ping: often enough to stay inside the server's 4-minute window,
+// and only while the student is actually here, so a forgotten tab on a
+// shared computer still reaches the normal idle timeout.
+const PRESENCE_INTERVAL_MS = 60000;
+const PRESENCE_ACTIVE_FOR_MS = 30 * 60000;
 
 const nav = [
   { to: "/", label: "Overview", icon: House },
@@ -368,10 +374,24 @@ export function App() {
   const signedIn = Boolean(auth.identity);
   useEffect(() => {
     if (!signedIn) return;
+    let lastActivity = Date.now();
+    const touch = () => { lastActivity = Date.now(); };
+    const events = ["pointerdown", "keydown", "wheel", "touchstart"] as const;
+    events.forEach(name => window.addEventListener(name, touch, { passive: true }));
     const timer = window.setInterval(() => {
-      void api("/api/auth/student-presence", { method: "POST" }).catch(() => undefined);
+      if (document.visibilityState !== "visible" || Date.now() - lastActivity > PRESENCE_ACTIVE_FOR_MS) return;
+      void api("/api/auth/student-presence", { method: "POST" }).catch((error) => {
+        // The session ended elsewhere: stop pinging and show sign-in.
+        if (error instanceof ApiError && error.status === 401) {
+          window.clearInterval(timer);
+          window.dispatchEvent(new Event("student-session-expired"));
+        }
+      });
     }, PRESENCE_INTERVAL_MS);
-    return () => window.clearInterval(timer);
+    return () => {
+      window.clearInterval(timer);
+      events.forEach(name => window.removeEventListener(name, touch));
+    };
   }, [signedIn]);
   if (auth.loading) return <Loading />;
   if (!auth.identity) return <Login />;

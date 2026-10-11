@@ -78,6 +78,8 @@ test("the dashboard shows the backend's performance summary without recalculatin
   await expect(page.getByText("Prepare one measurable result for each project.")).toBeVisible();
   await expect(page.getByText("132")).toBeVisible();
   await expect(page.locator(".perf-comm-grid")).toContainText("-2");
+  // Fewer filler words is an improvement.
+  await expect(page.locator(".perf-comm-grid .perf-delta")).toHaveClass(/up/);
   await expect(page.locator(".perf-axes")).toContainText("70% weight");
   await expect(page.locator(".perf-drive-scores")).toContainText("Razorpay");
   await expect(page.getByText("active in 3 of 8 weeks", { exact: false })).toBeVisible();

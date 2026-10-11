@@ -353,10 +353,21 @@ window.addEventListener("pagehide", () => {
 // Keeps this student's session counted as "open" while the interview room
 // is on screen, so closing the tab frees the account for the next sign-in
 // within a few minutes instead of hours.
-const PRESENCE_INTERVAL_MS = 45000;
+// Only while the room is on screen and recently used (speaking counts via
+// the live call), so a forgotten tab still reaches the normal idle timeout.
+const PRESENCE_INTERVAL_MS = 60000;
+const PRESENCE_ACTIVE_FOR_MS = 60 * 60000;
 function startPresencePing() {
-  const ping = () => { if (!getStudentSession()) return; void studentFetch(`${_HTTP_BASE}/api/auth/student-presence`, { method: "POST" }).catch(() => {}); };
-  window.setInterval(ping, PRESENCE_INTERVAL_MS);
+  let lastActivity = Date.now();
+  ["pointerdown", "keydown", "touchstart"].forEach(name => window.addEventListener(name, () => { lastActivity = Date.now(); }, { passive: true }));
+  const timer = window.setInterval(() => {
+    const inCall = document.getElementById("call-screen")?.offsetParent != null;
+    if (!getStudentSession() || document.visibilityState !== "visible") return;
+    if (!inCall && Date.now() - lastActivity > PRESENCE_ACTIVE_FOR_MS) return;
+    void studentFetch(`${_HTTP_BASE}/api/auth/student-presence`, { method: "POST" })
+      .then(response => { if (response.status === 401) window.clearInterval(timer); })
+      .catch(() => {});
+  }, PRESENCE_INTERVAL_MS);
 }
 
 document.addEventListener("DOMContentLoaded", async () => {
@@ -3848,6 +3859,8 @@ async function showInterviewExperienceFeedback() {
       updateProgress();
     };
     range.addEventListener("input", () => setRecommend(range.value));
+    range.addEventListener("change", () => setRecommend(range.value));
+    range.addEventListener("pointerup", () => { if (recommend == null) setRecommend(range.value); });
     form.querySelectorAll(".xf-range-ticks button").forEach(button => button.addEventListener("click", () => setRecommend(button.dataset.score)));
     form.querySelectorAll(".xf-stars").forEach(group => group.addEventListener("change", event => {
       const value = Number(event.target.value);

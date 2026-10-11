@@ -150,17 +150,26 @@ function Spotlight({ steps, index, firstName, onIndex, onFinish }: {
   const nextRef = useRef<HTMLButtonElement>(null);
   const restoreFocus = useRef<HTMLElement | null>(document.activeElement as HTMLElement | null);
 
-  useEffect(() => () => { restoreFocus.current?.focus?.({ preventScroll: true }); }, []);
+  // While the tour is open the page behind it is inert, so Tab, clicks and
+  // screen readers stay with the tour.
+  useEffect(() => {
+    const app = document.getElementById("root");
+    app?.setAttribute("inert", "");
+    return () => { app?.removeAttribute("inert"); restoreFocus.current?.focus?.({ preventScroll: true }); };
+  }, []);
 
   // Bring the element into view, then follow it while the page settles,
   // scrolls or resizes.
   useEffect(() => {
-    const element = step.target ? visible(step.target) : null;
+    let element = step.target ? visible(step.target) : null;
     if (!element) { setRect(null); return; }
     element.scrollIntoView({ block: "center", inline: "nearest", behavior: reducedMotion() ? "auto" : "smooth" });
     let frame = 0;
     let previous: Rect | null = null;
     const track = () => {
+      // The page may re-render the section; follow the new element.
+      if (!element!.isConnected) element = step.target ? visible(step.target) : null;
+      if (!element) { previous = null; setRect(null); return; }
       const box = element.getBoundingClientRect();
       const next = { top: box.top - PAD, left: box.left - PAD, width: box.width + PAD * 2, height: box.height + PAD * 2 };
       if (!sameRect(previous, next)) { previous = next; setRect(next); }
@@ -200,7 +209,7 @@ function Spotlight({ steps, index, firstName, onIndex, onFinish }: {
   useEffect(() => { nextRef.current?.focus({ preventScroll: true }); }, [index]);
 
   const go = (target: number) => { if (target >= 0 && target < steps.length) onIndex(target); };
-  const onKeyDown = (event: React.KeyboardEvent) => {
+  const onKeyDown = (event: KeyboardEvent) => {
     if (event.key === "Escape") { event.preventDefault(); onFinish("skipped"); }
     else if (event.key === "ArrowRight") { event.preventDefault(); if (last) onFinish("completed"); else go(index + 1); }
     else if (event.key === "ArrowLeft") { event.preventDefault(); go(index - 1); }
@@ -212,10 +221,20 @@ function Spotlight({ steps, index, firstName, onIndex, onFinish }: {
     }
   };
 
+  // Keys work wherever focus is, even after a click on the dimmed page.
+  const keyHandler = useRef(onKeyDown);
+  keyHandler.current = onKeyDown;
+  useEffect(() => {
+    const listener = (event: KeyboardEvent) => keyHandler.current(event);
+    document.addEventListener("keydown", listener);
+    return () => document.removeEventListener("keydown", listener);
+  }, []);
   const title = step.title || `Welcome to VoiceDots, ${firstName}!`;
   const progress = ((index + 1) / steps.length) * 100;
   return (
-    <div className="vt-root" onKeyDown={onKeyDown}>
+    <div className="vt-root" onMouseDown={event => {
+      if (!cardRef.current?.contains(event.target as Node)) { event.preventDefault(); nextRef.current?.focus({ preventScroll: true }); }
+    }}>
       <div className={`vt-hole${rect ? "" : " vt-hole-none"}`} aria-hidden="true"
         style={rect ? { top: rect.top, left: rect.left, width: rect.width, height: rect.height } : undefined} />
       <div ref={cardRef} className={`vt-card vt-${card?.side || "center"}`} role="dialog" aria-modal="true"

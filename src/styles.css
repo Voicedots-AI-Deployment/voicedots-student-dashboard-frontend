@@ -2520,7 +2520,7 @@ select:not([multiple]):not([size]) {
 :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]), select, textarea) {
   transition: border-color .15s ease, box-shadow .15s ease;
 }
-:is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]), select, textarea):hover:not(:disabled):not(:focus) {
+:is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]), select, textarea):hover:not(:disabled):not(:focus):not([aria-invalid=true]) {
   border-color: #c9b6ee;
 }
 :is(input:not([type=checkbox]):not([type=radio]):not([type=range]):not([type=file]):not([type=color]), select, textarea):focus-visible {
@@ -2533,3 +2533,5 @@ input[type=checkbox], input[type=radio], input[type=range] { accent-color: var(-
 @media (prefers-reduced-motion: reduce) {
   :is(input, select, textarea) { transition: none; }
 }
+/* Search boxes draw focus on their wrapper; the inner input stays plain. */
+:is(.calendar-search, .student-reports-search) input:is(:hover, :focus-visible) { border-color: transparent; box-shadow: none; }

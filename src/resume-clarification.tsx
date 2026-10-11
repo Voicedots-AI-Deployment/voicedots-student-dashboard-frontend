@@ -27,7 +27,7 @@ export function ResumeClarificationSteps({ prompts, required, busy, onSubmit }: 
   const field = useRef<HTMLTextAreaElement>(null);
   useEffect(() => { field.current?.focus({ preventScroll: true }); setError(""); }, [index]);
   if (!steps.length) return null;
-  const step = steps[index];
+  const step = steps[Math.min(index, steps.length - 1)];
   const last = index === steps.length - 1;
   const { label, hint } = question(step.field);
   const value = answers[index] || "";

@@ -47,11 +47,12 @@ export type PerformanceData = {
 const AXIS_LABELS: Record<string, string> = { interview_readiness: "Placement interviews", resume_readiness: "Resume quality" };
 const pointKey = (point: PerformancePoint) => `${point.session_id}-${point.at}`;
 
-function Delta({ value, suffix = " pts" }: { value: number | null; suffix?: string }) {
+function Delta({ value, suffix = " pts", lowerIsBetter = false }: { value: number | null; suffix?: string; lowerIsBetter?: boolean }) {
   if (value == null) return <span className="perf-delta neutral">First result</span>;
   const rounded = Math.round(value * 10) / 10;
   const Icon = rounded > 0 ? TrendingUp : rounded < 0 ? TrendingDown : Minus;
-  return <span className={`perf-delta ${rounded > 0 ? "up" : rounded < 0 ? "down" : "neutral"}`}>
+  const better = lowerIsBetter ? rounded < 0 : rounded > 0;
+  return <span className={`perf-delta ${rounded === 0 ? "neutral" : better ? "up" : "down"}`}>
     <Icon size={13} aria-hidden="true" />{rounded > 0 ? "+" : ""}{rounded}{suffix}
   </span>;
 }
@@ -199,7 +200,7 @@ function PerformanceBody({ data }: { data: PerformanceData }) {
         <div className="section-heading"><div><span className="eyebrow">COMMUNICATION</span><h2>How you speak</h2><p>From your latest interview.</p></div></div>
         <dl className="perf-comm-grid">
           <div><dt><MessageSquareText size={15} /> Speaking pace</dt><dd>{communication?.speaking_speed_wpm ? <>{communication.speaking_speed_wpm} <small>words/min</small></> : "Not measured"}</dd><small>{communication?.pace_label ? `${communication.pace_label} pace` : "Needs timed answers"}</small></div>
-          <div><dt><Flame size={15} /> Filler words</dt><dd>{communication?.filler_word_count ?? "—"}</dd><small>{communication?.filler_change != null ? <Delta value={communication.filler_change} suffix="" /> : "In the latest interview"}</small></div>
+          <div><dt><Flame size={15} /> Filler words</dt><dd>{communication?.filler_word_count ?? "—"}</dd><small>{communication?.filler_change != null ? <Delta value={communication.filler_change} suffix="" lowerIsBetter /> : "In the latest interview"}</small></div>
         </dl>
         {communication && Object.keys(communication.scores).length > 0 && <ul className="perf-skill-list compact">{Object.entries(communication.scores).map(([key, value]) => <li key={key}><span>{key.replace(/_/g, " ").replace(/^./, c => c.toUpperCase())}</span><Meter value={value} label={key} /><strong>{value == null ? "—" : `${Math.round(value)}%`}</strong></li>)}</ul>}
         {communication?.top_filler_words.length ? <p className="muted perf-fillers">Most used: {communication.top_filler_words.map(word => `“${word}”`).join(", ")}</p> : communication && <p className="muted perf-fillers">No filler words detected in your latest interview.</p>}
@@ -225,7 +226,7 @@ function PerformanceBody({ data }: { data: PerformanceData }) {
           {!data.placement_results.length && <li className="perf-timeline-empty">No placement interview results yet.</li>}
         </ul>
         {opportunities.length > 0 && <div className="perf-upcoming"><strong>{opportunities.length} open opportunit{opportunities.length === 1 ? "y" : "ies"}</strong>
-          <span>{opportunities.map(drive => `${drive.company_name} · ${drive.role_title}`).join(", ")}</span>
+          <span>{opportunities.map(drive => [drive.company_name, drive.role_title].filter(Boolean).join(" · ") || "Placement drive").join(", ")}</span>
           <Link className="button secondary small" to="/placements">View <ArrowRight size={14} /></Link></div>}
       </section>
     </div>

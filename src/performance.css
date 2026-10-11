@@ -1,6 +1,9 @@
 /* My performance dashboard. Uses the portal's existing tokens and accents. */
 .perf-page { display: grid; }
-.perf-page .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.perf-page .visually-hidden { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); clip-path: inset(50%); white-space: nowrap; border: 0; }
+/* Tables ignore a 1px width, so the chart's hidden data table is clipped by
+   its container instead; it must not widen the page on phones. */
+.perf-chart { position: relative; overflow: hidden; }
 .perf-kpis .stat-card p { display: flex; flex-wrap: wrap; align-items: center; gap: 5px; font-size: 10px; }
 .perf-columns { display: grid; grid-template-columns: minmax(0, 1.65fr) minmax(0, 1fr); gap: 24px; }
 .perf-columns-even { grid-template-columns: repeat(2, minmax(0, 1fr)); }

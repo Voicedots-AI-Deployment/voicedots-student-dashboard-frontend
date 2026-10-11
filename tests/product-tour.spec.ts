@@ -107,3 +107,15 @@ test("on a phone the tour uses a bottom sheet and points to the menu", async ({ 
   await expect.poll(async () => (await page.getByRole("button", { name: "Finish" }).boundingBox())!.height).toBeGreaterThanOrEqual(44);
   await expect.poll(() => page.evaluate(() => document.documentElement.scrollWidth <= innerWidth)).toBe(true);
 });
+
+test("keys keep working after a click on the dimmed page, and the page behind is inert", async ({ page }) => {
+  const saved = await open(page);
+  await page.mouse.click(5, 400);
+  await expect(page.locator("#root")).toHaveAttribute("inert", "");
+  await page.keyboard.press("ArrowRight");
+  await expect(page.locator("#vt-title")).toHaveText("Start an AI interview");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".vt-root")).toHaveCount(0);
+  await expect(page.locator("#root")).not.toHaveAttribute("inert", "");
+  await expect.poll(() => saved).toEqual([{ outcome: "skipped" }]);
+});

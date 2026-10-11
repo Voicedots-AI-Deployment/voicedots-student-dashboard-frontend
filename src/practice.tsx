@@ -506,7 +506,7 @@ export function Practice() {
           {needsClarification && <>
             <h2>A little more about your experience</h2>
             <p>{preparation.message}</p>
-            <ResumeClarificationSteps prompts={preparation.prompts || []} required={Boolean(preparation.clarification_required)}
+            <ResumeClarificationSteps key={`${preparation.source_extraction_id || ""}:${JSON.stringify(preparation.prompts || [])}`} prompts={preparation.prompts || []} required={Boolean(preparation.clarification_required)}
               busy={busy} onSubmit={answers => void clarify(answers)} />
             {preparation.can_continue_without_answers && <button className="text-button" disabled={busy} onClick={() => void clarify()}>Continue without optional details</button>}
           </>}
