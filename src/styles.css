@@ -2352,3 +2352,43 @@ dialog.modal.profile-setup-dialog{max-width:560px;padding:30px}
   .profile-setup-footer{flex-direction:column;align-items:stretch}
   .profile-setup-footer>.button{width:100%}
 }
+
+/* Sign-in fits the window: spacing and type scale with the viewport height
+   so the whole page is visible without scrolling on laptops and desktops.
+   Very short windows still scroll rather than hiding anything. */
+@media (min-width: 761px) {
+  .auth-page { min-height: 100svh; grid-template-rows: clamp(48px, 8vh, 88px) 1fr; padding-bottom: clamp(6px, 1.4vh, 32px); align-items: center; }
+  .auth-story { padding: 0; }
+  .auth-story h1 { font-size: clamp(34px, min(4.6vw, 7.2vh), 68px); margin: clamp(10px, 2.2vh, 25px) 0 clamp(8px, 1.8vh, 20px); }
+  .auth-story-content > p { margin-bottom: clamp(10px, 2.4vh, 26px); line-height: 1.7; }
+  .auth-session-preview { padding: clamp(12px, 2.2vh, 22px); }
+  .auth-wave { height: clamp(44px, 9vh, 106px); }
+  .auth-features { margin-top: clamp(10px, 2.4vh, 25px); }
+  .auth-footnote { margin-top: clamp(8px, 2vh, 30px); }
+  .auth-form-wrap { padding: 0; }
+  .auth-form { padding: clamp(20px, 3.6vh, 36px); }
+  .auth-form-icon { width: clamp(36px, 5.6vh, 50px); height: clamp(36px, 5.6vh, 50px); margin-bottom: clamp(8px, 2.4vh, 24px); border-radius: 13px; }
+  .auth-form h2 { font-size: clamp(24px, 4.2vh, 34px); margin: clamp(4px, 1vh, 10px) 0 clamp(4px, 1.2vh, 12px); }
+  .auth-form > p { margin-bottom: clamp(8px, 2.4vh, 26px); }
+  .auth-form label { margin: clamp(8px, 1.6vh, 18px) 0; }
+  .auth-form input { min-height: clamp(40px, 5.8vh, 47px); padding-top: 10px; padding-bottom: 10px; }
+  .auth-password-toggle { top: 50%; transform: translateY(-50%); height: 36px; }
+  .auth-form form > .button { min-height: clamp(42px, 6vh, 49px); }
+  .auth-form > .text-button { margin: clamp(8px, 1.8vh, 21px) auto clamp(4px, 1.4vh, 27px); }
+  .auth-help { padding: clamp(10px, 1.6vh, 15px); margin-top: clamp(6px, 1.4vh, 16px); }
+}
+
+@media (max-width: 760px) {
+  .auth-page { min-height: 100svh; grid-template-rows: 60px auto 1fr; padding-bottom: 16px; }
+  .auth-story { padding: 4px 0 14px; }
+  .auth-story h1 { font-size: clamp(26px, 4.4vh, 36px); margin-top: 10px; }
+  .auth-story .pill { padding: 7px 10px; }
+  .auth-form { padding: 20px; }
+  .auth-form-icon { display: none; }
+  .auth-form h2 { font-size: 26px; margin: 6px 0 4px; }
+  .auth-form > p { margin-bottom: 10px; }
+  .auth-form label { margin: 10px 0; }
+  .auth-form input { min-height: 44px; }
+  .auth-form > .text-button { margin: 10px auto 4px; }
+  .auth-help { padding: 10px; margin-top: 8px; }
+}

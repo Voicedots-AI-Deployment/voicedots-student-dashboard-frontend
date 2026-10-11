@@ -157,8 +157,14 @@ async function completeScreenSharing(page: Page) {
 // starts from one more explicit click that requests it.
 async function startInFullscreen(page: Page) {
   const start = page.locator("#pj-fullscreen-start");
-  await expect.poll(async () => await start.isVisible() || await page.locator("#call-screen").isVisible()
-    || await page.locator("#pj-share-allow").isVisible(), { timeout: 15000 }).toBe(true);
+  await expect.poll(async () => {
+    if (await start.isVisible() || await page.locator("#call-screen").isVisible() || await page.locator("#pj-share-allow").isVisible()) return true;
+    // A check can also fail once sharing is done; its retry button is a final state too.
+    for (const id of ["#pj-cam-retry", "#pj-mic-retry", "#pj-photo-capture", "#pj-network-retry"]) {
+      if (await page.locator(id).isVisible()) return true;
+    }
+    return false;
+  }, { timeout: 15000 }).toBe(true);
   if (await start.isVisible()) await start.click();
 }
 

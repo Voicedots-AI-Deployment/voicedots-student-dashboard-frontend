@@ -50,7 +50,6 @@ import { CareerCoach } from "./career-coach";
 import { ResumeStudio } from "./resume-studio";
 import { ProfileSetupPrompt } from "./profile-setup";
 import { Performance } from "./performance";
-import { AuthInterviewScene } from "./auth-interview-scene";
 
 type PendingPhotoLogin = {
   email: string;
@@ -156,7 +155,11 @@ function Login() {
             Meet your AI interview panel. Find your strengths. Walk into your
             next opportunity prepared.
           </p>
-          <AuthInterviewScene />
+          <div className="auth-session-preview" aria-hidden="true">
+            <div className="auth-preview-top"><span className="auth-mic"><Mic size={22} /></span><div><strong>A space to find your voice.</strong><span>Your AI interview practice room</span></div></div>
+            <div className="auth-wave">{[14,24,38,21,46,62,36,76,52,30,64,86,54,36,68,48,28,58,40,22,36,18,28,12].map((height, i) => <i key={i} style={{ height }} />)}</div>
+            <div className="auth-preview-bottom"><span>Practice at your pace</span><span><ShieldCheck size={14} /> Built for your growth</span></div>
+          </div>
           <div className="auth-features">
             {[
               "Personalized practice interviews",
