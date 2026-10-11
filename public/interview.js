@@ -185,6 +185,12 @@ let cameraTrackLive = false;
 let microphoneTrackLive = false;
 let preflightId = null;
 let preflightBusy = false;
+// Choosing a screen in the browser's share picker exits full screen, and the
+// interview then started with no click left to re-enter it. The last
+// preflight step now waits for one explicit click that requests full screen.
+let awaitingFullscreen = false;
+let fullscreenStartConfirmed = false;
+const fullscreenSupported = () => document.fullscreenEnabled !== false && typeof document.documentElement.requestFullscreen === "function";
 let interviewHasStarted = false;
 let initialConnectionTimer = null;
 let preflightStarted = false;
@@ -609,6 +615,19 @@ function setupPrejoinFlow() {
   photoCaptureBtn?.addEventListener("click", () => void retryPreflight("identity"));
   document.getElementById("pj-network-retry")?.addEventListener("click", () => void retryPreflight("network"));
   pjShareAllowBtn?.addEventListener("click", () => void retryPreflight("screen"));
+  document.getElementById("pj-fullscreen-start")?.addEventListener("click", async () => {
+    // Must run inside this click: full screen needs a live user gesture.
+    const entered = await requestInterviewFullscreen();
+    const error = document.getElementById("pj-fullscreen-error");
+    if (!entered) {
+      if (error) error.textContent = "Your browser did not allow full screen. Allow it for this site, then click again.";
+      return;
+    }
+    if (error) error.textContent = "";
+    awaitingFullscreen = false;
+    fullscreenStartConfirmed = true;
+    void runPreflight();
+  });
 
 }
 
@@ -626,9 +645,12 @@ function renderPreflight() {
        ["camera", "microphone", "identity", "network"].every(item => preflightChecks[item] === "passed")));
     panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
   }
+  const fullscreenPanel = document.getElementById("pj-fullscreen-panel");
+  fullscreenPanel?.classList.toggle("active", awaitingFullscreen);
+  fullscreenPanel?.querySelectorAll("button").forEach(element => { element.disabled = preflightBusy; });
   document.getElementById("preflight-loading").hidden = !preflightBusy;
   pjJoinBtn.disabled = preflightBusy || !recordingConsentEl?.checked;
-  pjJoinBtn.hidden = Object.values(preflightChecks).includes("failed") ||
+  pjJoinBtn.hidden = awaitingFullscreen || Object.values(preflightChecks).includes("failed") ||
     (preflightStarted && ["camera", "microphone", "identity", "network"].every(key => preflightChecks[key] === "passed") && preflightChecks.screen !== "passed");
   pjJoinBtn.textContent = preflightBusy ? "Preparing Interview…" : "Start AI Interview";
   document.getElementById("preflight-title").textContent = preflightStarted ? "Preparing Interview" : "Start AI Interview";
@@ -791,6 +813,12 @@ async function runPreflight() {
     if (!screenStream?.getVideoTracks().some(track => track.readyState === "live" && !track.muted && track.getSettings().displaySurface === "monitor")) {
       failPreflight("screen", "Your entire screen must remain shared. Share Screen Again."); return;
     }
+    if (fullscreenSupported() && !document.fullscreenElement && !fullscreenStartConfirmed) {
+      awaitingFullscreen = true;
+      preflightStatus("All checks passed. Click Enter full screen and start to begin your interview.");
+      return;
+    }
+    awaitingFullscreen = false;
     preflightStatus("Starting interview…");
     const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/interview`, {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(30000),
@@ -2175,8 +2203,14 @@ function setupIntegrityMonitoring() {
     }
   }, 500);
 
+  const fullscreenReturn = document.getElementById("fullscreen-return");
+  fullscreenReturn?.addEventListener("click", () => void requestInterviewFullscreen());
   document.addEventListener("fullscreenchange", () => {
-    if (!document.fullscreenElement && _isCallScreenActive()) {
+    const outside = !document.fullscreenElement && _isCallScreenActive() && !sessionCompletedCleanly;
+    // Leaving full screen is still recorded; the student also gets a direct
+    // way back instead of having to find a browser shortcut.
+    if (fullscreenReturn) fullscreenReturn.hidden = !outside;
+    if (outside) {
       recordIntegrityViolation("fullscreen_exit", "Fullscreen interview mode was exited.");
     }
   });
@@ -3703,35 +3737,103 @@ async function showInterviewExperienceFeedback() {
     if (!response.ok) return;
     const data=await response.json();
     if (data.submitted || !Array.isArray(data.questions)) return;
-    const overlay=document.createElement("div");overlay.id="interview-experience-feedback";
-    overlay.style.cssText="position:fixed;inset:0;z-index:10000;background:#070812c9;display:grid;place-items:center;padding:20px;overflow:auto";
-    const form=document.createElement("form");form.setAttribute("role","dialog");form.setAttribute("aria-modal","true");form.setAttribute("aria-labelledby","experience-feedback-title");
-    form.style.cssText="width:min(100%,580px);max-height:90vh;overflow:auto;padding:28px;background:#171622;color:#fff;border:1px solid #393646;border-radius:20px;box-shadow:0 24px 80px #0006";
-    const title=document.createElement("h2");title.id="experience-feedback-title";title.textContent="How was your interview?";form.appendChild(title);
-    const intro=document.createElement("p");intro.textContent="Share your experience to help us improve. Every question is optional, and you can skip. This feedback does not affect your score or placement decision. Your placement team can view feedback for placement interviews.";intro.style.cssText="line-height:1.5;color:#bbb8ca;margin:12px 0 20px";form.appendChild(intro);
+    const overlay = document.createElement("div");
+    overlay.id = "interview-experience-feedback";
+    overlay.className = "xf-overlay";
+    const form = document.createElement("form");
+    form.className = "xf-card";
+    form.setAttribute("role", "dialog");
+    form.setAttribute("aria-modal", "true");
+    form.setAttribute("aria-labelledby", "experience-feedback-title");
+    form.noValidate = true;
+    const RATING_WORDS = ["", "Poor", "Fair", "Good", "Very good", "Excellent"];
+    form.innerHTML = `
+      <div class="xf-head">
+        <span class="xf-badge" aria-hidden="true">★</span>
+        <div><h2 id="experience-feedback-title">How was your interview?</h2>
+        <p>Tap a star for anything you want to rate. Everything is optional and does not affect your score or placement decision.</p></div>
+      </div>
+      <div class="xf-questions"></div>
+      <label class="xf-comment"><span>What worked well, or what should we improve? (optional)</span>
+        <textarea name="comments" maxlength="2000" rows="3" placeholder="For example: the questions were clear, but the voice cut out once."></textarea></label>
+      <p class="xf-status" role="status"></p>
+      <div class="xf-actions">
+        <button type="button" class="pj-btn pj-btn-ghost xf-skip">Skip feedback</button>
+        <button type="submit" class="pj-btn pj-btn-primary xf-submit">Submit feedback</button>
+      </div>
+      <p class="xf-note">Your placement team can view feedback for placement interviews.</p>`;
+    const list = form.querySelector(".xf-questions");
     for (const question of data.questions) {
-      const label=document.createElement("label");label.style.cssText="display:block;margin:14px 0;font-size:14px";
-      const text=document.createElement("span");text.textContent=question.label;label.appendChild(text);
-      const select=document.createElement("select");select.name=question.key;select.style.cssText="display:block;width:100%;margin-top:7px;padding:10px;border-radius:8px;background:#242232;color:#fff;border:1px solid #484256";
-      for(const [value,caption] of [["","Choose a rating (optional)"],["1","1 · Poor"],["2","2 · Fair"],["3","3 · Good"],["4","4 · Very good"],["5","5 · Excellent"]]){const option=document.createElement("option");option.value=value;option.textContent=caption;select.appendChild(option);}
-      label.appendChild(select);form.appendChild(label);
+      const group = document.createElement("fieldset");
+      group.className = "xf-question";
+      group.setAttribute("role", "radiogroup");
+      group.setAttribute("aria-label", question.label);
+      const legend = document.createElement("legend");
+      legend.textContent = question.label;
+      const stars = document.createElement("div");
+      stars.className = "xf-stars";
+      const word = document.createElement("span");
+      word.className = "xf-word";
+      word.setAttribute("aria-hidden", "true");
+      for (let value = 1; value <= 5; value += 1) {
+        const star = document.createElement("label");
+        star.className = "xf-star";
+        star.innerHTML = `<input type="radio" name="${escHtml(question.key)}" value="${value}" aria-label="${value} star${value === 1 ? "" : "s"}, ${RATING_WORDS[value]}"><span aria-hidden="true">★</span>`;
+        stars.appendChild(star);
+      }
+      stars.addEventListener("change", event => {
+        const value = Number(event.target.value);
+        stars.querySelectorAll(".xf-star").forEach((star, index) => star.classList.toggle("on", index < value));
+        word.textContent = RATING_WORDS[value];
+        group.classList.add("rated");
+      });
+      stars.appendChild(word);
+      group.append(legend, stars);
+      list.appendChild(group);
     }
-    const commentLabel=document.createElement("label");commentLabel.textContent="What worked well, or what should we improve? (optional)";
-    const comments=document.createElement("textarea");comments.name="comments";comments.maxLength=2000;comments.rows=3;comments.style.cssText="display:block;width:100%;box-sizing:border-box;margin-top:8px;padding:10px;background:#242232;color:#fff;border:1px solid #484256;border-radius:8px";commentLabel.appendChild(comments);form.appendChild(commentLabel);
-    const status=document.createElement("p");status.setAttribute("role","status");form.appendChild(status);
-    const actions=document.createElement("div");actions.style.cssText="display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-end;margin-top:20px;padding-top:8px";
-    const skip=document.createElement("button");skip.type="button";skip.className="pj-btn pj-btn-ghost";skip.textContent="Skip feedback";skip.style.minHeight="44px";
-    const submit=document.createElement("button");submit.type="submit";submit.className="pj-btn pj-btn-primary";submit.textContent="Submit feedback";submit.style.minHeight="44px";
-    actions.append(skip,submit);form.appendChild(actions);overlay.appendChild(form);document.body.appendChild(overlay);skip.focus();
-    skip.onclick=()=>{overlay.remove();void studentFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({skipped:true}),signal:AbortSignal.timeout(10000)}).catch(()=>{});};
-    form.onsubmit=async event=>{
-      event.preventDefault();const payload={comments:comments.value.trim()};
-      for(const question of data.questions){const select=form.elements.namedItem(question.key);if(select?.value)payload[question.key]=Number(select.value);}
-      if(Object.keys(payload).length===1&&!payload.comments){status.textContent="Choose at least one rating, add a comment, or skip feedback.";return;}
-      submit.disabled=true;status.textContent="Saving your feedback…";
-      try{const saved=await studentFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});if(!saved.ok)throw new Error("Your feedback could not be saved. Retry or skip.");overlay.remove();}
-      catch(error){status.textContent=error.message||"Feedback could not be saved. Retry or skip.";submit.disabled=false;}
+    overlay.appendChild(form);
+    document.body.appendChild(overlay);
+    const comments = form.elements.namedItem("comments");
+    const status = form.querySelector(".xf-status");
+    const skip = form.querySelector(".xf-skip");
+    const submit = form.querySelector(".xf-submit");
+    skip.focus();
+    const close = () => { overlay.classList.add("closing"); setTimeout(() => overlay.remove(), 220); };
+    skip.onclick = () => {
+      overlay.remove();
+      void studentFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ skipped: true }), signal: AbortSignal.timeout(10000) }).catch(() => {});
     };
-    overlay.addEventListener("keydown",event=>{if(event.key==="Escape")skip.click();if(event.key==="Tab"){const controls=[...form.querySelectorAll('select,textarea,button')].filter(el=>!el.disabled);const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const payload = { comments: comments.value.trim() };
+      for (const question of data.questions) {
+        const chosen = form.querySelector(`input[name="${CSS.escape(question.key)}"]:checked`);
+        if (chosen) payload[question.key] = Number(chosen.value);
+      }
+      if (Object.keys(payload).length === 1 && !payload.comments) {
+        status.textContent = "Choose at least one rating, add a comment, or skip feedback.";
+        return;
+      }
+      submit.disabled = true;
+      status.textContent = "Saving your feedback…";
+      try {
+        const saved = await studentFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000) });
+        if (!saved.ok) throw new Error("Your feedback could not be saved. Retry or skip.");
+        form.innerHTML = `<div class="xf-thanks" role="status"><span class="xf-thanks-mark" aria-hidden="true">✓</span><h2>Thank you!</h2><p>Your feedback helps us make every interview better.</p></div>`;
+        setTimeout(close, 1200);
+      } catch (error) {
+        status.textContent = error.message || "Feedback could not be saved. Retry or skip.";
+        submit.disabled = false;
+      }
+    };
+    overlay.addEventListener("keydown", event => {
+      if (event.key === "Escape" && document.body.contains(skip)) skip.click();
+      if (event.key === "Tab") {
+        const controls = [...form.querySelectorAll("input,textarea,button")].filter(element => !element.disabled);
+        const first = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === first) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
+      }
+    });
   } catch { /* Optional feedback must never block interview completion. */ }
 }

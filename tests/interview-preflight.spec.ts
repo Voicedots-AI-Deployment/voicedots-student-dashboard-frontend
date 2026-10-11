@@ -85,7 +85,10 @@ async function prepare(page: Page, failure = "") {
       track.getSettings = () => ({ displaySurface: w.failure === "window" ? "window" : "monitor" });
       return new MediaStream([track]);
     };
-    Element.prototype.requestFullscreen = async () => {};
+    // Behave like a browser: a granted request sets the full-screen element.
+    let fullscreen: Element | null = null;
+    Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => fullscreen });
+    Element.prototype.requestFullscreen = async function () { fullscreen = this; document.dispatchEvent(new Event("fullscreenchange")); };
   }, { failure });
   await page.route("**/interview.js*", async route => {
     const response = await route.fetch();
@@ -147,6 +150,16 @@ async function completeScreenSharing(page: Page) {
   if (!await page.locator("#pj-panel-3").isVisible()) return;
   await expect(page.locator("#pj-share-allow")).toBeEnabled();
   await page.locator("#pj-share-allow").click();
+  await startInFullscreen(page);
+}
+
+// Choosing a screen in the share picker leaves full screen, so the interview
+// starts from one more explicit click that requests it.
+async function startInFullscreen(page: Page) {
+  const start = page.locator("#pj-fullscreen-start");
+  await expect.poll(async () => await start.isVisible() || await page.locator("#call-screen").isVisible()
+    || await page.locator("#pj-share-allow").isVisible(), { timeout: 15000 }).toBe(true);
+  if (await start.isVisible()) await start.click();
 }
 
 test("recording disclosure requires explicit consent before interview setup starts", async ({ page }) => {
@@ -521,8 +534,28 @@ test("screen capture requires a fresh click without the removed remote-app warni
   await expect(page.locator("#pj-environment-panel")).toHaveCount(0);
   await expect(page.locator("#prejoin-screen")).not.toContainText("remote-control apps");
   await page.locator("#pj-share-allow").click();
+  await startInFullscreen(page);
   await expect.poll(()=>counts.create).toBe(1);
   expect(counts.identity).toBe(1);
+});
+
+
+test("the interview starts only from an explicit full-screen click after screen sharing", async ({page}) => {
+  const {counts} = await prepare(page);
+  await page.locator("#pj-join-btn").click();
+  await expect(page.locator("#pj-share-allow")).toBeEnabled();
+  // The browser picker exits full screen when a screen is chosen.
+  await page.evaluate(() => Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => null }));
+  await page.evaluate(() => { const original = Element.prototype.requestFullscreen; (window as any).fullscreenRequests = 0;
+    Element.prototype.requestFullscreen = async function () { (window as any).fullscreenRequests++; Object.defineProperty(document, "fullscreenElement", { configurable: true, get: () => this }); return original?.call(this); }; });
+  await page.locator("#pj-share-allow").click();
+  const start = page.getByRole("button", { name: "Enter full screen and start" });
+  await expect(start).toBeVisible();
+  await expect(page.locator("#preflight-status")).toContainText("All checks passed");
+  expect(counts.create).toBe(0);
+  await start.click();
+  await expect.poll(() => counts.create).toBe(1);
+  expect(await page.evaluate(() => (window as any).fullscreenRequests)).toBe(1);
 });
 
 

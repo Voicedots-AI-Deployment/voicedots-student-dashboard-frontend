@@ -11,7 +11,7 @@ test('student can answer optional questions and submit feedback after either int
  const dialog=page.getByRole('dialog',{name:'How was your interview?'});await expect(dialog).toBeVisible();
  await page.screenshot({path:'/root/voicedots/artifacts/interview-feedback-20261010/student-feedback.png',fullPage:true});
  await page.getByRole('button',{name:'Submit feedback',exact:true}).click();await expect(page.getByRole('status').filter({hasText:'Choose at least one rating'})).toBeVisible();
- await page.getByLabel('Rate clarity').selectOption('4');await page.getByLabel('What worked well').fill('Good questions; voice broke once.');
+ await page.getByRole('radiogroup',{name:'Rate clarity'}).getByRole('radio',{name:/^4 stars/}).check();await expect(page.getByRole('radiogroup',{name:'Rate clarity'}).locator('.xf-star.on')).toHaveCount(4);await page.getByLabel('What worked well').fill('Good questions; voice broke once.');
  await page.getByRole('button',{name:'Submit feedback',exact:true}).click();await expect(dialog).toHaveCount(0);
  expect(saved).toEqual({clarity:4,comments:'Good questions; voice broke once.'});
 });
@@ -32,7 +32,7 @@ test('feedback waits for interview persistence and a failed submission can be sk
  });
  await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
  await expect(page.getByRole('dialog')).toBeVisible();expect(checks).toBe(2);
- await page.getByLabel('Rate voice').selectOption('3');await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
+ await page.getByRole('radiogroup',{name:'Rate voice'}).getByRole('radio',{name:/^3 stars/}).check();await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
  await expect(page.getByRole('status').filter({hasText:'Retry or skip'})).toBeVisible();
  await page.getByRole('button',{name:'Skip feedback'}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
 });
@@ -48,4 +48,19 @@ test('feedback actions have styled accessible buttons on a narrow screen',async(
  for(const button of [submit,skip]){const box=await button.boundingBox();expect(box!.height).toBeGreaterThanOrEqual(44);expect(box!.x).toBeGreaterThanOrEqual(0);expect(box!.x+box!.width).toBeLessThanOrEqual(390);}
  expect(await submit.evaluate(el=>getComputedStyle(el).backgroundColor)).not.toBe('rgba(0, 0, 0, 0)');
  await page.screenshot({path:'/root/voicedots/artifacts/interview-listening-20261010/feedback-buttons-mobile.png'});
+});
+
+
+test('every question is a five-star group and the thank-you state confirms the save',async({page})=>{
+ let saved:any=null;
+ await page.route('**/experience-feedback',route=>{if(route.request().method()==='POST'){saved=route.request().postDataJSON();return route.fulfill({json:{saved:true}});}return route.fulfill({json:{submitted:false,questions}});});
+ await page.goto('/interview.html?id=session-1');await page.evaluate(()=>(window as any).experienceTest());
+ const groups=page.getByRole('radiogroup');await expect(groups).toHaveCount(questions.length);
+ for(const question of questions)await expect(page.getByRole('radiogroup',{name:question.label}).getByRole('radio')).toHaveCount(5);
+ await page.getByRole('radiogroup',{name:'Rate overall'}).getByRole('radio',{name:/^5 stars/}).check();
+ await expect(page.getByRole('radiogroup',{name:'Rate overall'})).toContainText('Excellent');
+ await page.getByRole('button',{name:'Submit feedback',exact:true}).click();
+ await expect(page.getByRole('status').filter({hasText:'Thank you!'})).toBeVisible();
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+ expect(saved).toEqual({overall:5,comments:''});
 });

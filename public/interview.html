@@ -329,11 +329,18 @@
         <h3>Entire-screen sharing</h3><p id="share-error" role="alert"></p><div id="share-ok" hidden></div>
         <button class="pj-btn pj-btn-primary" id="pj-share-allow" type="button">Share entire screen</button>
       </div>
+      <div class="pj-panel" id="pj-fullscreen-panel">
+        <h3>Last step: full screen</h3>
+        <p>All checks passed. The interview runs in full screen, so start it with one more click.</p>
+        <p id="pj-fullscreen-error" role="alert"></p>
+        <button class="pj-btn pj-btn-primary" id="pj-fullscreen-start" type="button">Enter full screen and start</button>
+      </div>
     </div>
   </div>
 
   <!-- ACTIVE CALL SCREEN -->
   <div id="call-screen">
+    <button id="fullscreen-return" class="pj-btn pj-btn-primary" type="button" hidden>Return to full screen</button>
 
     <!-- Round info bar -->
     <div class="round-bar">
