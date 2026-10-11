@@ -1392,8 +1392,23 @@ function clearVisionSignal(type, recovered, now) {
   return true;
 }
 
+// The pre-join lobby is display:none for the whole live interview, and a
+// <video> in a non-rendered subtree stops handing new MediaStream frames to
+// drawImage/detectForVideo -- every proctoring signal (face count, gaze,
+// lighting, sharpness, extra people, phone) was being computed from a frozen
+// lobby frame as soon as the call screen opened. The call screen's own
+// element carries the same userMediaStream and IS rendered, so analysis
+// follows the visible element, exactly as the photo verifier already does.
+function proctorVideoSource() {
+  const live = _isCallScreenActive() ? candidateVideoEl : lobbyVideoEl;
+  if (live && live.readyState >= 2 && live.videoWidth > 0) return live;
+  const fallback = live === candidateVideoEl ? lobbyVideoEl : candidateVideoEl;
+  return fallback && fallback.readyState >= 2 && fallback.videoWidth > 0 ? fallback : null;
+}
+
 async function analyzeCameraFrame() {
-  if (!lobbyVideoEl || lobbyVideoEl.readyState < 2 || !cameraTrackLive) return;
+  const sourceVideo = proctorVideoSource();
+  if (!sourceVideo || !cameraTrackLive) return;
   if (!faceLandmarker && !nativeFaceDetector && Date.now() - lastVisionDetectorAttemptAt >= VISION_RETRY_INTERVAL_MS) {
     setVisionCheck(faceCheckEl, "warn", "Retrying person check…");
     void loadFaceDetector();
@@ -1401,12 +1416,12 @@ async function analyzeCameraFrame() {
   if (!objectDetector && !objectDetectorUnavailable) void loadPersonDetector();
   let landmarks = null;
   if (faceLandmarker) {
-    const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
+    const result = faceLandmarker.detectForVideo(sourceVideo, performance.now());
     const faces = distinctFaceLandmarks(result.faceLandmarks || []);
     faceCountDetected = faces.length;
     landmarks = faces[0] || null;
   } else if (nativeFaceDetector) {
-    const faces = await nativeFaceDetector.detect(lobbyVideoEl);
+    const faces = await nativeFaceDetector.detect(sourceVideo);
     const distinct = [];
     for (const face of faces) {
       const r = face.boundingBox;
@@ -1419,7 +1434,7 @@ async function analyzeCameraFrame() {
   }
 
   faceQualityRegion = faceRegion(landmarks);
-  const luminance = frameLighting(lobbyVideoEl);
+  const luminance = frameLighting(sourceVideo);
   lightingPassing = luminance >= 40 && luminance <= 235;
   setVisionCheck(
     lightingCheckEl,
@@ -1427,7 +1442,7 @@ async function analyzeCameraFrame() {
     lightingPassing ? "✓ Lighting is clear" : (luminance < 40 ? "More light needed" : "Reduce backlight"),
   );
 
-  const sharpness = frameSharpness(lobbyVideoEl);
+  const sharpness = frameSharpness(sourceVideo);
   const qualityIssue = !lightingPassing ? "poor_lighting" : sharpness < 12 ? "camera_blurry" : null;
   if (qualityIssue) {
     cameraAnalysisPassing = false;
@@ -1464,8 +1479,8 @@ async function analyzeCameraFrame() {
     // Every crop uses the same captured frame. Asynchronous inference must not
     // count a moving person twice by comparing snapshots from different times.
     const objectFrame = analyzeCameraFrame.objectFrame || (analyzeCameraFrame.objectFrame = document.createElement("canvas"));
-    objectFrame.width = lobbyVideoEl.videoWidth; objectFrame.height = lobbyVideoEl.videoHeight;
-    objectFrame.getContext("2d").drawImage(lobbyVideoEl, 0, 0);
+    objectFrame.width = sourceVideo.videoWidth; objectFrame.height = sourceVideo.videoHeight;
+    objectFrame.getContext("2d").drawImage(sourceVideo, 0, 0);
     const detections = (await objectDetector.detectForVideo(objectFrame, nextObjectDetectorTimestamp())).detections || [];
     // categoryAllowlist now includes "cell phone" alongside "person" (same
     // model, no extra load), so detections must be split by category rather
