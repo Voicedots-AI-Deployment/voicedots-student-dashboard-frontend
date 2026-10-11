@@ -44,6 +44,9 @@ async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolea
     }
     if (["/api/auth/student-login", "/api/auth/student-enroll"].includes(path)) {
       const body = route.request().postDataJSON();
+      // Mirrors the API: one method per sign-in. Password needs no photo;
+      // face sign-in needs a camera photo.
+      if (body.auth_method !== "face" && path === "/api/auth/student-login") { captures.push(body); signedIn = true; return route.fulfill({ json: signedInIdentity() }); }
       if (!body.webcam_photo) return route.fulfill({ status: 403, json: { detail: { code: "PHOTO_REQUIRED", message: "Take a photo." } } });
       captures.push(body);
       if (options.mismatch) return route.fulfill({ status: 403, json: { detail: { code: "PHOTO_MISMATCH", message: "Photo did not match. Please retake it." } } });
@@ -58,11 +61,37 @@ async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolea
 
 async function signIn(page: Page) {
   await page.goto("/");
+  await page.getByRole("button", { name: "Face", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Email").fill("student@example.edu");
+  await page.getByRole("button", { name: "Open camera" }).click();
+  await expect(page.getByRole("heading", { name: "Verify your photo." })).toBeVisible();
+}
+
+test("password sign-in uses only the email and password, with no camera step", async ({ page }) => {
+  const captures = await auth(page);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Email & password" })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Email").fill("student@example.edu");
   await page.getByLabel("Password", { exact: true }).fill("CorrectPassword1!");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Verify your photo." })).toBeVisible();
-}
+  await expect(page.getByRole("heading", { name: "Verify your photo." })).toHaveCount(0);
+  await expect.poll(() => captures.length).toBe(1);
+  expect(captures[0].webcam_photo).toBeUndefined();
+  expect(captures[0].password).toBe("CorrectPassword1!");
+});
+
+test("face sign-in asks only for the email and a camera photo", async ({ page }) => {
+  await camera(page);
+  await auth(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Face", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Face", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Email me a password/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Email & password" }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+});
 
 test("login waits for a camera match and stops the camera", async ({ page }) => {
     await camera(page);
@@ -73,7 +102,8 @@ test("login waits for a camera match and stops the camera", async ({ page }) => 
     await expect(page.getByRole("heading", { name: "Verify your photo." })).not.toBeVisible();
     expect(captures).toHaveLength(1);
     expect(captures[0].webcam_photo).toMatch(/^data:image\/jpeg;base64,/);
-    expect(captures[0].password).toBe("CorrectPassword1!");
+    expect(captures[0].auth_method).toBe("face");
+    expect(captures[0].password).toBe("");
     expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
     expect(await page.evaluate(() => JSON.stringify({ ...sessionStorage, ...localStorage }))).not.toContain("CorrectPassword1!");
 });
@@ -88,7 +118,7 @@ test("mismatch keeps the student at the camera and allows a retry", async ({ pag
   await expect.poll(() => captures.length).toBe(2);
   expect(await page.evaluate(() => sessionStorage.getItem("vd_student_data"))).toBeNull();
   await page.getByRole("button", { name: "Back to sign in" }).click();
-  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Open camera" })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
 });
 
