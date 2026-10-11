@@ -30,13 +30,7 @@ import {
   PageHeading,
   useResource,
 } from "./ui";
-
-const stages: Record<string, string> = {
-  analyzing_resume: "Getting to know your experience",
-  preparing_role_context: "Understanding your target role",
-  generating_questions: "Preparing your personalized questions",
-  finalizing_session: "Getting your panel ready",
-};
+import { PreparationJourney } from "./preparation-journey";
 
 export function Practice() {
   const { identity } = useAuth();
@@ -75,7 +69,7 @@ export function Practice() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState("");
+  const [stageKey, setStageKey] = useState<string | undefined>(undefined);
   const [preparation, setPreparation] = useState<Preparation | null>(() => {
     try {
       return JSON.parse(sessionStorage.getItem(key) || "null");
@@ -238,7 +232,7 @@ export function Practice() {
         );
         if (controller.signal.aborted) return;
         if (result.status === "in_progress") {
-          setStage(stages[result.stage || ""] || "Preparing your interview");
+          setStageKey(result.stage);
           if (Date.now() - started > 180000) {
             setPollError(
               "Preparation is taking longer than usual. Your progress is saved; check again in a moment.",
@@ -499,14 +493,14 @@ export function Practice() {
       {preparation ? (
         <section className={`panel preparation-panel${needsClarification ? " resume-clarification-panel" : ""}`} aria-live="polite">
           {pending && <>
-            <LoaderCircle className={pollError ? "" : "spin"} size={32} />
-            <h2>{stage || "Preparing your interview"}</h2>
-            <p>Your progress is saved. This can take a few minutes.</p>
+            <PreparationJourney stage={stageKey} placement={mode === "placement"}
+              panel={mode === "placement" ? panel.map(person => ({ track: person.track, role: person.role }))
+                : [{ track: "hr", role: "HR interviewer" }, { track: "domain", role: "Domain specialist" }, { track: "industry", role: "Industry expert" }, { track: "manager", role: "Hiring manager" }]} />
             {pollError && <ErrorMessage message={pollError} retry={() => setPollVersion((v) => v + 1)} />}
             {pollError && <button className="button secondary" onClick={() => { sessionStorage.removeItem(key); setPreparation(null); setPollError(""); }}>Return to setup</button>}
           </>}
           {ready && <>
-            <span className="empty-icon"><Check /></span>
+            <span className="prep-ready-burst" aria-hidden="true"><Check size={30} /></span>
             <h2>Your panel is ready.</h2>
             <p>Next, we’ll check your camera, microphone, and screen sharing before the interview begins.</p>
             <button className="button primary" onClick={() => openInterview(preparation.submission_id!, preparation.session_id)}>
