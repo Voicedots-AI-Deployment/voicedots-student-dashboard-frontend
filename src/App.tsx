@@ -107,6 +107,12 @@ function Login() {
       }
       if (code === "ACTIVE_SESSION_EXISTS") setConflict(true);
       if (code?.startsWith("PHOTO_")) setPhotoRejected(`${code}:${Date.now()}`);
+      if (code === "FACE_LOGIN_NOT_ENABLED") {
+        setPendingPhoto(null);
+        setFaceSignIn(false);
+        setConflict(false);
+        setReplaceSession(false);
+      }
       if (e instanceof ApiError && (e.status === 401 || e.status === 429)) setPendingPhoto(null);
       setError((e as Error).message);
     } finally {
@@ -200,6 +206,12 @@ function Login() {
             <PhotoVerification busy={busy} rejected={photoRejected}
               onCapture={(photo) => authenticate({ ...pendingPhoto, replace_active_session: replaceSession }, photo)}
               onCancel={() => { setPendingPhoto(null); setError(""); setConflict(false); setReplaceSession(false); }} />
+            {error && /^(PHOTO_MISMATCH|PHOTO_REFERENCE_MISSING|PHOTO_REFERENCE_INVALID):/.test(photoRejected) && <>
+              <p>If your appearance has changed or your saved photo needs updating, sign in with your password and ask your placement team to verify and refresh your reference photo.</p>
+              <button type="button" className="button secondary" disabled={busy} onClick={() => {
+                setPendingPhoto(null); setFaceSignIn(false); setError(""); setPhotoRejected(""); setConflict(false); setReplaceSession(false);
+              }}>Sign in with password</button>
+            </>}
             {conflict && <label className="checkbox">
               <input type="checkbox" checked={replaceSession} disabled={busy}
                 onChange={(e) => setReplaceSession(e.target.checked)} />

@@ -124,6 +124,38 @@ test("mismatch keeps the student at the camera and allows a retry", async ({ pag
   expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
 });
 
+test("unavailable face sign-in returns to password login and releases the camera", async ({ page }) => {
+  await camera(page);
+  await auth(page);
+  await page.route("**/api/auth/student-login", route => route.fulfill({ status: 403, json: { detail: {
+    code: "FACE_LOGIN_NOT_ENABLED", message: "Face sign-in is not available. Use email and password, or contact your placement team.",
+  } } }));
+  await signIn(page);
+  await page.getByRole("button", { name: "Capture and verify" }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("Face sign-in is not available");
+  await expect(page.getByRole("heading", { name: "Verify your photo." })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("vd_student_data"))).toBeNull();
+});
+
+test("appearance changes can recover through password login without accepting a mismatch", async ({ page }) => {
+  await camera(page);
+  const captures = await auth(page, { mismatch: true });
+  await signIn(page);
+  await page.getByRole("button", { name: "Capture and verify" }).click();
+  await expect(page.getByText(/appearance has changed/)).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("vd_student_data"))).toBeNull();
+  await page.getByRole("button", { name: "Sign in with password", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await page.getByLabel("Email").fill("student@example.edu");
+  await page.getByLabel("Password", { exact: true }).fill("CorrectPassword1!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect.poll(() => captures.length).toBe(2);
+  expect(captures[1].webcam_photo).toBeUndefined();
+  await expect(page.getByRole("heading", { name: "Welcome back." })).toHaveCount(0);
+});
+
 test("camera denial cannot complete sign in", async ({ page }) => {
   await camera(page, true);
   const captures = await auth(page);
