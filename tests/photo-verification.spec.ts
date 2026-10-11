@@ -26,6 +26,9 @@ async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolea
   let hasPhoto = Boolean(options.rosterPhoto);
   const signedInIdentity = () => ({ student: { ...identity.student, allow_student_photo_upload: options.photoPermission ?? true, ...(hasPhoto ? { photo_url: "/api/student/profile/photo" } : {}) } });
   const captures: Record<string, unknown>[] = [];
+  // These students have not finished their profile, so the welcome prompt
+  // appears after sign-in; they skip it as a student would, then continue.
+  await page.addLocatorHandler(page.getByRole("button", { name: "Skip for now" }), button => button.click());
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/auth/student-me") return route.fulfill({ status: signedIn ? 200 : 401, json: signedIn ? signedInIdentity() : { detail: "Authentication required." } });

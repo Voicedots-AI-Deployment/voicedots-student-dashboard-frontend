@@ -3,7 +3,7 @@ import {test,expect,type Page} from '@playwright/test';
 // Opening independent validation autosaved an empty draft, which the API
 // rejected. The raw "List should have at least 1 item after validation,
 // not 0" message was then shown above validation tasks nobody had answered.
-const identity={student:{id:'student-1',full_name:'Asha Kumar',email:'asha@college.edu',roll_number:'CS2026001',college_name:'Example College of Engineering'}};
+const identity={student:{photo_url:"/api/student/profile/photo",current_resume_submission_id:"resume-main",id:'student-1',full_name:'Asha Kumar',email:'asha@college.edu',roll_number:'CS2026001',college_name:'Example College of Engineering'}};
 const planId='draft-plan',sessionId='draft-session';
 const plan={id:planId,drive_id:'drive-1',company_name:'Example Co',role_title:'Analyst',target_date:'2026-10-01',
  plan:{summary:'Prepare SQL',goal:'Explain joins',priority_topics:[],

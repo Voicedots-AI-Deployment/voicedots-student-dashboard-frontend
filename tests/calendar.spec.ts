@@ -1,6 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 
-const identity = { student: { id: "student-calendar", full_name: "Asha Kumar", email: "asha@example.edu", roll_number: "CS001", college_name: "Example College", program: "B.Tech", department_code: "CSE", graduation_year: 2027, cgpa: 8.6 } };
+const identity = { student: { photo_url:"/api/student/profile/photo",current_resume_submission_id:"resume-main", id: "student-calendar", full_name: "Asha Kumar", email: "asha@example.edu", roll_number: "CS001", college_name: "Example College", program: "B.Tech", department_code: "CSE", graduation_year: 2027, cgpa: 8.6 } };
 
 async function mockStudent(page: Page, options: { withEvents?: boolean } = {}) {
   await page.clock.setFixedTime(new Date("2026-10-06T08:00:00+05:30"));

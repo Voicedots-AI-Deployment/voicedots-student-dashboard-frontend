@@ -11,6 +11,8 @@ const identity = {
     department_code: "CSE",
     graduation_year: 2027,
     cgpa: 8.6,
+    photo_url: "/api/student/profile/photo",
+    current_resume_submission_id: "resume-main",
   },
 };
 const readiness = {

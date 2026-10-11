@@ -2326,3 +2326,29 @@ dialog.modal.calendar-dialog:has(#calendar-event-form-title){width:min(560px,cal
   .resume-clarification-card textarea { min-height: 150px; }
   .resume-clarification-panel form > .button { width: 100%; justify-self: stretch; justify-content: center; }
 }
+
+/* Profile setup prompt: welcome after sign-in, and before features that need
+   the Main Resume or profile photo. Uses the shared modal and theme tokens. */
+dialog.modal.profile-setup-dialog{max-width:560px;padding:30px}
+.profile-setup-dialog h2{margin:6px 0 8px;font-size:22px;line-height:1.3}
+.profile-setup-dialog .profile-setup-intro{margin:0 0 18px;color:var(--muted);font-size:14px;line-height:1.6}
+.profile-setup-list{display:grid;gap:10px;margin:0;padding:0;list-style:none}
+.profile-setup-item{display:flex;align-items:center;gap:14px;padding:14px 16px;border:1px solid var(--border);border-radius:14px;background:var(--card)}
+.profile-setup-item>div{display:grid;gap:3px;flex:1;min-width:0}
+.profile-setup-item strong{font-size:14px;font-weight:600}
+.profile-setup-item small{color:var(--muted);font-size:12px;line-height:1.5}
+.profile-setup-item>.button{flex:none;white-space:nowrap}
+.profile-setup-icon{display:grid;place-items:center;width:40px;height:40px;flex:none;border-radius:12px;background:var(--soft);color:var(--primary)}
+.profile-setup-item.is-done{background:var(--soft);border-color:transparent}
+.profile-setup-item.is-done .profile-setup-icon{background:#e6f5ed;color:#167447}
+.dark .profile-setup-item.is-done .profile-setup-icon{background:#173526;color:#7fd8a7}
+.profile-setup-footer{display:flex;align-items:center;justify-content:space-between;gap:16px;margin-top:20px;padding-top:16px;border-top:1px solid var(--border)}
+.profile-setup-footer>span{color:var(--muted);font-size:12px;line-height:1.5}
+.profile-setup-footer>.button{flex:none}
+@media (max-width:520px){
+  dialog.modal.profile-setup-dialog{padding:22px}
+  .profile-setup-item{flex-wrap:wrap}
+  .profile-setup-item>.button{width:100%;justify-content:center}
+  .profile-setup-footer{flex-direction:column;align-items:stretch}
+  .profile-setup-footer>.button{width:100%}
+}

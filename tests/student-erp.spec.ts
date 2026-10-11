@@ -1,6 +1,6 @@
 import { test, expect, type Page } from '@playwright/test';
 const services = ['timetable','attendance','internal-marks','semester-marks','fees','homework','circulars','exams','opac','hostel-attendance','mess-attendance'];
-const student = { id:'student-1', full_name:'Asha Kumar', roll_number:'CSE23001', department_code:'CSE', batch_label:'2023–2027' };
+const student = { photo_url:"/api/student/profile/photo",current_resume_submission_id:"resume-main",id:'student-1', full_name:'Asha Kumar', roll_number:'CSE23001', department_code:'CSE', batch_label:'2023–2027' };
 const samples: Record<string,object[]> = {
   timetable: [{weekday:0,starts_at:'09:00:00',ends_at:'09:50:00',subject:'Engineering Chemistry',faculty:'Dr. Priya',room:'CSE 101'},{weekday:2,starts_at:'13:00:00',ends_at:'13:50:00',subject:'Mathematics II',faculty:'Dr. Ravi',room:'CSE 102'}],
   attendance:[{period:'semester',starts_on:'2026-07-01',ends_on:'2026-12-31',days_conducted:60,days_present:54,percentage:90,eligibility:'eligible'}],

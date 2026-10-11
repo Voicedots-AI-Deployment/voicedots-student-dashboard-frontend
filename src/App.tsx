@@ -43,6 +43,7 @@ import { PhotoVerification } from "./PhotoVerification";
 import { CoachSession } from "./coach-session";
 import { CareerCoach } from "./career-coach";
 import { ResumeStudio } from "./resume-studio";
+import { ProfileSetupPrompt } from "./profile-setup";
 
 type PendingPhotoLogin = {
   email: string;
@@ -304,7 +305,13 @@ export function App() {
     setMobileOpen(false);
     window.scrollTo(0, 0);
     document.querySelector("main")?.scrollTo(0, 0);
-  }, [location.pathname]);
+    // Deep links such as /profile#resume-library land on that section, after
+    // the reset above and after the page has rendered it.
+    if (!location.hash) return;
+    const frame = window.requestAnimationFrame(() =>
+      document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView({ block: "start" }));
+    return () => window.cancelAnimationFrame(frame);
+  }, [location.pathname, location.hash]);
   useEffect(() => {
     const viewport = window.matchMedia("(max-width: 760px)");
     const syncViewport = () => {
@@ -454,6 +461,7 @@ export function App() {
         </header>
         <main id="main-content" className="dashboard-content">
           {error && <ErrorMessage message={error} />}
+          <ProfileSetupPrompt />
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/login" element={<Navigate to="/" replace />} />

@@ -882,7 +882,7 @@ export function Profile() {
   }
   return <>
     <PageHeading eyebrow="THE PERSON BEHIND THE POTENTIAL" title="My profile">Your student identity and profile details, in one place.</PageHeading>
-    <section className="panel profile-panel">
+    <section id="profile-photo" className="panel profile-panel">
       <div className="profile-heading">
         <div className="profile-avatar-wrap">
           <span className="avatar large">{photoUrl ? <img src={photoUrl} alt="Your verified profile"/> : student.full_name.split(/\s+/).slice(0, 2).map(n => n[0]).join("")}</span>

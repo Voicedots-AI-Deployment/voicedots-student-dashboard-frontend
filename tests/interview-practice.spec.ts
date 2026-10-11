@@ -4,7 +4,7 @@ const identity = { student: {
   id: "student-1", full_name: "Asha Kumar", email: "asha@example.edu",
   roll_number: "CS01", college_name: "Example College", program: "B.Tech",
   department_code: "CSE", graduation_year: 2027, cgpa: 8.6,
-  current_resume_submission_id: "main-submission",
+  current_resume_submission_id: "main-submission", photo_url: "/api/student/profile/photo",
 } };
 
 const activeResume = { resume_id: "main-file", submission_id: "main-submission", original_filename: "Quant_Engineer_Sample_Resume.pdf", label: "Main Resume", is_primary: true, uploaded_at: "2026-10-01T00:00:00Z" };

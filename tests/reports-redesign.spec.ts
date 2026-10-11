@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 const base={evaluation_id:'e1',session_id:'s1',status:'released',company_name:'Example',target_role:'Engineer',drive_id:'d1',created_at:'2026-10-07',report:{overall_score:46,status:'released',readiness:'Developing'}};
 async function setup(page:any,decision='hold',released=true){
  await page.route('**/api/**',(route:any)=>{const path=new URL(route.request().url()).pathname;
- if(path==='/api/auth/student-me')return route.fulfill({json:{student:{id:'st1',full_name:'Asha',email:'a@example.edu'}}});
+ if(path==='/api/auth/student-me')return route.fulfill({json:{student:{photo_url:"/api/student/profile/photo",current_resume_submission_id:"resume-main",id:'st1',full_name:'Asha',email:'a@example.edu'}}});
  if(path==='/api/student/reports')return route.fulfill({json:{reports:[{...base,placement_decision:decision,report:released?base.report:{status:'awaiting_release'}}]}});
  if(path==='/api/interview/s1/evaluation')return route.fulfill({json:{...base.report,question_reviews:[{answer_id:1,question:'Explain SQL.',answer:'I used a join.',evidence_status:'answered'}]}});
  if(path.endsWith('/question-feedback'))return route.fulfill({json:{feedback:{},complete:true}});
