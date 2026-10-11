@@ -8,6 +8,7 @@ import {
   KeyRound,
   Mail,
   ScanFace,
+  Sparkles,
   Bot,
   BookOpen,
   GraduationCap,
@@ -51,6 +52,7 @@ import { CareerCoach } from "./career-coach";
 import { ResumeStudio } from "./resume-studio";
 import { ProfileSetupPrompt } from "./profile-setup";
 import { FeatureShowcase } from "./auth-showcase";
+import { ProductTour, START_TOUR_EVENT } from "./product-tour";
 import { Performance } from "./performance";
 
 type PendingPhotoLogin = {
@@ -193,7 +195,7 @@ function Login() {
             })}
           </div>}
           {pendingPhoto ? <>
-            <PhotoVerification busy={busy}
+            <PhotoVerification busy={busy} rejected={error}
               onCapture={(photo) => authenticate({ ...pendingPhoto, replace_active_session: replaceSession }, photo)}
               onCancel={() => { setPendingPhoto(null); setError(""); setConflict(false); setReplaceSession(false); }} />
             {conflict && <label className="checkbox">
@@ -270,6 +272,8 @@ function Login() {
     </div>
   );
 }
+
+const PRESENCE_INTERVAL_MS = 45000;
 
 const nav = [
   { to: "/", label: "Overview", icon: House },
@@ -358,6 +362,17 @@ export function App() {
       previousFocus?.focus({ preventScroll: true });
     };
   }, [mobileOpen]);
+  // "Still here" ping: while the portal is open the session counts as active
+  // on this device. Closing the browser stops it, so the next sign-in is not
+  // blocked by a session nobody is using.
+  const signedIn = Boolean(auth.identity);
+  useEffect(() => {
+    if (!signedIn) return;
+    const timer = window.setInterval(() => {
+      void api("/api/auth/student-presence", { method: "POST" }).catch(() => undefined);
+    }, PRESENCE_INTERVAL_MS);
+    return () => window.clearInterval(timer);
+  }, [signedIn]);
   if (auth.loading) return <Loading />;
   if (!auth.identity) return <Login />;
   const student = auth.identity.student;
@@ -405,7 +420,7 @@ export function App() {
         <span className="portal-label">STUDENT WORKSPACE</span>
         <nav aria-label="Student navigation">
           {nav.map(({ to, label, icon: Icon }) => (
-            <NavLink key={to} to={to} end={to === "/"}>
+            <NavLink key={to} to={to} end={to === "/"} data-tour={`nav:${to}`}>
               <Icon size={19} />
               <span>{label}</span>
             </NavLink>
@@ -449,6 +464,7 @@ export function App() {
           <div>
             <button
               className="icon-button"
+              data-tour="menu"
               aria-label={navigationExpanded ? "Close navigation" : "Open navigation"}
               aria-expanded={navigationExpanded}
               onClick={toggleSidebar}
@@ -468,6 +484,15 @@ export function App() {
             </span>
             <button
               className="icon-button"
+              data-tour="replay"
+              aria-label="Take the product tour"
+              title="Take the product tour"
+              onClick={() => window.dispatchEvent(new Event(START_TOUR_EVENT))}
+            >
+              <Sparkles size={19} />
+            </button>
+            <button
+              className="icon-button"
               aria-label={dark ? "Use light theme" : "Use dark theme"}
               onClick={() => setDark(!dark)}
             >
@@ -479,6 +504,7 @@ export function App() {
         <main ref={mainRef} id="main-content" className="dashboard-content">
           {error && <ErrorMessage message={error} />}
           <ProfileSetupPrompt />
+          <ProductTour />
           <Routes>
             <Route path="/" element={<Overview />} />
             <Route path="/performance" element={<Performance />} />

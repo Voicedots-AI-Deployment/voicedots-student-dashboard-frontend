@@ -350,7 +350,17 @@ window.addEventListener("pagehide", () => {
 // INITIALIZATION
 // ============================================================
 
+// Keeps this student's session counted as "open" while the interview room
+// is on screen, so closing the tab frees the account for the next sign-in
+// within a few minutes instead of hours.
+const PRESENCE_INTERVAL_MS = 45000;
+function startPresencePing() {
+  const ping = () => { if (!getStudentSession()) return; void studentFetch(`${_HTTP_BASE}/api/auth/student-presence`, { method: "POST" }).catch(() => {}); };
+  window.setInterval(ping, PRESENCE_INTERVAL_MS);
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
+  startPresencePing();
   if (!getStudentSession()) {
     // A deep link opened in a fresh tab has no display cache. Restore the
     // identity from the existing HttpOnly session before showing device checks.
