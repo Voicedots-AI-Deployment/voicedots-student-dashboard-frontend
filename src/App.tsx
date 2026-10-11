@@ -292,6 +292,7 @@ export function App() {
   const [isMobile, setIsMobile] = useState(() => window.matchMedia("(max-width: 760px)").matches);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const sidebarRef = useRef<HTMLElement>(null);
+  const mainRef = useRef<HTMLElement>(null);
   const [dark, setDark] = useState(
     () => localStorage.getItem("theme") === "dark",
   );
@@ -312,6 +313,16 @@ export function App() {
       document.getElementById(decodeURIComponent(location.hash.slice(1)))?.scrollIntoView({ block: "start" }));
     return () => window.cancelAnimationFrame(frame);
   }, [location.pathname, location.hash]);
+  useEffect(() => {
+    // Replays the page entrance (motion.css) on navigation without remounting.
+    const main = mainRef.current;
+    if (!main) return;
+    main.classList.remove("route-enter");
+    void main.offsetWidth;
+    main.classList.add("route-enter");
+    const timer = window.setTimeout(() => main.classList.remove("route-enter"), 800);
+    return () => window.clearTimeout(timer);
+  }, [location.pathname, Boolean(auth.identity)]);
   useEffect(() => {
     const viewport = window.matchMedia("(max-width: 760px)");
     const syncViewport = () => {
@@ -459,7 +470,7 @@ export function App() {
             <span className="student-badge">Student</span>
           </div>
         </header>
-        <main id="main-content" className="dashboard-content">
+        <main ref={mainRef} id="main-content" className="dashboard-content">
           {error && <ErrorMessage message={error} />}
           <ProfileSetupPrompt />
           <Routes>

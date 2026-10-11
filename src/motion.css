@@ -1,0 +1,96 @@
+/* Student portal motion.
+   Movement only: opacity, transform and easing of existing state changes.
+   Colours, sizes, borders and button styles stay exactly as defined in the
+   page stylesheets. The global prefers-reduced-motion rule in styles.css
+   shortens every animation and removes transitions for students who ask
+   their system for less motion. */
+:root {
+  --vd-ease: cubic-bezier(.22, .8, .24, 1);
+  --vd-ease-out: cubic-bezier(.16, 1, .3, 1);
+}
+
+@keyframes vd-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+@keyframes vd-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes vd-dialog-in { from { opacity: 0; transform: translateY(14px) scale(.98); } to { opacity: 1; transform: none; } }
+@keyframes vd-pop { from { opacity: 0; transform: scale(.4); } to { opacity: 1; transform: scale(1); } }
+
+/* Page entrance. App toggles .route-enter on navigation, so sections fade
+   in sequence without remounting the page. Opacity only: content never moves
+   after it appears, so nothing shifts under the cursor while it settles. */
+.dashboard-content.route-enter > :not(.dashboard-footer):not(dialog) {
+  animation: vd-fade .4s var(--vd-ease) backwards;
+}
+.dashboard-content.route-enter > :nth-child(2) { animation-delay: .04s; }
+.dashboard-content.route-enter > :nth-child(3) { animation-delay: .08s; }
+.dashboard-content.route-enter > :nth-child(4) { animation-delay: .12s; }
+.dashboard-content.route-enter > :nth-child(5) { animation-delay: .16s; }
+.dashboard-content.route-enter > :nth-child(n+6) { animation-delay: .2s; }
+
+/* Content that arrives after data loads fades in instead of popping. */
+.dashboard-content > * .panel:not(dialog),
+.dashboard-content [role="alert"],
+.dashboard-content .success-message {
+  animation: vd-fade .32s var(--vd-ease) backwards;
+}
+
+/* Buttons keep their own colours; only the change between states eases,
+   with a small press response. */
+.button,
+.icon-button,
+.coach-primary,
+.coach-secondary {
+  transition:
+    background-color .2s var(--vd-ease),
+    border-color .2s var(--vd-ease),
+    color .2s var(--vd-ease),
+    box-shadow .25s var(--vd-ease),
+    opacity .2s var(--vd-ease),
+    transform .18s var(--vd-ease);
+}
+:is(.button, .icon-button, .coach-primary, .coach-secondary):active:not(:disabled) {
+  transform: scale(.97);
+}
+
+/* Sidebar navigation. */
+.sidebar nav a {
+  transition: background-color .2s var(--vd-ease), color .2s var(--vd-ease), transform .2s var(--vd-ease);
+}
+.sidebar nav a svg { transition: transform .25s var(--vd-ease); }
+.sidebar nav a:hover:not(.active) { transform: translateX(2px); }
+.sidebar nav a:hover svg { transform: scale(1.08); }
+.sidebar nav a.active:after { animation: vd-pop .3s var(--vd-ease-out) backwards; }
+.sidebar-profile-link,
+.sidebar-tip a { transition: color .2s var(--vd-ease), background-color .2s var(--vd-ease), transform .2s var(--vd-ease); }
+
+/* Sidebar collapse (desktop) and slide-in drawer (mobile). */
+.sidebar {
+  transition:
+    transform .32s var(--vd-ease),
+    width .28s var(--vd-ease),
+    min-width .28s var(--vd-ease),
+    padding .28s var(--vd-ease),
+    visibility .32s;
+}
+.sidebar > * { transition: opacity .2s var(--vd-ease); }
+.dashboard-shell .dashboard-body { transition: margin-left .28s var(--vd-ease); }
+.sidebar-backdrop { animation: vd-fade .25s var(--vd-ease) backwards; }
+
+/* Dialogs, including the profile setup prompt. */
+dialog.modal[open] { animation: vd-dialog-in .3s var(--vd-ease-out) backwards; }
+dialog.modal[open]::backdrop { animation: vd-fade .25s var(--vd-ease) backwards; }
+.profile-setup-item { animation: vd-rise .36s var(--vd-ease-out) backwards; }
+.profile-setup-item:nth-child(2) { animation-delay: .06s; }
+.profile-setup-item.is-done .profile-setup-icon svg { animation: vd-pop .35s var(--vd-ease-out) backwards; }
+
+/* Form fields and rows ease between their existing focus and hover states. */
+.dashboard-content :is(input, select, textarea) {
+  transition: border-color .2s var(--vd-ease), box-shadow .2s var(--vd-ease), background-color .2s var(--vd-ease);
+}
+.dashboard-content tbody tr { transition: background-color .18s var(--vd-ease); }
+
+/* Clickable cards lift slightly on hover. */
+.drive-card,
+.coach-saved-list > button {
+  transition: transform .22s var(--vd-ease), box-shadow .22s var(--vd-ease), border-color .22s var(--vd-ease);
+}
+.drive-card:hover { transform: translateY(-2px); }

@@ -3,6 +3,8 @@ import ReactDOM from "react-dom/client";
 import { BrowserRouter } from "react-router-dom";
 import { AuthProvider } from "./auth";
 import { App } from "./App";
+// Loaded after the page stylesheets so motion only layers on top of them.
+import "./motion.css";
 import "./styles.css";
 
 class ErrorBoundary extends React.Component<
