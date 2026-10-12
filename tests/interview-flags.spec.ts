@@ -140,7 +140,7 @@ test('a phone held to the camera is confirmed on a slower device where the detec
 
 test('camera reminders hide the misconduct badge and server zero clears optimistic warnings',async({page})=>{
  await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'s1'},csrf_token:'test'}}));
- await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.noticeAudit={remind:()=>{integrityStrikeCount=3;showIntegrityNotice('Camera check uncertain. This is not misconduct.',true)},reply:handleControlMessage,count:()=>integrityStrikeCount};`});});
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.noticeAudit={remind:()=>{proctoringActive=true;integrityStrikeCount=3;showIntegrityNotice('Camera check uncertain. This is not misconduct.',true)},reply:handleControlMessage,count:()=>integrityStrikeCount};`});});
  await page.goto('/interview.html?id=sub-1');await expect.poll(()=>page.evaluate(()=>!!(window as any).noticeAudit)).toBe(true);
  const result=await page.evaluate(()=>{const h=(window as any).noticeAudit;h.remind();const badgeHidden=(document.getElementById('integrity-strikes') as HTMLElement)?.hidden;h.reply({type:'integrity_event_recorded',total_flags:0});return {badgeHidden,count:h.count()};});
  expect(result.badgeHidden).toBe(true);expect(result.count).toBe(0);
