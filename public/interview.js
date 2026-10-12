@@ -217,6 +217,7 @@ let currentAudioEpoch = 0;
 let playbackTime = 0;
 let playbackCompleteTimer = null;
 let playbackEndingEpoch = null;
+let lastCompletedPlaybackEpoch = null;
 let processingStatusTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
@@ -2437,6 +2438,11 @@ function _flushPendingIntegrityEvents() {
 }
 
 function showIntegrityNotice(message, reminder = false) {
+  if (!proctoringActive) {
+    clearTimeout(showIntegrityNotice._timer);
+    integrityToastEl?.classList.remove("show");
+    return;
+  }
   if (integrityToastTextEl) integrityToastTextEl.textContent = message;
   if (integrityStrikesEl) { integrityStrikesEl.hidden = reminder; integrityStrikesEl.textContent = `${integrityStrikeCount} warning${integrityStrikeCount === 1 ? "" : "s"}`; }
   if (integrityToastEl) {
@@ -2835,6 +2841,7 @@ function exitInterviewFullscreen() {
 function completePlayback(epoch) {
   if (epoch !== currentAudioEpoch || playbackEndingEpoch !== epoch) return;
   playbackEndingEpoch = null;
+  lastCompletedPlaybackEpoch = epoch;
   if (playbackCompleteTimer !== null) clearTimeout(playbackCompleteTimer);
   playbackCompleteTimer = null;
   schedulePCMChunk._lipEpochs?.delete(epoch);
@@ -3154,7 +3161,7 @@ async function initializeInterviewRecording() {
     const context = canvas.getContext("2d");
     const videoElement = candidateVideoEl || lobbyVideoEl;
     recordingCanvasTimer = window.setInterval(() => {
-      if (context && videoElement?.readyState >= 2) context.drawImage(videoElement, 0, 0, 640, 360);
+      if (context && videoElement?.readyState >= 2) drawRecordingFrame(context, videoElement, canvas);
     }, 67);
     recordingCanvasStream = canvas.captureStream(15);
     const lowResolutionVideo = recordingCanvasStream.getVideoTracks()[0];
@@ -3197,6 +3204,17 @@ async function initializeInterviewRecording() {
     setRecordingStatus("The interview recording could not be started. Your interview can continue without it.", true);
     console.error("Interview recording start failed", error);
   }
+}
+
+function drawRecordingFrame(context, video, canvas) {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!(width > 0 && height > 0)) return;
+  const scale = Math.min(canvas.width / width, canvas.height / height);
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(video, (canvas.width - width * scale) / 2,
+    (canvas.height - height * scale) / 2, width * scale, height * scale);
 }
 
 function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}) {
@@ -3487,6 +3505,17 @@ function handleControlMessage(payload) {
       if (payload.question_text && currentQuestionTextEl) currentQuestionTextEl.textContent = payload.question_text;
       clearLiveCaption();
       break;
+
+    case "playback_status": {
+      const epoch = Number(payload.audio_epoch);
+      if (epoch !== currentAudioEpoch) break;
+      if (lastCompletedPlaybackEpoch === epoch) {
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({type: "playback_complete", audio_epoch: epoch}));
+      } else if (payload.generation_complete === true) {
+        finishPlaybackAfterQueue(epoch);
+      }
+      break;
+    }
 
     case "tts_end": {
       // The voice provider has now streamed every chunk for this epoch. Waiting for
