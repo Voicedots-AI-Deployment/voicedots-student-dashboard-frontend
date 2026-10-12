@@ -3161,7 +3161,7 @@ async function initializeInterviewRecording() {
     const context = canvas.getContext("2d");
     const videoElement = candidateVideoEl || lobbyVideoEl;
     recordingCanvasTimer = window.setInterval(() => {
-      if (context && videoElement?.readyState >= 2) context.drawImage(videoElement, 0, 0, 640, 360);
+      if (context && videoElement?.readyState >= 2) drawRecordingFrame(context, videoElement, canvas);
     }, 67);
     recordingCanvasStream = canvas.captureStream(15);
     const lowResolutionVideo = recordingCanvasStream.getVideoTracks()[0];
@@ -3204,6 +3204,17 @@ async function initializeInterviewRecording() {
     setRecordingStatus("The interview recording could not be started. Your interview can continue without it.", true);
     console.error("Interview recording start failed", error);
   }
+}
+
+function drawRecordingFrame(context, video, canvas) {
+  const width = video.videoWidth;
+  const height = video.videoHeight;
+  if (!(width > 0 && height > 0)) return;
+  const scale = Math.min(canvas.width / width, canvas.height / height);
+  context.fillStyle = "#000";
+  context.fillRect(0, 0, canvas.width, canvas.height);
+  context.drawImage(video, (canvas.width - width * scale) / 2,
+    (canvas.height - height * scale) / 2, width * scale, height * scale);
 }
 
 function stopInterviewRecording(finalize = false, afterCaptureStopped = () => {}) {
