@@ -216,6 +216,7 @@ let supportRetryState = "complete";
 let currentAudioEpoch = 0;
 let playbackTime = 0;
 let playbackCompleteTimer = null;
+let playbackEndingEpoch = null;
 let processingStatusTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
@@ -1642,7 +1643,25 @@ function frameSharpness(video) {
   return count?squares/count-(sum/count)**2:0;
 }
 let cameraQualityIssue = null;
-let lastCameraQualityNoticeAt = 0;
+let lastCameraQualityNoticeAt = null;
+let pendingCameraQualityIssue = null;
+let pendingCameraQualitySince = 0;
+function cameraQualityTransition(issue, now = Date.now()) {
+  if (pendingCameraQualityIssue !== issue) {
+    pendingCameraQualityIssue = issue;
+    pendingCameraQualitySince = now;
+  }
+  if (now - pendingCameraQualitySince < (issue ? 4000 : 3000)) return null;
+  if (issue) {
+    cameraQualityIssue = issue;
+    if (lastCameraQualityNoticeAt !== null && now - lastCameraQualityNoticeAt < 60000) return null;
+    lastCameraQualityNoticeAt = now;
+    return issue;
+  }
+  if (!cameraQualityIssue) return null;
+  cameraQualityIssue = null;
+  return "camera_quality_restored";
+}
 function assessCameraLighting(luminance) {
   const passing = luminance >= 32 && luminance <= 242;
   return {
@@ -1815,17 +1834,14 @@ async function analyzeCameraFrame() {
     const guidance = qualityIssue === "poor_lighting" ? lighting.message : "Your camera image looks blurry. Clean the lens, focus the camera and keep your face clearly visible.";
     setVisionCheck(lightingCheckEl, "warn", guidance);
     updatePrejoinReadiness();
-    if (proctoringActive && (cameraQualityIssue !== qualityIssue || Date.now()-lastCameraQualityNoticeAt > 15000)) {
+    if (proctoringActive && cameraQualityTransition(qualityIssue) === qualityIssue) {
       _sendIntegrityEvent(qualityIssue, "info", { luminance: Math.round(luminance), sharpness: Math.round(sharpness), message: guidance });
       showIntegrityNotice(guidance + " This is a camera quality reminder, not a misconduct warning.", true);
-      lastCameraQualityNoticeAt = Date.now();
     }
-    cameraQualityIssue = qualityIssue;
     if (!proctoringActive && qualityIssue === "camera_blurry") return;
   }
-  if (!qualityIssue && cameraQualityIssue) {
+  if (!qualityIssue && cameraQualityTransition(null) === "camera_quality_restored") {
     if (proctoringActive) _sendIntegrityEvent("camera_quality_restored", "info", {});
-    cameraQualityIssue = null;
     absentFaceSince = multipleFaceSince = phoneVisibleSince = gazeOffCameraSince = null;
     delete lastVisionWarningAt.candidate_not_visible;
     delete lastVisionWarningAt.gaze_off_camera;
@@ -2019,15 +2035,6 @@ async function analyzeCameraFrame() {
       const ms = now - phoneVisibleSince;
       if (ms >= PHONE_VISIBLE_THRESHOLD_MS) {
         warnVisionSignal("phone_usage_detected", `A phone has been visible on camera for ${Math.round(ms / 1000)}s.`, { duration_ms: now - phoneEvidence.since, confirmed_by: "phone_sequence", observation_count: phoneEvidence.count, confidence: phoneEvidence.confidence });
-      }
-    }
-
-    clearVisionSignal("poor_lighting", lightingPassing, now);
-    poorLightingSince = _trackSince(poorLightingSince, !lightingPassing, now);
-    if (poorLightingSince !== null) {
-      const ms = now - poorLightingSince;
-      if (ms >= POOR_LIGHTING_THRESHOLD_MS) {
-        warnVisionSignal("poor_lighting", `Lighting has been poor for ${Math.round(ms / 1000)}s. Adjust lighting.`, { luminance: Math.round(luminance), duration_ms: ms });
       }
     }
 
@@ -2678,7 +2685,7 @@ function installMicrophoneProcessor() {
   lastMicrophoneFrameAt = Date.now();
   micProcessor.port.onmessage = (e) => {
     lastMicrophoneFrameAt = Date.now();
-    microphoneCaptureStatus("");
+    if (!playbackAudioContext || playbackAudioContext.state === "running") microphoneCaptureStatus("");
     if (!ws || ws.readyState !== WebSocket.OPEN || !interviewHasStarted || micMuted || aiSpeaking) return;
     const pcmData = floatTo16BitPCM(e.data);
     // Bound buffered input so a transport outage cannot queue minutes of stale
@@ -2711,7 +2718,7 @@ async function recoverMicrophoneCapture(force = false) {
         if (!restored) throw new Error("Select a working microphone and retry.");
       }
       if (interviewStopRequested || !audioContext) return;
-      await Promise.race([audioContext.resume(), new Promise((_, reject) => setTimeout(() => reject(new Error("Click Retry microphone to resume microphone access.")), 4000))]);
+      await Promise.race([resumeInterviewAudio(), new Promise((_, reject) => setTimeout(() => reject(new Error("Click Retry microphone to resume microphone access.")), 4000))]);
       if (interviewStopRequested || !audioContext) return;
       if (audioContext.state !== "running") throw new Error("Click Retry microphone to enable audio capture.");
       if (force || Date.now() - lastMicrophoneFrameAt > 3000) installMicrophoneProcessor();
@@ -2726,7 +2733,7 @@ function startMicrophoneWatchdog() {
   microphoneWatchdog = setInterval(() => {
     if (!interviewHasStarted || interviewStopRequested || !audioContext) return;
     if (audioContext.state !== "running" || Date.now() - lastMicrophoneFrameAt > 3000) void recoverMicrophoneCapture();
-    if (playbackAudioContext && playbackAudioContext.state !== "running") void playbackAudioContext.resume().catch(() => {});
+    if (playbackAudioContext && playbackAudioContext.state !== "running") void resumeInterviewAudio().catch(error => microphoneCaptureStatus(error.message));
   }, 1000);
 }
 
@@ -2752,7 +2759,10 @@ function schedulePCMChunk(pcmBytes, epoch = currentAudioEpoch) {
   source.buffer = buffer;
   source.connect(playbackAnalyser || playbackAudioContext.destination);
   activePlaybackSources.add(source);
-  source.onended = () => activePlaybackSources.delete(source);
+  source.onended = () => {
+    activePlaybackSources.delete(source);
+    if (playbackEndingEpoch === epoch && epoch === currentAudioEpoch && !activePlaybackSources.size) completePlayback(epoch);
+  };
 
   const now = playbackAudioContext.currentTime;
   if (playbackTime < now) playbackTime = now + PREBUFFER_SECONDS;
@@ -2773,6 +2783,7 @@ function schedulePCMChunk(pcmBytes, epoch = currentAudioEpoch) {
 }
 
 function resetPlaybackQueue() {
+  playbackEndingEpoch = null;
   activePlaybackSources.forEach((source) => {
     try { source.stop(); } catch {}
   });
@@ -2804,21 +2815,46 @@ function exitInterviewFullscreen() {
   }
 }
 
+function completePlayback(epoch) {
+  if (epoch !== currentAudioEpoch || playbackEndingEpoch !== epoch) return;
+  playbackEndingEpoch = null;
+  if (playbackCompleteTimer !== null) clearTimeout(playbackCompleteTimer);
+  playbackCompleteTimer = null;
+  schedulePCMChunk._lipEpochs?.delete(epoch);
+  aiSpeaking = false;
+  setActivePanelTalking(false);
+  if (aiRoleEl) aiRoleEl.textContent = currentAgentRole;
+  if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "playback_complete", audio_epoch: epoch }));
+}
+
+async function resumeInterviewAudio() {
+  const contexts = [audioContext, playbackAudioContext].filter(context => context && context.state !== "closed");
+  await Promise.all(contexts.map(context => context.resume()));
+  if (contexts.some(context => context.state !== "running")) throw new Error("Click Retry microphone to enable interview audio.");
+}
+
 function finishPlaybackAfterQueue(epoch) {
   if (playbackCompleteTimer !== null) clearTimeout(playbackCompleteTimer);
-  const contextNow = playbackAudioContext ? playbackAudioContext.currentTime : 0;
-  const msUntilDone = Math.max(0, (playbackTime - contextNow) * 1000) + 40;
-  playbackCompleteTimer = setTimeout(() => {
+  playbackEndingEpoch = epoch;
+  const check = () => {
     playbackCompleteTimer = null;
-    if (epoch !== currentAudioEpoch) return;
-    if (schedulePCMChunk._lipEpochs) schedulePCMChunk._lipEpochs.delete(epoch);
-    aiSpeaking = false;
-    setActivePanelTalking(false);
-    if (aiRoleEl) aiRoleEl.textContent = currentAgentRole;
-    if (ws && ws.readyState === WebSocket.OPEN) {
-      ws.send(JSON.stringify({ type: "playback_complete", audio_epoch: epoch }));
+    if (epoch !== currentAudioEpoch || playbackEndingEpoch !== epoch) return;
+    // The audio clock stops during suspension. Wall-clock timers must never
+    // unmute the candidate while a question is still queued or audible.
+    if (!playbackAudioContext || !activePlaybackSources.size ||
+        (playbackAudioContext.state === "running" && playbackAudioContext.currentTime >= playbackTime)) {
+      completePlayback(epoch);
+      return;
     }
-  }, msUntilDone);
+    if (playbackAudioContext.state && playbackAudioContext.state !== "running") {
+      void resumeInterviewAudio().catch(error => microphoneCaptureStatus(error.message));
+    }
+    playbackCompleteTimer = setTimeout(check, 50);
+  };
+  // Test doubles without an audio clock retain the legacy duration contract.
+  if (playbackAudioContext && !playbackAudioContext.state) {
+    playbackCompleteTimer = setTimeout(() => completePlayback(epoch), Math.max(0, (playbackTime - playbackAudioContext.currentTime) * 1000) + 40);
+  } else check();
 }
 
 function clearProcessingStatus() {
@@ -3374,7 +3410,9 @@ function handleControlMessage(payload) {
         clearTimeout(playbackCompleteTimer);
         playbackCompleteTimer = null;
       }
+      playbackEndingEpoch = null;
       aiSpeaking = true;
+      if (playbackAudioContext?.state && playbackAudioContext.state !== "running") void resumeInterviewAudio().catch(error => microphoneCaptureStatus(error.message));
       if (aiRoleEl) aiRoleEl.textContent = "Speaking...";
       // The AI's line is committed straight to the chat feed — there's no
       // "partial" stage for it (tts_begin already carries the full text),
@@ -3549,6 +3587,11 @@ async function startInterview(submissionId) {
     playbackAnalyser = playbackAudioContext.createAnalyser();
     playbackAnalyser.fftSize = 256;
     playbackAnalyser.smoothingTimeConstant = 0.42;
+    playbackAudioContext.onstatechange = () => {
+      if (!interviewStopRequested && ["suspended", "interrupted"].includes(playbackAudioContext?.state)) {
+        void resumeInterviewAudio().catch(error => microphoneCaptureStatus(error.message));
+      }
+    };
     playbackAnalyser.connect(playbackAudioContext.destination);
     recordingAudioDestination = playbackAudioContext.createMediaStreamDestination();
     playbackAnalyser.connect(recordingAudioDestination);

@@ -14,6 +14,17 @@ test.beforeEach(async({page})=>{
           interviewHasStarted=true;interviewStopRequested=false;aiSpeaking=false;micMuted=false;
           await startMediaCapture();window.sourceContext=sourceContext;
         },
+        async playback(suspend=false){
+          playbackAudioContext=new AudioContext();await playbackAudioContext.resume();
+          playbackAnalyser=null;currentAudioEpoch=41;
+          if(suspend)await playbackAudioContext.suspend();
+          handleControlMessage({type:"tts_begin",audio_epoch:41,text:"Explain your project.",sample_rate:24000});
+          schedulePCMChunk(new Int16Array(9600).buffer,41);
+          handleControlMessage({type:"tts_end",audio_epoch:41});
+        },
+        speaking(){return aiSpeaking;},
+        acks(){return window.captureSends.filter(x=>typeof x==="string").map(x=>JSON.parse(x));},
+        async resumePlayback(){await playbackAudioContext.resume();},
         count(){return window.captureSends.filter(x=>x instanceof ArrayBuffer).length;},
         async suspend(){await audioContext.suspend();},
         state(){return audioContext.state;},
@@ -36,10 +47,11 @@ test.beforeEach(async({page})=>{
         kind:preflightFailureKind,
         listening(){aiSpeaking=true;activePlaybackSources.clear();handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});return aiSpeaking;},
         gate(){aiSpeaking=true;activePlaybackSources.add({});handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});const value=aiSpeaking;activePlaybackSources.clear();aiSpeaking=false;return value;},
-        async close(){interviewStopRequested=true;clearInterval(microphoneWatchdog);micProcessor.disconnect();await audioContext.close();await window.sourceContext.close();ws=null;}
+        async close(){interviewStopRequested=true;clearInterval(microphoneWatchdog);micProcessor.disconnect();await audioContext.close();await playbackAudioContext?.close();playbackAudioContext=null;await window.sourceContext.close();ws=null;}
       };
       window.__testCameraLighting = assessCameraLighting;
       window.__testCameraEntryChecks = cameraEntryChecksPass;
+      window.__testQualityTransition = cameraQualityTransition;
     `});
   });
   await page.goto('/interview.html?id=audio-recovery');
@@ -94,4 +106,39 @@ test('low face brightness is advisory when the camera and identity checks pass',
     sharpness:18,exactlyOneFace:false,exactlyOnePerson:true,framingPassing:true,
     visionCheckUnavailable:false,objectDetectorUnavailable:false,fullPersonCheckReady:true,phoneDetected:false,
   }))).toBe(false);
+});
+
+
+test('real streamed playback releases the microphone once and without a server timeout',async({page})=>{
+  await page.evaluate(()=>(window as any).captureRecovery.start());
+  await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.count())).toBeGreaterThan(2);
+  await page.evaluate(()=>(window as any).captureRecovery.playback());
+  expect(await page.evaluate(()=>(window as any).captureRecovery.speaking())).toBe(true);
+  await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.speaking()),{timeout:2500}).toBe(false);
+  const before=await page.evaluate(()=>(window as any).captureRecovery.count());
+  await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.count())).toBeGreaterThan(before+2);
+  expect((await page.evaluate(()=>(window as any).captureRecovery.acks())).filter((x:any)=>x.type==='playback_complete')).toEqual([{type:'playback_complete',audio_epoch:41}]);
+  await page.evaluate(()=>(window as any).captureRecovery.close());
+});
+
+test('suspended playback resumes and does not leave microphone permanently gated',async({page})=>{
+  await page.evaluate(()=>(window as any).captureRecovery.start());
+  await page.evaluate(()=>(window as any).captureRecovery.playback(true));
+  await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.speaking()),{timeout:2500}).toBe(false);
+  await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.count())).toBeGreaterThan(2);
+  await page.evaluate(()=>(window as any).captureRecovery.close());
+});
+
+test('quality flicker does not spam reminders and sustained failures share a cooldown',async({page})=>{
+  const result=await page.evaluate(()=>{
+    const check=(window as any).__testQualityTransition;
+    const events=[];
+    for(let now=0;now<20000;now+=800)events.push(check(now%1600?'poor_lighting':null,now));
+    events.push(check('poor_lighting',21000),check('poor_lighting',25000));
+    events.push(check(null,26000),check(null,29000));
+    events.push(check('camera_blurry',30000),check('camera_blurry',34000));
+    events.push(check('camera_blurry',86000));
+    return events.filter(Boolean);
+  });
+  expect(result).toEqual(['poor_lighting','camera_quality_restored','camera_blurry']);
 });
