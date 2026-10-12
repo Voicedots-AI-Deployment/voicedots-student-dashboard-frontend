@@ -5,9 +5,9 @@ for(const kind of ['lesson','widget'])for(const rate of [24000,48000,undefined,1
   await page.addInitScript(()=>{
    const w=window as any;w.rates=[];w.voicePackets=[];w.tracksStopped=0;w.voiceGains=[];w.audioStops=0;
    const node=()=>({connect(){},disconnect(){}});
-   w.AudioContext=class {currentTime=0;state='running';destination={};audioWorklet={addModule:async()=>{}};resume=async()=>{};close=async()=>{this.state='closed'};createMediaStreamSource=node;createGain=()=>{const gain={...node(),gain:{value:0}};w.voiceGains.push(gain);return gain};createBuffer=(_c:number,n:number,r:number)=>{w.rates.push(r);return {duration:n/r,getChannelData:()=>new Float32Array(n)}};createBufferSource=()=>({...node(),start(){},stop(){w.audioStops++}})};
+   w.AudioContext=class {get currentTime(){return performance.now()/1000};state='running';destination={};audioWorklet={addModule:async()=>{}};resume=async()=>{};close=async()=>{this.state='closed'};createMediaStreamSource=node;createGain=()=>{const gain={...node(),gain:{value:0}};w.voiceGains.push(gain);return gain};createBuffer=(_c:number,n:number,r:number)=>{w.rates.push(r);return {duration:n/r,getChannelData:()=>new Float32Array(n)}};createBufferSource=()=>({...node(),start(){},stop(){w.audioStops++}})};
    w.AudioWorkletNode=class {port={onmessage:null};constructor(){w.coachCapture=this};connect(){}};
-   Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>({getTracks:()=>[{stop(){w.tracksStopped++}}]})});
+   Object.defineProperty(navigator.mediaDevices,'getUserMedia',{value:async()=>({getAudioTracks:()=>[],getTracks:()=>[{stop(){w.tracksStopped++}}]})});
    w.WebSocket=class {static OPEN=1;readyState=1;bufferedAmount=0;onmessage:any;onclose:any;constructor(){w.coachSocket=this;}send(data:any){w.voicePackets.push(data instanceof ArrayBuffer?{audioBytes:data.byteLength}:JSON.parse(data))}close(){this.readyState=3}};
   });
   await page.goto('/');
