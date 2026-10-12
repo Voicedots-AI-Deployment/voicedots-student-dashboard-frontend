@@ -322,6 +322,8 @@ export type QuestionReview = {
 };
 export type ReportFeedback = { text?: string; focus?: string; area?: string; cites_answer_id?: number };
 export type InterviewReportView = {
+  candidate_info?: {full_name?:string;program?:string;department?:string;year_of_study?:string};
+  candidate_satisfaction?: CandidateSatisfaction;
   release_scheduled_for?: string | null; overall_score?: number | null; status?: string; readiness?: string; executive_summary?: string;
   score_breakdown?: Record<string, number | null>;
   core_dimensions?: Array<{dimension: string; percentage?: number | null; band?: number; reason?: string}>;
@@ -333,3 +335,4 @@ export type InterviewReportView = {
   communication?: { speaking_speed_wpm?: number | null; pace_label?:string; filler_word_count?:number; top_filler_words?:string[]; measurement_note?:string; scores?: Record<string, number | null> };
   interview_profile?: { difficulty_tier?: string; duration_minutes?: number };
 };
+export type CandidateSatisfaction = {score:number;label:string;ratings:Record<string,number>;submitted_at:string;method:string};
