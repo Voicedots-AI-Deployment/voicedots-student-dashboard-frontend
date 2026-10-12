@@ -9,3 +9,12 @@ test('unreleased and missing assessments never get fabricated scores',async({pag
 test('mobile performance fits and missing comparable history stays unmeasured',async({page})=>{await page.setViewportSize({width:390,height:844});await open(page,{...data,comparable_trend:[],comparable_change:null});await expect(page.getByText('Not enough history')).toBeVisible();await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);await page.screenshot({path:'/root/voicedots/releases/placement-intelligence-20261012/screenshots/student-performance-mobile.png',fullPage:true})});
 test('failed analytics request shows an error rather than sample scores',async({page})=>{await open(page);await page.route('**/api/student/performance',r=>r.fulfill({status:500,json:{detail:'Unavailable'}}));await page.reload();await expect(page.getByRole('alert')).toContainText('Unavailable');await expect(page.locator('.mpi-kpis')).toHaveCount(0)});
 test('public shared scorecard works without student sign-in',async({page})=>{await page.route('**/api/**',r=>r.fulfill({status:401,json:{detail:'Sign-in required'}}));await page.route('**/api/scorecard-shares/token',r=>r.fulfill({json:{candidate:'Ananya Sharma',role:'Engineer',score:78,competencies:{communication:74},strengths:['Clear explanations'],development:['SQL optimisation']}}));await page.goto('/shared-scorecard/token');await expect(page.getByRole('heading',{name:'Ananya Sharma'})).toBeVisible();await expect(page.getByText('Overall score: 78/100')).toBeVisible();await expect(page.getByText('Sign in',{exact:true})).toHaveCount(0)});
+
+test('performance cards and evidence stay contained on narrow mobile and tablet',async({page})=>{
+ for(const width of [320,768,1024,1440]){
+  await page.setViewportSize({width,height:900});await open(page);
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);
+  const cards=await page.locator('.mpi-kpis .mpi-card').evaluateAll(elements=>elements.map(element=>({client:element.clientWidth,scroll:element.scrollWidth})));
+  expect(cards.every(card=>card.scroll<=card.client+1)).toBe(true);
+ }
+});
