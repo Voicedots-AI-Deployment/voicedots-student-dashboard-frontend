@@ -17,3 +17,5 @@
 .report-overview-content>.report-video-review video{max-height:480px}
 
 .scorecard-strengths{background:#eaf8f2}.scorecard-explore{background:#fff7e6}.scorecard-evidence-panels ul,.scorecard-evidence-panels ol{padding-left:20px;margin:0 0 16px;color:#415774;line-height:1.65}.scorecard-evidence-panels li{margin-bottom:12px}.scorecard-evidence-panels li p{font-size:12px;margin:5px 0;overflow-wrap:anywhere}
+
+.report-workspace .assessment-scorecard{margin:0;padding:22px;border:1px solid #e2e8ef;border-radius:14px;background:#fff;box-shadow:0 4px 14px #193a5910;display:grid;gap:18px}.report-workspace .assessment-scorecard .scorecard-dashboard{grid-template-columns:minmax(0,1fr)}.report-workspace .assessment-scorecard .scorecard-card{border-radius:14px;padding:22px;box-shadow:none}.report-workspace .assessment-scorecard .scorecard-executive{margin:0;border-radius:14px}.report-workspace .assessment-scorecard .scorecard-sidebar{grid-template-columns:minmax(0,1fr)}@media(max-width:600px){.report-workspace .assessment-scorecard,.report-workspace .assessment-scorecard .scorecard-card{padding:16px}}

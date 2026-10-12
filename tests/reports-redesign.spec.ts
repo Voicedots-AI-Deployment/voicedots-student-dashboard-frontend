@@ -24,7 +24,7 @@ test('cards and table preserve search and hide placement decisions in report his
 for(const [decision,label] of [['shortlist','Shortlisted'],['reject','Rejected'],['hold','On hold'],['undecided','Decision pending']]){
  test(`report detail shows formal ${decision} outcome independently from score`,async({page})=>{
  await setup(page,decision);await page.goto('/reports/s1');await expect(page.getByRole('heading',{name:label,exact:true})).toBeVisible();
- await expect(page.getByLabel('Candidate competency score')).toHaveAttribute('value','46');
+ await expect(page.locator('.scorecard-ring')).toHaveAttribute('aria-label','AI interview score: 46/100');
  await page.getByRole('button',{name:'Questions & feedback (1)'}).click();await expect(page.getByText(/No separate feedback was saved/)).toBeVisible();
  await expect(page.getByLabel('Interview video')).toHaveAttribute('src',/recording.webm/);await expect(page.locator('audio')).toHaveCount(0);
  await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);

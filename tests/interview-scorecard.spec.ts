@@ -27,9 +27,12 @@ async function setup(page:any,{empty=false,saveError=false,pending=false}={}) {
 
 test('real report data, survey submission and report screenshots',async({page})=>{
   await page.setViewportSize({width:1440,height:1100});const state=await setup(page);
-  await expect(page.getByRole('heading',{name:'Candidate Assessment Scorecard'})).toBeVisible();
-  await expect(page.locator('.scorecard-identity')).toContainText('Asha Kumar');
-  await expect(page.getByLabel('Candidate competency score')).toHaveAttribute('value','78');
+  await expect(page.getByRole('heading',{name:'Competency Results'})).toBeVisible();
+  await expect(page.locator('.scorecard-heading,.scorecard-profile,.scorecard-practice-tiles,.scorecard-insights')).toHaveCount(0);
+  await expect(page.getByRole('heading',{name:'What went well',exact:true})).toHaveCount(1);
+  await expect(page.getByRole('heading',{name:'Where to focus',exact:true})).toHaveCount(1);
+  expect(await page.locator('.assessment-scorecard').evaluate(el=>getComputedStyle(el).backgroundColor)).toBe('rgb(255, 255, 255)');
+  await expect(page.locator('.scorecard-ring')).toHaveAttribute('aria-label','AI interview score: 78/100');
   await expect(page.locator('.scorecard-competencies tbody tr')).toHaveCount(5);
   await expect(page.locator('.scorecard-satisfaction')).toContainText('Not collected');
   await page.locator('.satisfaction-form summary').click();
@@ -38,7 +41,7 @@ test('real report data, survey submission and report screenshots',async({page})=
   for(const select of await page.locator('.satisfaction-form select').all())await select.selectOption('4');
   await page.getByRole('button',{name:'Save feedback',exact:true}).click();
   await expect(page.getByLabel('Candidate satisfaction score')).toHaveAttribute('value','80');
-  await expect(page.getByLabel('Candidate competency score')).toHaveAttribute('value','78');
+  await expect(page.locator('.scorecard-ring')).toHaveAttribute('aria-label','AI interview score: 78/100');
   expect(state.count()).toBe(1);
   await page.locator('.satisfaction-form summary').click();
   await expect.poll(()=>page.locator('video').evaluate((v:HTMLVideoElement)=>v.readyState)).toBeGreaterThanOrEqual(2);
@@ -54,7 +57,7 @@ test('real report data, survey submission and report screenshots',async({page})=
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
   await page.evaluate(()=>{(document.activeElement as HTMLElement)?.blur();window.scrollTo(0,0);});
   await page.screenshot({path:output+'/full-report-mobile.png',fullPage:true});
-  await page.getByRole('button',{name:'Review answers',exact:true}).click();
+  await page.getByRole('button',{name:'Review every answer',exact:false}).click();
   await expect(page.getByRole('heading',{name:'Questions & feedback',exact:true})).toBeVisible();
 });
 
