@@ -111,9 +111,9 @@ test('phone evidence rejects single, weak and inconsistent detections and confir
   return {weak,isolated,noCorroboration,strong};
  });
  expect(result.weak.some(Boolean)).toBe(false);expect(result.isolated.some(Boolean)).toBe(false);
- // A single sighting never confirms; a sustained phone is confirmed after about a second.
- expect(result.noCorroboration.slice(0,2).some(Boolean)).toBe(false);expect(result.noCorroboration.at(-1)).toBe(true);
- expect(result.strong.slice(0,2).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
+ // A single sighting never confirms; a second consistent sighting does.
+ expect(result.noCorroboration.slice(0,2)).toEqual([false,true]);expect(result.noCorroboration.at(-1)).toBe(true);
+ expect(result.strong.slice(0,2)).toEqual([false,true]);expect(result.strong.at(-1)).toBe(true);
 });
 
 test('a phone held to the camera is confirmed on a slower device where the detector runs every 2 seconds', async ({page}) => {
@@ -146,7 +146,7 @@ test('camera reminders hide the misconduct badge and server zero clears optimist
  expect(result.badgeHidden).toBe(true);expect(result.count).toBe(0);
 });
 
-test('hiding the native screen-share banner cannot create a focus warning', async ({page}) => {
+test('a brief blur only reminds, while staying in another window for 5 s is a warning', async ({page}) => {
  await page.route('**/api/**', route => route.fulfill({json:{student:{id:'s1'},csrf_token:'test'}}));
  await page.route('**/interview.js*', async route => {
   const response = await route.fetch();
@@ -178,7 +178,20 @@ test('hiding the native screen-share banner cannot create a focus warning', asyn
  expect(events).toHaveLength(1);
  expect(events[0]).toMatchObject({event_type:'window_blur_observed',severity:'info',details:{review_only:true}});
  expect(await page.evaluate(()=>(window as any).focusAudit.count())).toBe(0);
- await expect(page.locator('#integrity-toast')).not.toHaveClass(/show/);
+ // The student is told straight away, without a misconduct count.
+ await expect(page.locator('#integrity-toast')).toHaveClass(/show/);
+ await expect(page.locator('#integrity-toast')).toContainText('moved away from the interview window');
+ await expect(page.locator('#integrity-strikes')).toBeHidden();
+ // Still in another window at 5 s: one warning for this departure.
+ await page.clock.runFor(3400);
+ const departure=await page.evaluate(()=>(window as any).focusAuditEvents.filter((e:any)=>e.severity==='violation'));
+ expect(departure).toHaveLength(1);
+ expect(departure[0]).toMatchObject({event_type:'window_blur_observed',details:{confirmed_by:'focus_sequence'}});
+ expect(departure[0].details.duration_ms).toBeGreaterThanOrEqual(5000);
+ expect(await page.evaluate(()=>(window as any).focusAudit.count())).toBe(1);
+ await page.evaluate(()=>{document.hasFocus=()=>true;window.dispatchEvent(new Event('focus'));});
+ await page.clock.runFor(10000);
+ expect(await page.evaluate(()=>(window as any).focusAuditEvents.filter((e:any)=>e.severity==='violation').length)).toBe(1);
  // A real hidden-tab event remains a violation.
  await page.evaluate(()=>{
   Object.defineProperty(document,'hidden',{configurable:true,get:()=>true});

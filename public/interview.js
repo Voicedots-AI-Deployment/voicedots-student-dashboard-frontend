@@ -292,7 +292,7 @@ let phoneEvidence = null;
 // sightings need three consistent observations, confident ones two.
 const PHONE_EVIDENCE_MIN_SCORE = .45;
 const PHONE_CONFIDENT_SCORE = .6;
-const PHONE_EVIDENCE_MIN_MS = 1000;
+const PHONE_EVIDENCE_MIN_MS = 500;
 let cameraReminderTimes = {};
 // Integrity signals are intentionally debounced to avoid false positives,
 // but must still be visible quickly to the placement team.
@@ -300,7 +300,9 @@ const CANDIDATE_ABSENT_THRESHOLD_MS = 3000;
 const MULTIPLE_PEOPLE_THRESHOLD_MS = 5000;
 const POOR_LIGHTING_THRESHOLD_MS = 3500;
 const GAZE_AWAY_THRESHOLD_MS = 3500;
-const PHONE_VISIBLE_THRESHOLD_MS = 1000;
+// Phone evidence is already debounced by two consistent sightings, so a
+// confirmed phone is reported on the same analysis tick.
+const PHONE_VISIBLE_THRESHOLD_MS = 0;
 let lastVisionWarningAt = {};
 let visionRecoverySince = {};
 let lastVisionObservationAt = 0;
@@ -2398,6 +2400,8 @@ const HARD_LOSS_TYPES = new Set([
   "camera_disable_attempt", "microphone_disable_attempt",
 ]);
 const HARD_LOSS_CLUSTER_WINDOW_MS = 2000;
+const FOCUS_DEPARTURE_NOTICE_MS = 1500;
+const FOCUS_DEPARTURE_VIOLATION_MS = 5000;
 const SUSPEND_RECOVERY_GRACE_MS = 30000;
 let _pendingHardLoss = null; // { types: Map<eventType, {message, details}>, timer }
 let _suspendRecoveryTimer = null;
@@ -2491,20 +2495,29 @@ function setupIntegrityMonitoring() {
     }
   });
 
-  // Chrome's native capture banner can blur a visible interview when Hide
-  // is clicked. Blur alone cannot distinguish that from another OS window.
-  // Preserve it as context only; actual hidden tabs and stopped sharing are
-  // handled by their own corroborated checks and remain enforceable.
-  let blurTimer;
+  // Leaving the interview window for another app (Alt+Tab, Task View, a
+  // second window) keeps the tab visible, so only focus reveals it. A brief
+  // blur, such as clicking Hide on Chrome's own sharing banner, is a reminder
+  // only; staying away for FOCUS_DEPARTURE_VIOLATION_MS is a warning.
+  let blurTimer, departureTimer, departureStartedAt = 0;
+  const stillAway = () => proctoringActive && _isCallScreenActive() && !document.hidden && !document.hasFocus();
   window.addEventListener("blur", () => {
-    clearTimeout(blurTimer);
+    clearTimeout(blurTimer); clearTimeout(departureTimer);
+    departureStartedAt = Date.now();
     blurTimer = setTimeout(() => {
-      if (proctoringActive && _isCallScreenActive() && !document.hidden && !document.hasFocus()) {
-        _sendIntegrityEvent("window_blur_observed", "info", { review_only: true });
-      }
-    }, 1500);
+      if (!stillAway()) return;
+      _sendIntegrityEvent("window_blur_observed", "info", { review_only: true });
+      showIntegrityNotice("You moved away from the interview window. Click back into the interview to continue.", true);
+    }, FOCUS_DEPARTURE_NOTICE_MS);
+    departureTimer = setTimeout(() => {
+      // Leaving full screen or hiding the tab during the same departure has
+      // already been recorded; one departure is one warning.
+      if (!stillAway() || (lastIntegrityEvent.key === "focus_departure" && lastIntegrityEvent.at >= departureStartedAt)) return;
+      _recordViolationNow("window_blur_observed", "You switched away from the interview window.",
+        { confirmed_by: "focus_sequence", duration_ms: Date.now() - departureStartedAt });
+    }, FOCUS_DEPARTURE_VIOLATION_MS);
   });
-  window.addEventListener("focus", () => clearTimeout(blurTimer));
+  window.addEventListener("focus", () => { clearTimeout(blurTimer); clearTimeout(departureTimer); });
 
   // Browser side panels cannot be named from a page. Observe only a
   // sustained width obstruction, normalized by height so browser zoom

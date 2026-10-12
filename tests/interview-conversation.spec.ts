@@ -254,7 +254,7 @@ test('crop-only phone requires two agreeing views and sustained observations',as
     const stale=check([], [box,other],13000);
     return {isolated,sequence,stale};
   });
-  expect(result).toEqual({isolated:false,sequence:[false,false,true,true],stale:false});
+  expect(result).toEqual({isolated:false,sequence:[false,true,true,true],stale:false});
 });
 
 test('placement ends capture immediately and shows saved answers without report animation',async({page})=>{
