@@ -55,7 +55,7 @@ import { ResumeStudio } from "./resume-studio";
 import { ProfileSetupPrompt } from "./profile-setup";
 import { FeatureShowcase } from "./auth-showcase";
 import { ProductTour, START_TOUR_EVENT } from "./product-tour";
-import { Performance } from "./performance";
+import { Performance, SharedScorecard } from "./performance";
 
 type PendingPhotoLogin = {
   email: string;
@@ -408,6 +408,7 @@ export function App() {
       events.forEach(name => window.removeEventListener(name, touch));
     };
   }, [signedIn]);
+  if (location.pathname.startsWith("/shared-scorecard/")) return <SharedScorecard token={decodeURIComponent(location.pathname.split("/")[2] || "")} />;
   if (auth.loading) return <Loading />;
   if (!auth.identity) return <Login />;
   const student = auth.identity.student;

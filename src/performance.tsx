@@ -1,16 +1,10 @@
-import { useEffect, useRef, useState } from "react";
-import { Link } from "react-router-dom";
-import {
-  Activity, ArrowRight, Award, BookOpen, ChartLine, Flame, Gauge, MessageSquareText, Mic, Minus, Target,
-  TrendingDown, TrendingUp, Trophy,
-} from "lucide-react";
-import { Empty, PageHeading, ResourceState, date, useResource } from "./ui";
-import "./performance.css";
-
-// Display only. Every number is computed by GET /api/student/performance from
-// the student's own released reports and readiness index; a missing value is
-// shown as missing, never estimated here.
-
+import { useState } from 'react';
+import { Link } from 'react-router-dom';
+import { Award, BarChart3, TrendingUp, FileText, Lightbulb, Target, ShieldCheck, Download, Plus, Share2, Clock, MessageSquare, Play, X, Copy } from 'lucide-react';
+import { ResourceState, useResource } from './ui';
+import { api, apiUrl } from './api';
+import './performance.css';
+import './performance-intelligence.css';
 export type PerformancePoint = { session_id: string | null; at: string; score: number; placement: boolean; label: string };
 type Skill = { dimension: string; label: string; average: number | null; latest: number | null; change: number | null };
 type Communication = {
@@ -44,191 +38,25 @@ export type PerformanceData = {
   placement_results: PerformancePoint[];
 };
 
-const AXIS_LABELS: Record<string, string> = { interview_readiness: "Placement interviews", resume_readiness: "Resume quality" };
-const pointKey = (point: PerformancePoint) => `${point.session_id}-${point.at}`;
 
-function Delta({ value, suffix = " pts", lowerIsBetter = false }: { value: number | null; suffix?: string; lowerIsBetter?: boolean }) {
-  if (value == null) return <span className="perf-delta neutral">First result</span>;
-  const rounded = Math.round(value * 10) / 10;
-  const Icon = rounded > 0 ? TrendingUp : rounded < 0 ? TrendingDown : Minus;
-  const better = lowerIsBetter ? rounded < 0 : rounded > 0;
-  return <span className={`perf-delta ${rounded === 0 ? "neutral" : better ? "up" : "down"}`}>
-    <Icon size={13} aria-hidden="true" />{rounded > 0 ? "+" : ""}{rounded}{suffix}
-  </span>;
+type Assessment={session_id:string;target_role?:string;completed_at:string;duration_minutes?:number;drive_id?:string;report:{overall_score:number;readiness?:string;rubric_version?:string;executive_summary?:string;strengths?:Array<{text?:string}|string>;priority_improvement_areas?:Array<{focus?:string;problem?:string;actions?:string[]}>;question_reviews?:Array<{question?:string;answer?:string;score?:number;competency?:string;answer_started_at?:string;asked_at?:string;strength_feedback?:string[];improvement_feedback?:string[]}>}};
+type Intelligence={profile:{full_name?:string;program?:string;department_code?:string};latest:Assessment|null;history:Assessment[];competencies:Array<{key:string;name:string;score:number;target:number|null}>;comparable_trend:Array<{session_id:string;at:string;score:number}>;comparable_change:number|null;pending_release_count:number;scope_note:string};
+type Share={id:string;session_id:string;expires_at:string;created_at:string};
+const text=(value:unknown)=>typeof value==='string'?value:typeof value==='object'&&value!==null&&'text' in value?String(value.text||''):'';
+const shown=(v:number|null|undefined,suffix='')=>v==null?'Not measured':`${v}${suffix}`;
+function Progress({points}:{points:Intelligence['comparable_trend']}){if(points.length<2)return <p className="mpi-empty">A trend appears after two released interviews with the same role and rubric.</p>;const x=(i:number)=>40+i/(points.length-1)*300,y=(score:number)=>170-score*1.4;return <svg viewBox="0 0 380 210" role="img" aria-label="Comparable interview progress">{[0,20,40,60,80,100].map(n=><g key={n}><line x1="40" x2="340" y1={y(n)} y2={y(n)} stroke="#e3ecf5"/><text x="12" y={y(n)+4} fontSize="10" fill="#7e94aa">{n}</text></g>)}<path d={`M${x(0)} 170 ${points.map((p,i)=>`L${x(i)} ${y(p.score)}`).join(' ')} L340 170 Z`} fill="#e4f2ff"/><polyline points={points.map((p,i)=>`${x(i)},${y(p.score)}`).join(' ')} stroke="#187fee" fill="none" strokeWidth="3"/>{points.map((p,i)=><g key={p.session_id}><circle cx={x(i)} cy={y(p.score)} r="4.5" fill="#187fee"/><text x={x(i)} y={y(p.score)-12} textAnchor="middle" fontSize="12" fontWeight="700" fill="#153759">{p.score}</text>{(i===0||i===points.length-1)&&<text x={x(i)} y="193" textAnchor="middle" fontSize="10" fill="#6a849e">{new Date(p.at).toLocaleDateString()}</text>}</g>)}</svg>}
+export function Performance(){
+ const resource=useResource<Intelligence>('/api/student/performance');const data=resource.data,latest=data?.latest,view=latest?.report;
+ const shares=useResource<{items:Share[]}>('/api/student/scorecard-shares');
+ const [sharing,setSharing]=useState(false),[days,setDays]=useState(7),[url,setUrl]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ const create=async()=>{if(!latest)return;setBusy(true);setMessage('');try{const v=await api<{token:string}>('/api/student/scorecard-shares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:latest.session_id,days})});setUrl(`${window.location.origin}/shared-scorecard/${encodeURIComponent(v.token)}`);shares.reload()}catch(e){setMessage(e instanceof Error?e.message:'Sharing failed')}finally{setBusy(false)}};
+ const revoke=async(id:string)=>{try{await api(`/api/student/scorecard-shares/${encodeURIComponent(id)}`,{method:'DELETE'});shares.reload();setUrl('');setMessage('Access revoked.')}catch(e){setMessage(e instanceof Error?e.message:'Could not revoke access')}};
+ return <section className="my-performance-intelligence" aria-label="My performance"><header className="mpi-heading"><div><span>YOUR ASSESSMENT INTELLIGENCE</span><h1>My performance</h1><p>{data?.profile?.full_name||'Your interview journey'} {data?.profile?.program&&`· ${data.profile.program}`}</p></div><div>{latest&&<a className="button secondary" href={apiUrl(`/api/interview/${encodeURIComponent(latest.session_id)}/evaluation/report.pdf`)} target="_blank" rel="noreferrer"><Download size={16}/> Download report</a>}<Link className="button primary" to="/practice"><Plus size={17}/> New interview</Link></div></header><ResourceState resource={resource}>{null}</ResourceState>
+ {data&&<>{data.pending_release_count>0&&<div className="mpi-pending">{data.pending_release_count} assessment(s) awaiting release or a scored report. Their results remain private until published.</div>}{!latest||!view?<article className="mpi-card"><h2>Your performance dashboard is waiting for its first result</h2><p>Complete a practice interview to get evidence-backed insights. Placement results appear after your institution releases them.</p><Link className="button primary" to="/practice">Start an interview</Link></article>:<><div className="mpi-context"><span><Award size={16}/>{latest.target_role||'Role not recorded'}</span><span><Clock size={16}/>Latest assessment: {new Date(latest.completed_at).toLocaleDateString()}</span><span>Rubric: {view.rubric_version||'Not recorded'}</span></div><div className="mpi-kpis"><article className="mpi-card mpi-score"><div className="mpi-ring"><svg viewBox="0 0 80 80" aria-hidden="true"><circle cx="40" cy="40" r="34" fill="none" stroke="#e7edf5" strokeWidth="6"/><circle cx="40" cy="40" r="34" fill="none" stroke="#1685ec" strokeWidth="6" pathLength="100" strokeDasharray={`${view.overall_score} 100`} transform="rotate(-90 40 40)"/></svg><strong>{view.overall_score}<small>/100</small></strong></div><div><h2>Interview score</h2><p>Evidence across assessed competencies</p></div></article><article className="mpi-card"><span className="mpi-icon gold"><BarChart3/></span><div><h2>Role readiness</h2><strong className="mpi-readiness">{view.readiness||'Not assessed'}</strong><p>Based on this assessment</p></div></article><article className="mpi-card"><span className="mpi-icon green"><TrendingUp/></span><div><h2>Comparable progress</h2><strong className="mpi-change">{data.comparable_change==null?'Not enough history':`${data.comparable_change>0?'+':''}${data.comparable_change} points`}</strong><p>Same role and recorded rubric</p></div></article><article className="mpi-card"><span className="mpi-icon purple"><FileText/></span><div><h2>Scorecard ID</h2><b className="mpi-id">{latest.session_id}</b><button className="mpi-text-button" onClick={()=>setSharing(true)}><Share2 size={13}/> Share scorecard</button></div></article></div>
+ <div className="mpi-grid mpi-main-grid"><article className="mpi-card"><h2><BarChart3 size={18}/> Competency vs Role Target</h2><div className="mpi-competencies"><div className="mpi-competency-head"><span>Competency</span><span>Score</span><span>Target</span></div>{data.competencies.map(c=><div className="mpi-competency" key={c.key}><div><b>{c.name}</b><progress value={c.score} max="100" style={{accentColor:c.target!=null&&c.score<c.target?'#efb32d':'#18b497'}}/></div><strong>{c.score}</strong><span>{c.target??'—'}</span></div>)}</div><small>Targets are institution-configured reference thresholds. Unconfigured targets remain blank.</small></article><article className="mpi-card"><h2><TrendingUp size={18}/> Comparable Interview Progress</h2><p>Same role and rubric</p><Progress points={data.comparable_trend}/><Link className="mpi-link" to="/reports">Review interview history →</Link></article><article className="mpi-card"><h2><Lightbulb size={18}/> Evidence-Based Insights</h2><div className="mpi-strength"><h3>Key strengths</h3>{view.strengths?.length?view.strengths.slice(0,3).map((s,i)=><p key={i}>{text(s)}</p>):<p>Not enough answer evidence to identify strengths.</p>}</div><div className="mpi-gap"><h3>Development gaps</h3>{view.priority_improvement_areas?.length?view.priority_improvement_areas.slice(0,3).map((s,i)=><p key={i}>{s.focus||s.problem}</p>):<p>No specific development gaps saved.</p>}</div><small>Based on answers and evidence, not appearance.</small></article></div>
+ <article className="mpi-card mpi-evidence"><h2><FileText size={18}/> Question-Level Assessment & Evidence</h2><div className="mpi-table-wrap"><table><thead><tr><th>#</th><th>Question</th><th>Evidence</th><th>Score</th><th>Review</th></tr></thead><tbody>{view.question_reviews?.map((q,i)=><tr key={i}><td>{i+1}</td><td>{q.question||'Interview question'}</td><td>{q.strength_feedback?.[0]||q.improvement_feedback?.[0]||(q.answer?.trim()?'Answer captured':'No answer saved')}</td><td>{shown(q.score)}</td><td><Link className="mpi-play" to={`/reports/${encodeURIComponent(latest.session_id)}?question=${i+1}`}><Play size={13}/> Review Q{i+1}</Link></td></tr>)}{!view.question_reviews?.length&&<tr><td colSpan={5}>No question-level evidence was saved for this assessment.</td></tr>}</tbody></table></div></article>
+ <div className="mpi-grid mpi-bottom-grid"><article className="mpi-card"><h2><Target size={18}/> Priority Development Plan</h2>{view.priority_improvement_areas?.length?view.priority_improvement_areas.slice(0,3).map((s,i)=><div className="mpi-plan" key={i}><span>{i+1}</span><div><b>{s.focus||s.problem}</b><p>{s.actions?.[0]||s.problem||'Review the saved feedback for this competency.'}</p></div></div>):<p>Review your report and select a topic for your next practice session.</p>}<Link className="button primary" to="/coach">Open AI coach</Link></article><article className="mpi-card"><h2><MessageSquare size={18}/> Assessment Context</h2><ul className="mpi-context-list"><li><Clock size={16}/>{latest.duration_minutes?`${latest.duration_minutes}-minute interview`:'Duration not recorded'}</li><li><MessageSquare size={16}/>{view.question_reviews?.filter(q=>q.answer?.trim()).length||0} saved answers</li><li><BarChart3 size={16}/>{data.competencies.length} assessed competencies</li><li><ShieldCheck size={16}/>AI assessment · human review available</li></ul><Link className="mpi-link" to={`/reports/${encodeURIComponent(latest.session_id)}`}>View full assessment →</Link></article><article className="mpi-card"><h2><ShieldCheck size={18}/> Sharing & Employer Access</h2><ul className="mpi-context-list"><li>Access: Private until you share</li><li>Active links: {shares.data?.items?.length??0}</li><li>Expiry: You choose when sharing</li></ul><p>Shared scorecards include competency scores and development insights. Your interview recording and answers remain private.</p><button className="button primary" onClick={()=>setSharing(true)}><Share2 size={15}/> Share & manage access</button></article></div></> }<footer>{data.scope_note} Scores support human review and do not guarantee placement.</footer></>}
+ {sharing&&<div className="mpi-modal-backdrop"><section className="mpi-card mpi-share-modal" role="dialog" aria-modal="true" aria-label="Share scorecard"><button className="mpi-close" aria-label="Close sharing" onClick={()=>setSharing(false)}><X/></button><h2>Share your scorecard</h2><p>Anyone with a link can view the shared scores until it expires or you revoke it.</p><label>Link expiry<select value={days} onChange={e=>setDays(Number(e.target.value))}><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label><button className="button primary" disabled={busy} onClick={create}>{busy?'Creating…':'Create share link'}</button>{url&&<div className="mpi-share-url"><input aria-label="Share link" value={url} readOnly/><button className="button secondary" onClick={async()=>{try{await navigator.clipboard.writeText(url);setMessage('Link copied.')}catch{setMessage('Select and copy the link above.')}}}><Copy size={15}/> Copy</button></div>}{message&&<p role="status">{message}</p>}{shares.data?.items?.map(s=><div className="mpi-plan" key={s.id}><div><b>Scorecard {s.session_id}</b><p>Expires {new Date(s.expires_at).toLocaleDateString()}</p></div><button onClick={()=>revoke(s.id)}>Revoke</button></div>)}<ResourceState resource={shares}>{null}</ResourceState></section></div>}
+ </section>;
 }
-
-function TrendChart({ points }: { points: PerformancePoint[] }) {
-  // Draw in real pixels at the container's width so labels keep their size on phones.
-  const frame = useRef<HTMLElement>(null);
-  const [width, setWidth] = useState(640);
-  useEffect(() => {
-    const element = frame.current;
-    if (!element || typeof ResizeObserver === "undefined") return;
-    const observer = new ResizeObserver(([entry]) => setWidth(Math.max(260, Math.round(entry.contentRect.width))));
-    observer.observe(element);
-    return () => observer.disconnect();
-  }, []);
-  const height = width < 480 ? 200 : 220, left = 34, right = 16, top = 14, bottom = 28;
-  // Thin out date labels so they never collide.
-  const labelEvery = Math.max(1, Math.ceil(points.length / Math.max(2, Math.floor((width - left - right) / 64))));
-  const x = (index: number) => points.length === 1 ? (left + width - right) / 2 : left + index * ((width - left - right) / (points.length - 1));
-  const y = (value: number) => top + (100 - value) / 100 * (height - top - bottom);
-  const line = points.map((point, index) => `${index ? "L" : "M"}${x(index).toFixed(1)},${y(point.score).toFixed(1)}`).join(" ");
-  const area = points.length > 1 ? `${line} L${x(points.length - 1).toFixed(1)},${y(0)} L${x(0).toFixed(1)},${y(0)} Z` : "";
-  return <figure className="perf-chart" ref={frame}>
-    <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={`Interview score trend across ${points.length} interviews`}>
-      <defs>
-        <linearGradient id="perf-trend-fill" x1="0" x2="0" y1="0" y2="1">
-          <stop offset="0%" stopColor="currentColor" stopOpacity=".18" />
-          <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
-        </linearGradient>
-      </defs>
-      {[0, 40, 55, 70, 100].map(mark => <g key={mark} className={`perf-grid${mark === 70 ? " ready" : ""}`}>
-        <line x1={left} x2={width - right} y1={y(mark)} y2={y(mark)} />
-        <text x={left - 8} y={y(mark) + 3} textAnchor="end">{mark}</text>
-      </g>)}
-      <text className="perf-grid-label" x={left + 6} y={y(70) - 5}>Interview ready</text>
-      {area && <path className="perf-area" d={area} fill="url(#perf-trend-fill)" />}
-      {points.length > 1 && <path className="perf-line" d={line} pathLength={1} />}
-      {points.map((point, index) => <g key={pointKey(point)} className={`perf-point ${point.placement ? "placement" : "practice"}`}>
-        <circle cx={x(index)} cy={y(point.score)} r={point.placement ? 6 : 5}><title>{`${point.label} · ${date(point.at)} · ${Math.round(point.score)}`}</title></circle>
-        {(index % labelEvery === 0 || index === points.length - 1) && <text x={x(index)} y={height - 8} textAnchor={points.length > 1 && index === points.length - 1 ? "end" : points.length > 1 && index === 0 ? "start" : "middle"}>{new Intl.DateTimeFormat("en-IN", { day: "2-digit", month: "short", timeZone: "Asia/Kolkata" }).format(new Date(point.at))}</text>}
-      </g>)}
-    </svg>
-    <figcaption><span className="perf-legend placement">Placement interview</span><span className="perf-legend practice">Practice interview</span></figcaption>
-    <table className="visually-hidden"><caption>Interview scores</caption><thead><tr><th>Date</th><th>Interview</th><th>Score</th></tr></thead>
-      <tbody>{points.map(point => <tr key={pointKey(point)}><td>{date(point.at)}</td><td>{point.label}</td><td>{Math.round(point.score)}</td></tr>)}</tbody></table>
-  </figure>;
-}
-
-function Meter({ value, label }: { value: number | null; label: string }) {
-  return <div className="perf-meter" role="meter" aria-label={label} aria-valuemin={0} aria-valuemax={100} aria-valuenow={value ?? undefined}>
-    <span style={{ width: `${Math.max(0, Math.min(100, value ?? 0))}%` }} />
-  </div>;
-}
-
-export function Performance() {
-  const resource = useResource<PerformanceData>("/api/student/performance");
-  const data = resource.data;
-  return <>
-    <PageHeading eyebrow="TRACK YOUR GROWTH" title="My performance">
-      How your interviews, skills and placement readiness are changing over time.
-    </PageHeading>
-    <ResourceState resource={resource}>{data && <PerformanceBody data={data} />}</ResourceState>
-  </>;
-}
-
-function PerformanceBody({ data }: { data: PerformanceData }) {
-  const pending = data.pending_release_count;
-  const summary = data.summary;
-  if (!data.has_results || !summary) {
-    return <section className="panel"><Empty title="Your performance dashboard is waiting for its first result" action>
-      {pending ? "Your completed interviews are still being reviewed. Results appear here once they are released." : "Complete a practice interview to see your scores, skills and progress here."}
-    </Empty></section>;
-  }
-
-  const readiness = data.readiness.overall_score;
-  const points = data.trend;
-  const multiple = summary.released_count > 1;
-  const recentCount = summary.recent_average.count;
-  const skillLabel = (key: string) => data.skills.find(skill => skill.dimension === key)?.label ?? key.replace(/_/g, " ");
-  const communication = data.communication;
-  const weeks = data.activity.weeks;
-  const busiest = Math.max(1, ...weeks.map(week => week.count));
-  const opportunities = data.open_opportunities;
-
-  return <div className="perf-page">
-    <section className="stats-grid perf-kpis" aria-label="Performance summary">
-      <article className="stat-card"><div className="stat-label"><span>Placement readiness</span><Gauge size={18} /></div>
-        <strong>{readiness == null ? "—" : Math.round(readiness)}</strong>
-        <p>{readiness == null ? "Complete a placement interview to unlock" : data.readiness.label}</p></article>
-      <article className="stat-card"><div className="stat-label"><span>Latest score</span><ChartLine size={18} /></div>
-        <strong>{Math.round(summary.latest.score)}</strong><p><Delta value={summary.latest.change} /> vs previous</p></article>
-      <article className="stat-card"><div className="stat-label"><span>Average (last {recentCount})</span><Activity size={18} /></div>
-        <strong>{Math.round(summary.recent_average.score)}</strong><p>{summary.recent_average.label}</p></article>
-      <article className="stat-card"><div className="stat-label"><span>Best score</span><Trophy size={18} /></div>
-        <strong>{Math.round(summary.best.score)}</strong><p>{summary.best.label}</p></article>
-    </section>
-
-    <div className="perf-columns">
-      <section className="panel perf-trend">
-        <div className="section-heading"><div><span className="eyebrow">SCORE TREND</span><h2>Your interview scores</h2>
-          <p>{summary.released_count} released interview{summary.released_count === 1 ? "" : "s"} · {summary.placement_count} placement · {summary.practice_count} practice{pending ? ` · ${pending} awaiting release` : ""}</p></div>
-          <Link to="/reports">All reports <ArrowRight size={15} /></Link></div>
-        <TrendChart points={points} />
-        <p className="perf-summary">{multiple && points.length
-          ? <>Your score moved from <strong>{Math.round(points[0].score)}</strong> to <strong>{Math.round(summary.latest.score)}</strong> (<Delta value={summary.first_to_latest_change} />) since your first released interview.</>
-          : "Complete another interview to see how your score changes."}</p>
-      </section>
-
-      <section className="panel perf-readiness">
-        <div className="section-heading"><div><span className="eyebrow">PLACEMENT READINESS</span><h2>What makes up your index</h2></div></div>
-        {readiness == null ? <p className="muted">Your readiness index is calculated from released placement interviews. Practice results build your skills but are not counted.</p> : <>
-          <div className="perf-ring" style={{ ["--value" as string]: Math.round(readiness) }}>
-            <svg viewBox="0 0 120 120" aria-hidden="true"><circle cx="60" cy="60" r="50" /><circle className="value" cx="60" cy="60" r="50" pathLength={100} /></svg>
-            <div><strong>{Math.round(readiness)}</strong><span>/ 100</span></div>
-          </div>
-          <p className="perf-ring-label">{data.readiness.label}</p>
-          <dl className="perf-axes">{data.readiness.axes.map(({ axis, score, weight }) => <div key={axis}>
-            <dt>{AXIS_LABELS[axis] ?? axis.replace(/_/g, " ")}{weight != null && <small> · {weight}% weight</small>}</dt>
-            <dd><Meter value={score} label={axis.replace(/_/g, " ")} /><span>{score == null ? "—" : Math.round(score)}</span></dd>
-          </div>)}</dl>
-          {data.readiness.drives.length ? <ul className="perf-drive-scores">{data.readiness.drives.map(drive => <li key={drive.drive_id}><span>{drive.company_name}</span><small>{drive.role_title}</small><strong>{drive.best_score == null ? "—" : Math.round(drive.best_score)}</strong></li>)}</ul> : null}
-        </>}
-      </section>
-    </div>
-
-    <section className="panel perf-skills">
-      <div className="section-heading"><div><span className="eyebrow">SKILLS</span><h2>How each skill is developing</h2>
-        <p>Average of your last {recentCount} interview{recentCount === 1 ? "" : "s"}, with the change since your first one.</p></div></div>
-      <ul className="perf-skill-list">{data.skills.map(skill => <li key={skill.dimension}><span>{skill.label}</span><Meter value={skill.average} label={skill.label} />
-        <strong>{skill.average == null ? "Not assessed" : `${Math.round(skill.average)}%`}</strong>{multiple && <Delta value={skill.change} suffix="%" />}</li>)}</ul>
-    </section>
-
-    <div className="perf-columns perf-columns-even">
-      <section className="panel perf-focus">
-        <div className="section-heading"><div><span className="eyebrow">STRENGTHS AND FOCUS</span><h2>Where to put your effort</h2></div></div>
-        <div className="perf-chip-group"><h3><Award size={16} /> Consistent strengths</h3>
-          {data.strengths.length ? <div className="focus-chips">{data.strengths.map(key => <span className="pill" key={key}>{skillLabel(key)}</span>)}</div> : <p className="muted">No skill is consistently at 70% yet. Keep going.</p>}</div>
-        <div className="perf-chip-group"><h3><Target size={16} /> Focus next</h3>
-          {data.focus.length ? <div className="focus-chips">{data.focus.map(key => <span className="pill" key={key}>{skillLabel(key)}</span>)}</div> : <p className="muted">Every assessed skill is above 70% on average.</p>}</div>
-        {data.actions.length > 0 && <ol className="perf-actions">{data.actions.map(item => <li key={`${item.focus}-${item.action}`}><strong>{item.focus}</strong><span>{item.action}</span></li>)}</ol>}
-        <div className="perf-links"><Link className="button primary small" to="/practice"><Mic size={14} /> Practice an interview</Link><Link className="button secondary small" to="/coach"><BookOpen size={14} /> Prepare with AI Coach</Link></div>
-      </section>
-
-      <section className="panel perf-communication">
-        <div className="section-heading"><div><span className="eyebrow">COMMUNICATION</span><h2>How you speak</h2><p>From your latest interview.</p></div></div>
-        <dl className="perf-comm-grid">
-          <div><dt><MessageSquareText size={15} /> Speaking pace</dt><dd>{communication?.speaking_speed_wpm ? <>{communication.speaking_speed_wpm} <small>words/min</small></> : "Not measured"}</dd><small>{communication?.pace_label ? `${communication.pace_label} pace` : "Needs timed answers"}</small></div>
-          <div><dt><Flame size={15} /> Filler words</dt><dd>{communication?.filler_word_count ?? "—"}</dd><small>{communication?.filler_change != null ? <Delta value={communication.filler_change} suffix="" lowerIsBetter /> : "In the latest interview"}</small></div>
-        </dl>
-        {communication && Object.keys(communication.scores).length > 0 && <ul className="perf-skill-list compact">{Object.entries(communication.scores).map(([key, value]) => <li key={key}><span>{key.replace(/_/g, " ").replace(/^./, c => c.toUpperCase())}</span><Meter value={value} label={key} /><strong>{value == null ? "—" : `${Math.round(value)}%`}</strong></li>)}</ul>}
-        {communication?.top_filler_words.length ? <p className="muted perf-fillers">Most used: {communication.top_filler_words.map(word => `“${word}”`).join(", ")}</p> : communication && <p className="muted perf-fillers">No filler words detected in your latest interview.</p>}
-      </section>
-    </div>
-
-    <div className="perf-columns perf-columns-even">
-      <section className="panel perf-activity">
-        <div className="section-heading"><div><span className="eyebrow">CONSISTENCY</span><h2>Practice activity</h2><p>Interviews per week over the last {weeks.length} weeks · active in {data.activity.active_weeks} of {weeks.length} weeks.</p></div></div>
-        <div className="perf-bars" role="img" aria-label={`Interviews per week: ${weeks.map(week => week.count).join(", ")}`}>
-          {weeks.map((week, index) => <div key={week.week_start} title={`Week ending ${date(week.week_end)}: ${week.count}`}>
-            <div className="perf-bar-track"><span style={{ height: `${week.count ? Math.max(12, week.count / busiest * 100) : 4}%`, animationDelay: `${index * 40}ms` }} className={week.count ? "" : "perf-bar-empty"} /></div>
-            <small>{index === weeks.length - 1 ? "Now" : `${weeks.length - 1 - index}w`}</small>
-          </div>)}
-        </div>
-      </section>
-
-      <section className="panel perf-placements">
-        <div className="section-heading"><div><span className="eyebrow">PLACEMENTS</span><h2>Your placement journey</h2></div><Link to="/placements">Placements <ArrowRight size={15} /></Link></div>
-        <ul className="perf-timeline">{data.placement_results.map(point => <li key={pointKey(point)}>
-          <span className="perf-timeline-dot" /><div><strong>{point.label}</strong><small>{date(point.at)}</small></div><b>{Math.round(point.score)}</b>
-        </li>)}
-          {!data.placement_results.length && <li className="perf-timeline-empty">No placement interview results yet.</li>}
-        </ul>
-        {opportunities.length > 0 && <div className="perf-upcoming"><strong>{opportunities.length} open opportunit{opportunities.length === 1 ? "y" : "ies"}</strong>
-          <span>{opportunities.map(drive => [drive.company_name, drive.role_title].filter(Boolean).join(" · ") || "Placement drive").join(", ")}</span>
-          <Link className="button secondary small" to="/placements">View <ArrowRight size={14} /></Link></div>}
-      </section>
-    </div>
-  </div>;
-}
+export function SharedScorecard({token}:{token:string}){const resource=useResource<{candidate:string;role:string;score:number;competencies:Record<string,number>;strengths:string[];development:string[]}>(`/api/scorecard-shares/${encodeURIComponent(token)}`);return <main className="my-performance-intelligence mpi-public"><header className="mpi-heading"><div><span>VOICEDOTS ASSESSMENT SCORECARD</span><h1>{resource.data?.candidate||'Shared scorecard'}</h1></div></header><ResourceState resource={resource}>{null}</ResourceState>{resource.data&&<article className="mpi-card"><h2>{resource.data.role}</h2><h3>Overall score: {resource.data.score}/100</h3>{Object.entries(resource.data.competencies).map(([key,value])=><div className="mpi-competency" key={key}><div>{key.replaceAll('_',' ')}<progress max="100" value={value}/></div><b>{value}</b></div>)}<h3>Demonstrated strengths</h3>{resource.data.strengths.map((s,i)=><p key={i}>{s}</p>)}<h3>Development priorities</h3>{resource.data.development.map((s,i)=><p key={i}>{s}</p>)}<small>Candidate-shared AI assessment. Supports human review; not a hiring recommendation.</small></article>}</main>}

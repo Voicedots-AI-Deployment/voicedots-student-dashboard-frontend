@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Link, useParams } from "react-router-dom";
+import { Link, useParams, useSearchParams } from "react-router-dom";
 import { Download, ArrowLeft, ArrowRight, CheckCircle2, MessageSquare, Play, RefreshCw } from "lucide-react";
 import { api, apiUrl, type Report, type QuestionReview, type InterviewReportView, type AnswerCoaching } from "./api";
 import { ErrorMessage, humanize, useResource, ResourceState, date, score } from "./ui";
@@ -35,6 +35,7 @@ export function InterviewReport() {
   const released=report?.status === "released" && report.report?.status !== "awaiting_release";
   const detail=useResource<InterviewReportView>(released ? `/api/interview/${encodeURIComponent(sessionId)}/evaluation` : null);
   const recording=useResource<Recording>(released && report?.drive_id ? `/api/student/interview/${encodeURIComponent(sessionId)}/recording` : null);
+  const [query]=useSearchParams();
   const [tab,setTab]=useState<"overview"|"questions">("overview");
   const [feedback,setFeedback]=useState<Record<string,AnswerCoaching>>({});
   const [feedbackBusy,setFeedbackBusy]=useState(false),[feedbackError,setFeedbackError]=useState(""),[feedbackLoaded,setFeedbackLoaded]=useState(false);
@@ -71,8 +72,8 @@ export function InterviewReport() {
   const playbackPosition=useRef(0), resumePlayback=useRef(false);
   function refreshVideo(){playbackPosition.current=videoRef.current?.currentTime || 0;resumePlayback.current=Boolean(videoRef.current && !videoRef.current.paused);recording.reload();}
   function playbackError(){if(!refreshedPlayback.current){refreshedPlayback.current=true;playbackPosition.current=videoRef.current?.currentTime || 0;resumePlayback.current=Boolean(videoRef.current && !videoRef.current.paused);recording.reload();}else setMediaError("The video could not load. Refresh the secure link to try again.");}
-  function restorePlayback(){const video=videoRef.current;if(!video)return;if(playbackPosition.current>0)video.currentTime=playbackPosition.current;if(resumePlayback.current)void video.play().catch(()=>undefined);playbackPosition.current=0;resumePlayback.current=false;refreshedPlayback.current=false;setMediaError("");}
-  useEffect(() => {setTab("overview");setMediaError("");setFeedback({});setFeedbackLoaded(false);setFeedbackError("");},[sessionId]);
+  function restorePlayback(){const video=videoRef.current;if(!video)return;const q=Number(query.get("question"));const offset=q>0&&questions[q-1]?questionOffset(questions[q-1]):null;if(offset!=null&&playbackPosition.current===0)playbackPosition.current=offset;if(playbackPosition.current>0)video.currentTime=playbackPosition.current;if(resumePlayback.current)void video.play().catch(()=>undefined);playbackPosition.current=0;resumePlayback.current=false;refreshedPlayback.current=false;setMediaError("");}
+  useEffect(() => {setTab(query.has("question")?"questions":"overview");setMediaError("");setFeedback({});setFeedbackLoaded(false);setFeedbackError("");},[sessionId]);
   useEffect(() => {
     if(tab!=="questions" || !detail.data || feedbackLoaded) return;
     const controller=new AbortController();setFeedbackBusy(true);setFeedbackError("");
