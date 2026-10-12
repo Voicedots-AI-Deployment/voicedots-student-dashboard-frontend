@@ -12,6 +12,7 @@ import {
   Compass,
   FileText,
   House,
+  Library,
   LogOut,
   Menu,
   Mic,
@@ -34,6 +35,7 @@ import { Brand, ErrorMessage, Loading } from "./ui";
 import { InterviewReport } from "./interview-report";
 import { Overview, Placements, Profile, Reports } from "./pages";
 import { Academics } from "./academics";
+import { StudyResources } from "./study-resources";
 import { StudentErp } from "./student-erp";
 import { Calendar } from "./calendar";
 import { Coach } from "./coach";
@@ -279,6 +281,7 @@ const nav = [
   { to: "/resume-studio", label: "Resume Studio", icon: FileText },
   { to: "/career", label: "Career coach", icon: Compass },
   { to: "/academics", label: "Marks and attendance", icon: BookOpen },
+  { to: "/study-resources", label: "Study Resources", icon: Library },
   { to: "/erp", label: "My ERP", icon: BookOpen },
   { to: "/reports", label: "My reports", icon: FileText },
   { to: "/profile", label: "My profile", icon: UserRound },
@@ -467,6 +470,7 @@ export function App() {
             <Route path="/reports/:sessionId" element={<InterviewReport />} />
             <Route path="/growth" element={<Navigate to="/" replace />} />
             <Route path="/academics" element={<Academics />} />
+            <Route path="/study-resources" element={<StudyResources />} />
             <Route path="/erp" element={<StudentErp />} />
             <Route path="/erp/:service" element={<StudentErp />} />
             <Route path="/coach" element={<Coach />} />
