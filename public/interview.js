@@ -681,8 +681,9 @@ function showPrejoinError(element, message) {
 
 function renderPreflight() {
   const panels = { camera: pjPanel1, microphone: pjPanel2, noise: document.getElementById("pj-noise-panel"), liveness: document.getElementById("pj-liveness-panel"), identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
+  const firstFailed = PREFLIGHT_ORDER.find(key => preflightChecks[key] === "failed");
   for (const [key, panel] of Object.entries(panels)) {
-    if (panel) panel.classList.toggle("active", preflightChecks[key] === "failed" ||
+    if (panel) panel.classList.toggle("active", key === firstFailed ||
       (preflightStarted && key === "screen" && preflightChecks[key] !== "passed" &&
        CORE_CHECKS.every(item => preflightChecks[item] === "passed")));
     panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
@@ -917,6 +918,50 @@ const PREFLIGHT_STEP_TEXT = {
   screen: { checking: "Waiting for your entire screen…", passed: "Sharing", failed: "Share again" },
 };
 
+// One focused step at a time: which check the student should look at now.
+const PREFLIGHT_ORDER = ["camera", "microphone", "noise", "liveness", "identity", "network", "screen"];
+const PREFLIGHT_TITLES = { camera: "Camera", microphone: "Microphone", noise: "Quiet room", liveness: "Liveness", identity: "Identity", network: "Connection", screen: "Screen sharing" };
+const PREFLIGHT_ICONS = {
+  camera: '<svg viewBox="0 0 24 24"><path d="M15 10l4.5-2.6v9.2L15 14"/><rect x="3" y="6.5" width="12" height="11" rx="2.5"/></svg>',
+  microphone: '<i class="pf-ring-a"></i><i class="pf-ring-b"></i><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
+  noise: '<svg viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/></svg>',
+  liveness: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="10" rx="5.5" ry="7"/><path d="M5 21c1.2-3 4-4.5 7-4.5s5.8 1.5 7 4.5"/></svg>',
+  identity: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  network: '<svg viewBox="0 0 24 24"><path d="M4 9a12 12 0 0 1 16 0M7 12.5a7.5 7.5 0 0 1 10 0M10 16a3 3 0 0 1 4 0"/><circle cx="12" cy="19" r="1"/></svg>',
+  screen: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+};
+
+function currentPreflightFocus() {
+  const failed = PREFLIGHT_ORDER.find(key => preflightChecks[key] === "failed");
+  if (failed) return failed;
+  // Steps that need the student come first, then background ones.
+  const active = ["microphone", "noise", "liveness", "identity", "camera", "network"].find(key => preflightChecks[key] === "checking");
+  if (active) return active;
+  if (preflightStarted && CORE_CHECKS.every(key => preflightChecks[key] === "passed")) return "screen";
+  return PREFLIGHT_ORDER.find(key => preflightChecks[key] !== "passed") || "screen";
+}
+
+function renderPreflightFocus() {
+  const focus = document.getElementById("pf-focus");
+  if (!focus) return;
+  focus.hidden = !preflightStarted;
+  if (!preflightStarted) return;
+  const key = currentPreflightFocus();
+  const state = key === "screen" && preflightChecks.screen === "pending" ? "action" : preflightChecks[key];
+  if (focus.dataset.step !== key) {
+    focus.dataset.step = key;
+    document.getElementById("pf-focus-art").innerHTML = PREFLIGHT_ICONS[key] || "";
+    focus.classList.remove("pf-focus-enter"); void focus.offsetWidth; focus.classList.add("pf-focus-enter");
+  }
+  focus.dataset.state = state;
+  const done = PREFLIGHT_ORDER.filter(item => preflightChecks[item] === "passed").length;
+  document.getElementById("pf-focus-count").textContent = `Step ${PREFLIGHT_ORDER.indexOf(key) + 1} of ${PREFLIGHT_ORDER.length} · ${done} done`;
+  document.getElementById("pf-focus-title").textContent = PREFLIGHT_TITLES[key];
+  document.getElementById("pf-focus-state").textContent = state === "action" ? "Click Share entire screen to continue"
+    : key === "noise" && state === "passed" ? `Quiet enough${lastNoiseDb ? ` · about ${lastNoiseDb} dB` : ""}`
+    : PREFLIGHT_STEP_TEXT[key]?.[state] || "Getting ready…";
+}
+
 function renderPreflightSteps() {
   const list = document.getElementById("pf-steps");
   if (!list) return;
@@ -927,11 +972,13 @@ function renderPreflightSteps() {
     if (key === "screen" && state === "pending" && preflightStarted && CORE_CHECKS.every(item => preflightChecks[item] === "passed")) state = "action";
     if (row.dataset.state === state && !(key === "noise" && state === "passed")) continue;
     row.dataset.state = state;
+    row.title = `${PREFLIGHT_TITLES[key]}: ${state === "passed" ? "done" : state === "failed" ? "needs attention" : state === "checking" ? "checking" : "waiting"}`;
     const text = state === "action" ? "Click Share entire screen below"
       : key === "noise" && state === "passed" ? `Quiet enough${lastNoiseDb ? ` · about ${lastNoiseDb} dB` : ""}`
       : PREFLIGHT_STEP_TEXT[key]?.[state] || "Waiting";
     row.querySelector("small").textContent = text;
   }
+  renderPreflightFocus();
 }
 
 async function checkPreflightItem(key, action) {
@@ -1990,6 +2037,7 @@ function startMicLevelTest() {
       const rms = Math.sqrt(waveform.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / waveform.length);
       const target = Math.max(0, Math.min(1, (rms - .004) / .12));
       level += (target - level) * (target > level ? .4 : .14);
+      document.getElementById("pf-focus")?.style.setProperty("--mic-level", level.toFixed(3));
       const signal = level > .04 ? "active" : "quiet";
       if (meter && meter.dataset.signal !== signal) {
         meter.dataset.signal = signal;

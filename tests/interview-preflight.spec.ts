@@ -614,7 +614,7 @@ async function simulateFace(page: Page, mode: "live" | "still") {
 }
 
 for (const [width, height] of [[1440, 1000], [390, 844]]) {
-  test(`liveness arrow stays in view with checklist at ${width}px`, async ({ page }) => {
+  test(`liveness arrow stays in view beside the focused step at ${width}px`, async ({ page }) => {
     await page.setViewportSize({ width, height });
     await prepare(page);
     await simulateFace(page, "still");
@@ -624,8 +624,14 @@ for (const [width, height] of [[1440, 1000], [390, 844]]) {
     const checklist = await page.locator("#pf-steps").boundingBox();
     const arrow = await page.locator("#pf-liveness .pf-arrow").boundingBox();
     expect(camera).not.toBeNull(); expect(checklist).not.toBeNull(); expect(arrow).not.toBeNull();
-    if (width >= 960) expect(checklist!.x + checklist!.width).toBeLessThanOrEqual(camera!.x);
+    // Camera on the left, the step row and current step on the right; on a
+    // phone the camera comes first.
+    if (width >= 960) expect(camera!.x + camera!.width).toBeLessThanOrEqual(checklist!.x);
     else expect(camera!.y + camera!.height).toBeLessThanOrEqual(checklist!.y);
+    await expect(page.locator("#pf-focus")).toBeVisible();
+    await expect(page.locator("#pf-focus-title")).toHaveText("Liveness");
+    // The whole check fits the window on desktop.
+    if (width >= 960) expect(await page.evaluate(() => document.documentElement.scrollHeight <= innerHeight + 2)).toBe(true);
     expect(arrow!.y).toBeGreaterThanOrEqual(0);
     expect(arrow!.y + arrow!.height).toBeLessThanOrEqual(height);
     await page.screenshot({ path: `../.local/ui/preflight-${width}.png`, fullPage: true });

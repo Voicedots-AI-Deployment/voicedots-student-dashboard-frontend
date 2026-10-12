@@ -294,6 +294,10 @@
         <p id="preflight-status" role="status" aria-live="polite">We’ll check your camera, microphone, identity and connection, then request your entire screen.</p>
         <div id="preflight-loading" class="pf-progress" hidden aria-hidden="true"><span></span></div>
         <div class="pf-layout">
+        <div class="pf-focus" id="pf-focus" hidden aria-live="polite">
+          <span class="pf-focus-art" id="pf-focus-art" aria-hidden="true"></span>
+          <span class="pf-focus-copy"><span class="pf-focus-count" id="pf-focus-count"></span><strong id="pf-focus-title"></strong><span id="pf-focus-state"></span></span>
+        </div>
         <ol class="pf-steps" id="pf-steps" hidden aria-label="Interview checks">
           <li data-check="camera" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Camera</strong><small>Waiting</small></span></li>
           <li data-check="microphone" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Microphone</strong><small>Waiting</small><span class="pf-mic-activity" id="mic-activity" data-signal="off" hidden><span class="pf-mic-wave" aria-hidden="true"></span><span class="pf-mic-caption"><span class="pf-mic-dot" aria-hidden="true"></span><span id="mic-activity-label">Say a few words</span></span></span></span></li>
