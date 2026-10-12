@@ -3322,7 +3322,7 @@ function handleControlMessage(payload) {
     // Backend sends "tts_begin" (carries the AI's question text), not
     // "question". Also flips the aiSpeaking flag as early as possible
     // (defense-in-depth mic gate, Feature 1) — deliberately NOT cleared on
-    // the backend's "tts_end" (that fires once Deepgram finishes
+    // the backend's "tts_end" (that fires once the voice provider finishes
     // GENERATING audio, well before the browser finishes actually playing
     // it; see session.py's speak() Phase 1 vs Phase 2 docstring). It's
     // cleared instead by schedulePCMChunk's own playback-completion timer
@@ -3359,7 +3359,7 @@ function handleControlMessage(payload) {
       break;
 
     case "tts_end": {
-      // Deepgram has now streamed every chunk for this epoch. Waiting for
+      // The voice provider has now streamed every chunk for this epoch. Waiting for
       // this explicit boundary prevents a temporary network gap between
       // chunks from cutting a question off halfway through.
       const endedEpoch = Number(payload.audio_epoch || 0);
@@ -3377,7 +3377,7 @@ function handleControlMessage(payload) {
       }
       break;
 
-    // Backend sends "final_transcript" once Deepgram reaches EndOfTurn —
+    // Backend sends "final_transcript" once the provider reaches end of turn —
     // this is the candidate's own committed speech and is exactly what was
     // never being shown ("the agent speaks but I can't understand my
     // voice, it's not taking"), because the frontend was listening for a
