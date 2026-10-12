@@ -3675,7 +3675,13 @@ function connectInterviewSocket() {
   ws = socket;
   if (!interviewHasStarted) initialConnectionTimer = setTimeout(() => returnToPreflight("Interview connection timed out. Retry readiness."), 30000);
   socket.binaryType = "arraybuffer";
+  let heartbeatTimer = null;
   socket.onopen = () => {
+    const heartbeat = () => {
+      if (socket.readyState === WebSocket.OPEN) socket.send(JSON.stringify({ type: "heartbeat" }));
+    };
+    heartbeat();
+    heartbeatTimer = setInterval(heartbeat, 2000);
     if (rndStatus) rndStatus.textContent = reconnectAttempts ? "Reconnecting interview…" : "Authenticating interview…";
   };
   socket.onmessage = (event) => {
@@ -3687,6 +3693,7 @@ function connectInterviewSocket() {
   };
   socket.onerror = () => console.error("Interview WebSocket error");
   socket.onclose = (event) => {
+    clearInterval(heartbeatTimer);
     if (ws !== socket) return;
     ws = null;
     proctoringActive = false;
