@@ -1,4 +1,4 @@
-/* Heavy object inference stays off the interview UI/audio-control thread. */
+/* Face and object inference stay off the interview audio/UI thread. */
 let detector;
 self.onmessage = async ({data}) => {
   const {id, type, frame, timestamp} = data;
@@ -7,6 +7,17 @@ self.onmessage = async ({data}) => {
       const vision = await import("/vendor/mediapipe/vision_bundle.mjs");
       const fileset = await vision.FilesetResolver.forVisionTasks("/vendor/mediapipe/wasm");
       fileset.wasmLoaderPath += "?v=proctor-log-routing-20261010";
+      if (data.detectorType === "face") {
+        detector = await vision.FaceLandmarker.createFromOptions(fileset, {
+          baseOptions: {modelAssetPath: "/vendor/mediapipe/face_landmarker.task", delegate: "CPU"},
+          runningMode: "VIDEO", numFaces: 2,
+          minFaceDetectionConfidence: .65, minFacePresenceConfidence: .65,
+          minTrackingConfidence: .6, outputFaceBlendshapes: false,
+          outputFacialTransformationMatrixes: false,
+        });
+        self.postMessage({id, result: true});
+        return;
+      }
       let failure;
       // Quantized CPU inference avoids silent GPU-delegate misses and uses
       // substantially less model memory than the float32 Lite2 asset.

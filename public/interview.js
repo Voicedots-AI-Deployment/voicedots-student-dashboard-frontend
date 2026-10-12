@@ -1375,6 +1375,10 @@ async function loadFaceDetector() {
   visionCheckUnavailable = false;
   visionDetectorLoadPromise = (async () => {
     try {
+      faceLandmarker = await createWorkerObjectDetector("face");
+      if (faceLandmarker) return true;
+    } catch (error) { console.warn("Worker face check unavailable; using the browser detector.", error); }
+    try {
       const vision = await import(VISION_MODULE_URL);
       const fileset = await vision.FilesetResolver.forVisionTasks(VISION_WASM_URL);
       fileset.wasmLoaderPath += "?v=proctor-log-routing-20261010";
@@ -1423,9 +1427,9 @@ async function loadFaceDetector() {
 // mouth visible and cannot see a person whose back is turned to the camera
 // (e.g. someone crouched behind the candidate). This runs a general "person"
 // object detector so a body is still counted even with no face visible.
-async function createWorkerObjectDetector() {
-  if (workerObjectFailed || !window.Worker || !window.createImageBitmap || !window.OffscreenCanvas) return null;
-  const worker = new Worker("/proctor-object-worker.js?v=cpu-int8-20261010");
+async function createWorkerObjectDetector(detectorType = "object") {
+  if ((detectorType === "object" && workerObjectFailed) || !window.Worker || !window.createImageBitmap || !window.OffscreenCanvas) return null;
+  const worker = new Worker("/proctor-object-worker.js?v=audio-priority-20261012");
   const pending = new Map();
   let sequence = 0;
   const fail = error => {
@@ -1433,7 +1437,9 @@ async function createWorkerObjectDetector() {
     pending.clear();
   };
   worker.onerror = () => {
-    workerObjectFailed = true; objectDetector = null; lastPersonDetectionAt = 0; cameraAnalysisPassing = false;
+    if (detectorType === "face") { faceLandmarker = null; visionCheckUnavailable = true; lastVisionDetectorAttemptAt = Date.now(); }
+    else { workerObjectFailed = true; objectDetector = null; lastPersonDetectionAt = 0; }
+    cameraAnalysisPassing = false;
     worker.terminate(); fail(new Error("Object inference worker failed."));
   };
   worker.onmessage = ({data}) => {
@@ -1449,15 +1455,18 @@ async function createWorkerObjectDetector() {
     try { worker.postMessage({id, type, ...extra}, transfer); }
     catch (error) { clearTimeout(timer); pending.delete(id); reject(error); }
   });
-  try { await request("init"); }
+  try { await request("init", {detectorType}); }
   catch (error) { worker.terminate(); fail(error); throw error; }
   return {
+    workerInference: true,
     async detectForVideo(source, timestamp) {
       const frame = await createImageBitmap(source);
       try { return await request("detect", {frame, timestamp}, [frame]); }
       catch (error) {
-        worker.terminate(); fail(error); workerObjectFailed = true;
-        objectDetector = null; lastPersonDetectionAt = 0; cameraAnalysisPassing = false;
+        worker.terminate(); fail(error);
+        if (detectorType === "face") { faceLandmarker = null; visionCheckUnavailable = true; lastVisionDetectorAttemptAt = Date.now(); }
+        else { workerObjectFailed = true; objectDetector = null; lastPersonDetectionAt = 0; }
+        cameraAnalysisPassing = false;
         throw error; // Next analysis tick loads the fast fallback, never stale passing data.
       }
     },
@@ -1805,7 +1814,7 @@ async function analyzeCameraFrame() {
   if (!objectDetector && !objectDetectorUnavailable) void loadPersonDetector();
   let landmarks = null;
   if (faceLandmarker) {
-    const result = faceLandmarker.detectForVideo(sourceVideo, performance.now());
+    const result = await faceLandmarker.detectForVideo(sourceVideo, performance.now());
     const faces = distinctFaceLandmarks(result.faceLandmarks || []);
     faceCountDetected = faces.length;
     landmarks = faces[0] || null;
@@ -3445,7 +3454,12 @@ function handleControlMessage(payload) {
       currentTTSSampleRate = [24000, 48000].includes(Number(payload.sample_rate)) ? Number(payload.sample_rate) : TTS_SAMPLE_RATE;
       clearProcessingStatus();
       currentSpeakerIsProctor = payload.speaker === "proctor";
-      currentAudioEpoch = Number(payload.audio_epoch || currentAudioEpoch);
+      const nextAudioEpoch = Number(payload.audio_epoch || currentAudioEpoch);
+      // A server recovery or panel change supersedes any old queued audio.
+      // Keeping its future clock would delay the new question behind stale
+      // sources even though those epochs are no longer accepted.
+      if (nextAudioEpoch !== currentAudioEpoch) resetPlaybackQueue();
+      currentAudioEpoch = nextAudioEpoch;
       if (playbackCompleteTimer !== null) {
         clearTimeout(playbackCompleteTimer);
         playbackCompleteTimer = null;

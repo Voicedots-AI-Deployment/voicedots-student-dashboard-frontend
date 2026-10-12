@@ -83,3 +83,23 @@ for (const round of [1, 2, 3, 4]) {
   });
 }
 }
+
+test('next panel audio does not wait behind a superseded playback queue',async({page})=>{
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'test'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`
+ window.staleAudioAudit=()=>{
+  let stopped=0;let started=null;
+  playbackAudioContext={state:'running',currentTime:10,destination:{},
+   createBuffer(c,n,r){return {duration:n/r,getChannelData:()=>new Float32Array(n)}},
+   createBufferSource(){return {connect(){},stop(){},start(time){started=time}}}};
+  playbackAnalyser=null;currentAudioEpoch=1;playbackTime=45;
+  activePlaybackSources.add({stop(){stopped++}});
+  handleControlMessage({type:'tts_begin',audio_epoch:2,text:'Next panel question',sample_rate:24000});
+  const packet=new ArrayBuffer(484);new DataView(packet).setUint32(0,2,false);handleBinaryFrame(packet);
+  return {stopped,started,epoch:currentAudioEpoch};
+ };
+ `})});
+ await page.goto('/interview.html?id=test');await page.waitForFunction(()=>!!(window as any).staleAudioAudit);
+ const result=await page.evaluate(()=>(window as any).staleAudioAudit());
+ expect(result.stopped).toBe(1);expect(result.epoch).toBe(2);expect(result.started).toBeLessThan(10.1);
+});
