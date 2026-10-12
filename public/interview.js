@@ -1193,6 +1193,9 @@ function updatePrejoinReadiness() {
 function bindMediaTrackEnded(track) {
   if (!track) return;
   track.addEventListener("ended", () => {
+    // A device switch removes the old track before stopping it. Ignore that
+    // expected ended event instead of treating the replacement as a loss.
+    if (!userMediaStream?.getTracks().includes(track)) return;
     const isVideo = track.kind === "video";
     if (isVideo) {
       photoVerifier.invalidate();
@@ -1211,6 +1214,8 @@ function bindMediaTrackEnded(track) {
       if (_isCallScreenActive()) {
         if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "required_media_state", media: "microphone", state: "lost" }));
         recordIntegrityViolation("microphone_lost", "Microphone disconnected during the interview.");
+        microphoneCaptureStatus("Microphone disconnected. Reconnecting audio…");
+        void recoverMicrophoneCapture(true);
       }
     }
     updatePrejoinReadiness();
@@ -1222,11 +1227,24 @@ function bindMediaTrackEnded(track) {
   // every other signal, so it also passes through the hard-loss clustering
   // below and isn't double-penalized alongside a same-instant 'ended'.
   track.addEventListener("mute", () => {
-    if (!_isCallScreenActive()) return;
+    if (!_isCallScreenActive() || !userMediaStream?.getTracks().includes(track)) return;
     const isVideo = track.kind === "video";
+    if (!isVideo) {
+      // Browsers also emit `mute` for temporary device/OS interruptions.
+      // Give the device a moment to recover; if it remains silent, replace
+      // the track and let the server pause/resume the answer capture.
+      window.setTimeout(() => {
+        if (!track.muted || interviewStopRequested || !userMediaStream?.getTracks().includes(track)) return;
+        microphoneTrackLive = false;
+        if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "required_media_state", media: "microphone", state: "lost" }));
+        microphoneCaptureStatus("Microphone signal paused. Reconnecting audio…");
+        void recoverMicrophoneCapture(true);
+      }, 750);
+      return;
+    }
     recordIntegrityViolation(
-      isVideo ? "camera_disable_attempt" : "microphone_disable_attempt",
-      isVideo ? "Camera stopped delivering video." : "Microphone stopped delivering audio.",
+      "camera_disable_attempt",
+      "Camera stopped delivering video.",
     );
   });
 }
@@ -1625,6 +1643,27 @@ function frameSharpness(video) {
 }
 let cameraQualityIssue = null;
 let lastCameraQualityNoticeAt = 0;
+function assessCameraLighting(luminance) {
+  const passing = luminance >= 32 && luminance <= 242;
+  return {
+    passing,
+    state: passing ? "pass" : "warn",
+    message: passing
+      ? "✓ Lighting is clear"
+      : luminance < 32
+        ? "Face looks dim; add light in front if available. You can continue."
+        : "Reduce direct light behind you if possible. You can continue.",
+  };
+}
+
+function cameraEntryChecksPass({ sharpness, exactlyOneFace, exactlyOnePerson, framingPassing,
+  visionCheckUnavailable, objectDetectorUnavailable, fullPersonCheckReady, phoneDetected }) {
+  // Lighting remains advisory: it should never override a clear face and
+  // valid person/framing checks.
+  return sharpness >= 12 && exactlyOneFace && exactlyOnePerson && framingPassing &&
+    !visionCheckUnavailable && !objectDetectorUnavailable && fullPersonCheckReady && !phoneDetected;
+}
+
 function landmarkGazeOffCamera(landmarks) {
   if (!landmarks || landmarks.length < 478) return false;
   const ratio = (iris, a, b) => {
@@ -1762,21 +1801,18 @@ async function analyzeCameraFrame() {
   latestFaceLandmarksAt = Date.now();
   faceQualityRegion = faceRegion(landmarks);
   const luminance = frameLighting(sourceVideo);
-  lightingPassing = luminance >= 40 && luminance <= 235;
-  setVisionCheck(
-    lightingCheckEl,
-    lightingPassing ? "pass" : "fail",
-    lightingPassing ? "✓ Lighting is clear" : (luminance < 40 ? "More light needed" : "Reduce backlight"),
-  );
+  const lighting = assessCameraLighting(luminance);
+  lightingPassing = lighting.passing;
+  setVisionCheck(lightingCheckEl, lighting.state, lighting.message);
 
   const sharpness = frameSharpness(sourceVideo);
-  const qualityIssue = !lightingPassing ? "poor_lighting" : sharpness < 12 ? "camera_blurry" : null;
+  const qualityIssue = sharpness < 12 ? "camera_blurry" : !lightingPassing ? "poor_lighting" : null;
   if (qualityIssue) {
-    cameraAnalysisPassing = false;
+    if (qualityIssue === "camera_blurry") cameraAnalysisPassing = false;
     absentFaceSince = multipleFaceSince = gazeOffCameraSince = null;
     lastMultiplePeopleDetectedAt = 0;
     if (!proctoringActive) { phoneVisibleSince = null; lastPhoneDetectedAt = 0; }
-    const guidance = qualityIssue === "poor_lighting" ? "Camera lighting is too low or strongly backlit. Add light in front of you and avoid a bright light behind you." : "Your camera image looks blurry. Clean the lens, focus the camera and keep your face clearly visible.";
+    const guidance = qualityIssue === "poor_lighting" ? lighting.message : "Your camera image looks blurry. Clean the lens, focus the camera and keep your face clearly visible.";
     setVisionCheck(lightingCheckEl, "warn", guidance);
     updatePrejoinReadiness();
     if (proctoringActive && (cameraQualityIssue !== qualityIssue || Date.now()-lastCameraQualityNoticeAt > 15000)) {
@@ -1785,7 +1821,7 @@ async function analyzeCameraFrame() {
       lastCameraQualityNoticeAt = Date.now();
     }
     cameraQualityIssue = qualityIssue;
-    if (!proctoringActive) return;
+    if (!proctoringActive && qualityIssue === "camera_blurry") return;
   }
   if (!qualityIssue && cameraQualityIssue) {
     if (proctoringActive) _sendIntegrityEvent("camera_quality_restored", "info", {});
@@ -1930,8 +1966,10 @@ async function analyzeCameraFrame() {
   // A face-only result is insufficient for proctoring: it cannot rule out a
   // turned-away/background person. Continue stays disabled until both models
   // have produced a result for the live frame.
-  cameraAnalysisPassing = lightingPassing && exactlyOneFace && exactlyOnePerson && framingPassing &&
-    !visionCheckUnavailable && !objectDetectorUnavailable && fullPersonCheckReady && !phoneDetected;
+  cameraAnalysisPassing = cameraEntryChecksPass({
+    sharpness, exactlyOneFace, exactlyOnePerson, framingPassing,
+    visionCheckUnavailable, objectDetectorUnavailable, fullPersonCheckReady, phoneDetected,
+  });
   updatePrejoinReadiness();
 
   if (!proctoringActive || now - lastVisionObservationAt > 8000) {
@@ -3596,7 +3634,12 @@ function connectInterviewSocket() {
       return;
     }
     if ([4401, 4403, 4404].includes(event.code)) {
-      showFatalError("The interview could not be resumed because authorization or session access expired.");
+      const reason = event.code === 4401
+        ? "Your sign-in session expired. Sign in again to resume; your saved answers are preserved."
+        : event.code === 4403
+          ? "Interview verification or placement access needs attention. Reopen this attempt to resume; your saved answers are preserved."
+          : "This interview session is no longer available. Your saved answers are preserved.";
+      showFatalError(reason);
       return;
     }
     if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {

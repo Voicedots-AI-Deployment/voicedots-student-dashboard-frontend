@@ -19,11 +19,28 @@ test.beforeEach(async({page})=>{
         state(){return audioContext.state;},
         fail(){micProcessor.onprocessorerror();},
         async recognition(){const previous=micProcessor;handleControlMessage({type:"transcription_recovery",detail:"Restoring speech recognition."});await new Promise(resolve=>setTimeout(resolve,100));return {sameProcessor:previous===micProcessor,stillListening:!aiSpeaking};},
+        async mutedTrack(){
+          callScreen.style.display="block";
+          const track=userMediaStream.getAudioTracks()[0];
+          Object.defineProperty(track,"muted",{configurable:true,get:()=>true});
+          window.microphoneRecoveryCalls=0;window.microphoneIntegrityCalls=0;
+          const originalRecover=recoverMicrophoneCapture;
+          const originalViolation=recordIntegrityViolation;
+          recoverMicrophoneCapture=()=>{window.microphoneRecoveryCalls++;return Promise.resolve();};
+          recordIntegrityViolation=()=>{window.microphoneIntegrityCalls++;};
+          bindMediaTrackEnded(track);track.dispatchEvent(new Event("mute"));
+          await new Promise(resolve=>setTimeout(resolve,800));
+          recoverMicrophoneCapture=originalRecover;recordIntegrityViolation=originalViolation;
+          return {recoveries:window.microphoneRecoveryCalls,integrityEvents:window.microphoneIntegrityCalls};
+        },
         kind:preflightFailureKind,
         listening(){aiSpeaking=true;activePlaybackSources.clear();handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});return aiSpeaking;},
         gate(){aiSpeaking=true;activePlaybackSources.add({});handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});const value=aiSpeaking;activePlaybackSources.clear();aiSpeaking=false;return value;},
         async close(){interviewStopRequested=true;clearInterval(microphoneWatchdog);micProcessor.disconnect();await audioContext.close();await window.sourceContext.close();ws=null;}
-      };`});
+      };
+      window.__testCameraLighting = assessCameraLighting;
+      window.__testCameraEntryChecks = cameraEntryChecksPass;
+    `});
   });
   await page.goto('/interview.html?id=audio-recovery');
   await expect.poll(()=>page.evaluate(()=>!!(window as any).captureRecovery)).toBe(true);
@@ -57,4 +74,24 @@ test('recognition reconnect leaves the working PCM microphone capture running',a
   expect(await page.evaluate(()=>(window as any).captureRecovery.recognition())).toEqual({sameProcessor:true,stillListening:true});
   await expect.poll(()=>page.evaluate(()=>(window as any).captureRecovery.count())).toBeGreaterThan(before+2);
   await page.evaluate(()=>(window as any).captureRecovery.close());
+});
+
+test('a muted microphone track is recovered without being reported as misconduct',async({page})=>{
+  await page.evaluate(()=>(window as any).captureRecovery.start());
+  expect(await page.evaluate(()=>(window as any).captureRecovery.mutedTrack())).toEqual({recoveries:1,integrityEvents:0});
+  await page.evaluate(()=>(window as any).captureRecovery.close());
+});
+
+test('low face brightness is advisory when the camera and identity checks pass',async({page})=>{
+  const lighting=await page.evaluate(()=>(window as any).__testCameraLighting(24));
+  expect(lighting.state).toBe('warn');
+  expect(lighting.message).toContain('You can continue');
+  expect(await page.evaluate(()=>(window as any).__testCameraEntryChecks({
+    sharpness:18,exactlyOneFace:true,exactlyOnePerson:true,framingPassing:true,
+    visionCheckUnavailable:false,objectDetectorUnavailable:false,fullPersonCheckReady:true,phoneDetected:false,
+  }))).toBe(true);
+  expect(await page.evaluate(()=>(window as any).__testCameraEntryChecks({
+    sharpness:18,exactlyOneFace:false,exactlyOnePerson:true,framingPassing:true,
+    visionCheckUnavailable:false,objectDetectorUnavailable:false,fullPersonCheckReady:true,phoneDetected:false,
+  }))).toBe(false);
 });
