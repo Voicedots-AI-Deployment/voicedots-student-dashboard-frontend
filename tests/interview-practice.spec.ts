@@ -181,6 +181,22 @@ test("Placement mode filters unavailable drives and renders only its configured 
   await page.screenshot({ path: "test-results/placement-interview-desktop.png", fullPage: true });
 });
 
+test("an attempt prepared but not yet started can be continued instead of showing unavailable", async ({ page }) => {
+  await mockPortal(page, {
+    drives: [activeDrive({ interview_action: "resume", interview_status: "in_progress" })],
+    context: driveContext({
+      action: "resume", can_start: false, can_resume: true, can_start_next_attempt: false,
+      session_id: null, submission_id: "prepared-submission", preparation_status: "ready",
+      attempt_number: 1, current_attempt_number: 1, next_attempt_number: 1, attempts_used: 1, attempts_remaining: 1,
+    }),
+  });
+  await page.goto("/practice");
+  await page.getByRole("tab", { name: "Placement Interview" }).click();
+  await expect(page.getByRole("button", { name: "Interview unavailable" })).toHaveCount(0);
+  await page.locator(".placement-primary-action").getByRole("button", { name: "Continue interview" }).click();
+  await expect(page).toHaveURL(/interview\.html\?id=prepared-submission$/);
+});
+
 test("Placement continuation and results follow backend session and release state", async ({ page }) => {
   await mockPortal(page, {
     drives: [activeDrive({ interview_action: "resume", interview_status: "in_progress" })],
