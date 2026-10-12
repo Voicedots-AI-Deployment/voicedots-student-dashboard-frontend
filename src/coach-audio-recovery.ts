@@ -88,3 +88,12 @@ export function coachPlaybackAck(context: AudioContext, endsAt: number, isCurren
   timer = setTimeout(check, Math.max(0, (endsAt - context.currentTime) * 1000) + 70);
   return () => { cancelled = true; clearTimeout(timer); };
 }
+
+// A paused, unmuted microphone button resumes audio on the user gesture
+// without accidentally muting the microphone while recovering it.
+export function resumeCoachAudio(context: BaseAudioContext | undefined, muted: boolean): boolean {
+  if (!context || context.state === 'closed') return false;
+  const preserveUnmuted = !muted && context.state !== 'running';
+  void (context as AudioContext).resume().catch(() => {});
+  return preserveUnmuted;
+}

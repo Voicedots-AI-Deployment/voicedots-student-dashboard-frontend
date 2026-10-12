@@ -60,3 +60,17 @@ test('Coach releases a late replacement microphone when the lesson has already e
  await page.evaluate(()=>{const w=window as any;w.dispose();w.pending({getTracks:()=>[{stop(){w.stopped++}}]})});
  await expect.poll(()=>page.evaluate(()=>(window as any).stopped)).toBe(1);
 });
+
+test('resuming paused Coach audio does not turn an unmuted microphone off',async({page})=>{
+ await page.goto('/');
+ const result=await page.evaluate(async()=>{
+  const url='/src/coach-audio-recovery.ts',helper=await import(url);
+  let resumes=0;
+  const context:any={state:'suspended',resume:async()=>{resumes++;context.state='running'}};
+  const preserve=helper.resumeCoachAudio(context,false);
+  context.state='suspended';const unmuteNormally=helper.resumeCoachAudio(context,true);
+  const toggleNormally=helper.resumeCoachAudio(context,false);
+  return {preserve,unmuteNormally,toggleNormally,resumes};
+ });
+ expect(result).toEqual({preserve:true,unmuteNormally:false,toggleNormally:false,resumes:3});
+});
