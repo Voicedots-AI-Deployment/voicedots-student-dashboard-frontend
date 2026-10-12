@@ -4,7 +4,7 @@ const identity = { student: {
   id: "student-1", full_name: "Asha Kumar", email: "asha@example.edu",
   roll_number: "CS01", college_name: "Example College", program: "B.Tech",
   department_code: "CSE", graduation_year: 2027, cgpa: 8.6,
-  current_resume_submission_id: "main-submission",
+  current_resume_submission_id: "main-submission", photo_url: "/api/student/profile/photo",
 } };
 
 const activeResume = { resume_id: "main-file", submission_id: "main-submission", original_filename: "Quant_Engineer_Sample_Resume.pdf", label: "Main Resume", is_primary: true, uploaded_at: "2026-10-01T00:00:00Z" };
@@ -52,6 +52,31 @@ async function mockPortal(page: Page, options: { resumes?: boolean; drives?: unk
     return route.fulfill({ status: 404, json: { detail: "Not found." } });
   });
 }
+
+test("preparation stages use a horizontal layout that fits the laptop window", async ({ page }) => {
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await mockPortal(page);
+  const progress = { status: "in_progress", operation_id: "horizontal", submission_id: "prep", stage: "preparing_role_context" };
+  await page.route("**/api/student/interview/start", route => route.fulfill({ status: 202, json: progress }));
+  await page.route("**/api/student/interview/preparation/**", route => route.fulfill({ status: 202, json: progress }));
+  await page.goto("/practice");
+  await page.getByLabel("Target role", { exact: true }).fill("Backend Developer");
+  await page.getByRole("button", { name: "Start practice interview", exact: true }).click();
+  await expect(page.locator(".prep-journey")).toBeVisible();
+  const boxes = await page.locator(".prep-steps li").evaluateAll(items => items.map(item => ({ x: item.getBoundingClientRect().x, y: item.getBoundingClientRect().y })));
+  expect(boxes).toHaveLength(4);
+  expect(Math.max(...boxes.map(b => b.y)) - Math.min(...boxes.map(b => b.y))).toBeLessThan(3);
+  expect(boxes[3].x).toBeGreaterThan(boxes[0].x);
+  const card = await page.locator(".preparation-panel").boundingBox();
+  expect(card!.y + card!.height).toBeLessThanOrEqual(768);
+  await page.screenshot({ path: "../.local/ui/preparation-horizontal.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(page.locator(".dashboard-body")).toHaveCSS("margin-left", "0px");
+  const mobile = await page.locator(".preparation-panel").boundingBox();
+  expect(mobile!.x + mobile!.width).toBeLessThanOrEqual(390);
+  expect(mobile!.y + mobile!.height).toBeLessThanOrEqual(844);
+  await page.screenshot({ path: "../.local/ui/preparation-mobile.png", fullPage: true });
+});
 
 test("Practice mode uses editable setup, one Main Resume and the standard four-person panel", async ({ page }) => {
   await mockPortal(page, { practiceAttempts: [{ submission_id: "practice-sub", session_id: "practice-session", target_role: "Quant Engineer", submitted_at: "2026-10-04T12:00:00Z", duration_minutes: 30 }] });
@@ -154,6 +179,22 @@ test("Placement mode filters unavailable drives and renders only its configured 
   await expect(page.getByText("Build reliable services and APIs.")).toBeVisible();
   await expect(page.getByRole("button", { name: "Start attempt 2" })).toBeEnabled();
   await page.screenshot({ path: "test-results/placement-interview-desktop.png", fullPage: true });
+});
+
+test("an attempt prepared but not yet started can be continued instead of showing unavailable", async ({ page }) => {
+  await mockPortal(page, {
+    drives: [activeDrive({ interview_action: "resume", interview_status: "in_progress" })],
+    context: driveContext({
+      action: "resume", can_start: false, can_resume: true, can_start_next_attempt: false,
+      session_id: null, submission_id: "prepared-submission", preparation_status: "ready",
+      attempt_number: 1, current_attempt_number: 1, next_attempt_number: 1, attempts_used: 1, attempts_remaining: 1,
+    }),
+  });
+  await page.goto("/practice");
+  await page.getByRole("tab", { name: "Placement Interview" }).click();
+  await expect(page.getByRole("button", { name: "Interview unavailable" })).toHaveCount(0);
+  await page.locator(".placement-primary-action").getByRole("button", { name: "Continue interview" }).click();
+  await expect(page).toHaveURL(/interview\.html\?id=prepared-submission$/);
 });
 
 test("Placement continuation and results follow backend session and release state", async ({ page }) => {

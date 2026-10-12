@@ -199,3 +199,11 @@
   .resume-studio .rs-history-button { display: none !important; }
   .resume-studio .rs-preview-panel { position: static; border: 0; box-shadow: none; }
 }
+
+/* Fit to one page, beside the live page count. */
+.rs-fit-button { display: inline-flex; align-items: center; gap: 6px; min-height: 32px; padding: 0 12px; border: 1px solid var(--primary, #7c3aed); border-radius: 999px; background: var(--primary, #7c3aed); color: #fff; font: inherit; font-size: 12px; font-weight: 600; white-space: nowrap; cursor: pointer; box-shadow: 0 4px 12px rgba(124, 58, 237, .25); transition: transform .15s ease, box-shadow .2s ease, opacity .2s ease; animation: vd-pop .35s cubic-bezier(.16, 1, .3, 1) backwards; }
+.rs-fit-button:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 16px rgba(124, 58, 237, .35); }
+.rs-fit-button:disabled { opacity: .6; cursor: default; }
+@media (prefers-reduced-motion: reduce) { .rs-fit-button { animation: none; transition: none; } }
+.rs-writing-tip { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 0; padding: 9px 12px; border: 1px solid var(--border, #ece7f4); border-radius: 10px; background: var(--soft, #f8f5fe); color: var(--muted, #6f6880); font-size: 12px; line-height: 1.55; }
+.rs-writing-tip svg { flex: none; margin-top: 2px; color: var(--primary, #7c3aed); }

@@ -254,7 +254,7 @@ test('crop-only phone requires two agreeing views and sustained observations',as
     const stale=check([], [box,other],13000);
     return {isolated,sequence,stale};
   });
-  expect(result).toEqual({isolated:false,sequence:[false,false,false,true],stale:false});
+  expect(result).toEqual({isolated:false,sequence:[false,true,true,true],stale:false});
 });
 
 test('placement ends capture immediately and shows saved answers without report animation',async({page})=>{
@@ -263,7 +263,7 @@ test('placement ends capture immediately and shows saved answers without report 
   await page.route('**/evaluation**',route=>{evaluations++;return route.fulfill({status:404,json:{}})});
   expect(await page.evaluate(()=>(window as any).conversationAudit.finish(true))).toBe('ended');
   await expect(page.locator('#report-screen')).toBeHidden();
-  await expect(page.locator('#results-saved-detail')).toContainText('placement cell');
+  await expect(page.locator('#results-saved-detail')).toContainText('placement team');
   expect(evaluations).toBe(0);
 });
 
@@ -294,7 +294,8 @@ test('a sustained large full-frame phone is detected even if crops miss it',asyn
   const h=(window as any).conversationAudit;
   return [0,1000,2100,3100].map(t=>h.phone([phone],[],t));
  });
- expect(results).toEqual([false,false,false,true]);
+ // Confirmed on the second sustained sighting, one second after the first.
+ expect(results).toEqual([false,true,true,true]);
 });
 
 test('quality sampling uses the visible face instead of plain background',async({page})=>{

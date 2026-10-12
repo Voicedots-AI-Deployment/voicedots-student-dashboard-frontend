@@ -3,7 +3,7 @@ import { test, expect } from '@playwright/test';
 test.beforeEach(async ({ page }) => {
   await page.route('**/api/**', route => {
     const path = new URL(route.request().url()).pathname;
-    if (path === '/api/auth/student-me') return route.fulfill({ json: { student: { id:'ui-student', full_name:'Asha Kumar', roll_number:'00123', email:'asha@example.test', college_name:'Example College' } } });
+    if (path === '/api/auth/student-me') return route.fulfill({ json: { student: { photo_url:"/api/student/profile/photo",current_resume_submission_id:"resume-main",id:'ui-student', full_name:'Asha Kumar', roll_number:'00123', email:'asha@example.test', college_name:'Example College' } } });
     if (path.startsWith('/api/student/erp/')) return route.fulfill({ json: { student:{full_name:'Asha Kumar',roll_number:'00123'},items:[],has_more:false } });
     return route.fulfill({json:{}});
   });

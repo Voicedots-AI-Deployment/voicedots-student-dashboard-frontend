@@ -40,6 +40,7 @@ import {
   type Report,
 } from "./api";
 import { useAuth } from "./auth";
+import { LightBadge, PhotoTips, usePhotoLight } from "./photo-guide";
 import {
   date,
   dateTime,
@@ -799,6 +800,7 @@ export function Profile() {
   const [capturedUrl, setCapturedUrl] = useState("");
   const photoInput = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const photoLight = usePhotoLight(videoRef, cameraOpen);
   const cameraStream = useRef<MediaStream | null>(null);
   useEffect(() => {
     let live = true;
@@ -882,7 +884,7 @@ export function Profile() {
   }
   return <>
     <PageHeading eyebrow="THE PERSON BEHIND THE POTENTIAL" title="My profile">Your student identity and profile details, in one place.</PageHeading>
-    <section className="panel profile-panel">
+    <section id="profile-photo" className="panel profile-panel">
       <div className="profile-heading">
         <div className="profile-avatar-wrap">
           <span className="avatar large">{photoUrl ? <img src={photoUrl} alt="Your verified profile"/> : student.full_name.split(/\s+/).slice(0, 2).map(n => n[0]).join("")}</span>
@@ -899,7 +901,7 @@ export function Profile() {
           <input ref={photoInput} className="profile-photo-input" type="file" accept="image/jpeg,image/png,image/webp" disabled={busy || Boolean(student.photo_url) || !student.allow_student_photo_upload} aria-label="Choose profile photo" onChange={e => { const file = e.currentTarget.files?.[0]; if (file) void uploadPhoto(file); e.currentTarget.value = ""; }}/>
         </div>
       </div>
-      {cameraOpen && <div className="profile-camera-preview"><video ref={videoRef} autoPlay playsInline muted aria-label="Webcam preview"/><p>Center your face in the frame, then capture. The photo is checked before it is saved.</p></div>}
+      {cameraOpen && <div className="profile-capture"><PhotoTips/><div className="profile-camera-preview"><div className="profile-camera-frame"><video ref={videoRef} autoPlay playsInline muted aria-label="Webcam preview"/><span className="profile-face-outline" aria-hidden="true"/></div><LightBadge light={photoLight}/><p>The photo is checked for light, sharpness and position before it is saved.</p></div></div>}
       {capturedPhoto && <div className="profile-camera-preview"><img src={capturedUrl} alt="Captured profile photo preview"/><p>Review the photo before saving. You can retake it if needed.</p></div>}
       {!student.photo_url && !student.allow_student_photo_upload && <p className="muted">Your profile photo is managed by the placement team.</p>}
       {photoLoadError && <p className="profile-photo-load-error" role="alert">Photo could not be loaded. It is still locked. <button type="button" onClick={() => setPhotoLoadAttempt(value => value + 1)}>Retry</button></p>}

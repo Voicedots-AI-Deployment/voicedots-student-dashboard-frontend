@@ -292,16 +292,33 @@
       <div class="pj-panel active">
         <h2 id="preflight-title" style="font-size:1.3rem;font-weight:800;margin-bottom:12px;">Start AI Interview</h2>
         <p id="preflight-status" role="status" aria-live="polite">We’ll check your camera, microphone, identity and connection, then request your entire screen.</p>
-        <div id="preflight-loading" class="mic-viz" hidden aria-hidden="true"><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div><div class="mic-bar"></div></div>
+        <div id="preflight-loading" class="pf-progress" hidden aria-hidden="true"><span></span></div>
+        <div class="pf-layout">
+        <div class="pf-focus" id="pf-focus" hidden aria-live="polite">
+          <span class="pf-focus-art" id="pf-focus-art" aria-hidden="true"></span>
+          <span class="pf-focus-copy"><span class="pf-focus-count" id="pf-focus-count"></span><strong id="pf-focus-title"></strong><span id="pf-focus-state"></span></span>
+        </div>
+        <ol class="pf-steps" id="pf-steps" hidden aria-label="Interview checks">
+          <li data-check="camera" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Camera</strong><small>Waiting</small></span></li>
+          <li data-check="microphone" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Microphone</strong><small>Waiting</small><span class="pf-mic-activity" id="mic-activity" data-signal="off" hidden><span class="pf-mic-wave" aria-hidden="true"></span><span class="pf-mic-caption"><span class="pf-mic-dot" aria-hidden="true"></span><span id="mic-activity-label">Say a few words</span></span></span></span></li>
+          <li data-check="noise" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Quiet room</strong><small>Waiting</small><span class="pf-meter" aria-hidden="true"><i></i></span></span></li>
+          <li data-check="liveness" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Liveness</strong><small>Waiting</small></span></li>
+          <li data-check="identity" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Identity</strong><small>Waiting</small></span></li>
+          <li data-check="network" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Connection</strong><small>Waiting</small></span></li>
+          <li data-check="screen" data-state="pending"><span class="pf-icon" aria-hidden="true"><i class="pf-ring"></i><svg viewBox="0 0 24 24"><path d="M5 12.5l4.2 4.2L19 7"/></svg></span><span class="pf-text"><strong>Screen sharing</strong><small>Waiting</small></span></li>
+        </ol>
+        <div class="pf-side">
         <div class="cam-preview" id="cam-preview" hidden>
           <video id="lobby-video" autoplay muted playsinline></video>
           <div class="cam-overlay" id="cam-overlay"><span>Waiting for camera access…</span></div>
+          <div class="pf-liveness" id="pf-liveness" hidden>
+            <svg class="pf-head-guide" viewBox="0 0 64 64" aria-hidden="true"><path d="M17 51c2-7 8-10 15-10s13 3 15 10"/><ellipse cx="32" cy="24" rx="13" ry="17"/><path class="pf-head-nose" d="M32 20v9l4 1"/><path d="M25 21h1m12 0h1"/></svg>
+            <span class="pf-turn-copy"><strong id="pf-liveness-text"></strong><small>Keep your face in view · turn gently</small></span>
+            <span class="pf-arrow" aria-hidden="true">←</span>
+            <span class="pf-turn-progress" aria-hidden="true"><i></i><i></i><i></i></span>
+          </div>
         </div>
-        <p id="preflight-requirements" style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
-        <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand my answers will be transcribed for evaluation. Placement interviews are also video recorded and may be reviewed by authorized placement staff.</span></label>
-        <p id="recording-status" class="recording-status" role="status" aria-live="polite" hidden></p>
-        <button class="pj-btn pj-btn-primary" id="pj-join-btn" type="button" disabled>Start AI Interview</button>
-      </div>
+        <div class="pf-recovery">
       <div class="pj-panel" id="pj-panel-1">
         <h3>Camera check</h3>
         <p id="cam-error" role="alert"></p>
@@ -313,9 +330,18 @@
       <div class="pj-panel" id="pj-panel-2">
         <h3>Microphone check</h3>
         <p id="mic-error" role="alert"></p><p class="mic-status" id="mic-status-text"></p><div id="mic-ok-wrap" hidden></div>
-        <label for="mic-select">Microphone</label>
+        <label for="mic-select">Choose another microphone</label>
         <select id="mic-select" style="width:100%;padding:9px 12px;border-radius:8px;border:1.5px solid var(--border);background:var(--surf2);color:var(--text);margin:12px 0;"></select>
         <button class="pj-btn pj-btn-ghost" id="pj-mic-retry" type="button">Retry microphone</button>
+      </div>
+      <div class="pj-panel" id="pj-noise-panel">
+        <h3>Quiet room check</h3><p id="pj-noise-error" role="alert"></p>
+        <p class="pf-noise-limit">Microphone estimate · keep background noise at 70 or below.</p>
+        <button class="pj-btn pj-btn-ghost" id="pj-noise-retry" type="button">Measure again</button>
+      </div>
+      <div class="pj-panel" id="pj-liveness-panel">
+        <h3>Liveness check</h3><p id="pj-liveness-error" role="alert"></p>
+        <button class="pj-btn pj-btn-ghost" id="pj-liveness-retry" type="button">Try again</button>
       </div>
       <div class="pj-panel" id="pj-photo-verification">
         <h3>Identity and liveness check</h3><p id="pj-photo-status" role="alert"></p>
@@ -329,11 +355,27 @@
         <h3>Entire-screen sharing</h3><p id="share-error" role="alert"></p><div id="share-ok" hidden></div>
         <button class="pj-btn pj-btn-primary" id="pj-share-allow" type="button">Share entire screen</button>
       </div>
+      <div class="pj-panel" id="pj-fullscreen-panel">
+        <h3>Last step: full screen</h3>
+        <p>All checks passed. The interview runs in full screen, so start it with one more click.</p>
+        <p id="pj-fullscreen-error" role="alert"></p>
+        <button class="pj-btn pj-btn-primary" id="pj-fullscreen-start" type="button">Enter full screen and start</button>
+      </div>
+        </div>
+        </div>
+        </div>
+        <p id="preflight-requirements" style="font-size:.8rem;color:var(--muted);margin:16px 0 10px;">Keep your camera, microphone and entire screen shared throughout the interview. By starting, you agree to follow the interview requirements and complete camera verification.</p>
+        <label class="recording-consent"><input id="recording-consent" type="checkbox"><span>I understand my answers will be transcribed for evaluation. Placement interviews are also video recorded and may be reviewed by authorized placement staff.</span></label>
+        <p id="recording-status" class="recording-status" role="status" aria-live="polite" hidden></p>
+        <button class="pj-btn pj-btn-primary" id="pj-join-btn" type="button" disabled>Start AI Interview</button>
+      </div>
+
     </div>
   </div>
 
   <!-- ACTIVE CALL SCREEN -->
   <div id="call-screen">
+    <button id="fullscreen-return" class="pj-btn pj-btn-primary" type="button" hidden>Return to full screen</button>
 
     <!-- Round info bar -->
     <div class="round-bar">
@@ -359,10 +401,10 @@
       <div class="question-focus-label">Current question</div>
       <div class="question-focus-text" id="current-question-text">The panel is preparing your first question…</div>
       <div id="support-retry-controls" hidden>
-        <p role="status" id="support-retry-status">Would you like another try at this question?</p>
+        <p role="status" id="support-retry-status">Would you like to start your answer again?</p>
         <div class="support-retry-actions">
-          <button type="button" id="support-retry-yes">Yes, try again</button>
-          <button type="button" id="support-retry-no">Continue interview</button>
+          <button type="button" id="support-retry-yes">Yes, start again</button>
+          <button type="button" id="support-retry-no">No, keep my answer</button>
         </div>
       </div>
     </div>
@@ -496,35 +538,18 @@
 
   <!-- REPORT GENERATION SCREEN -->
   <div id="report-screen" style="display:none;flex:1;align-items:center;justify-content:center;padding:24px;background:var(--bg);">
-    <div class="report-card">
-      <div class="report-anim">
-        <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 22c5.523 0 10-4.477 10-10S17.523 2 12 2 2 6.477 2 12s4.477 10 10 10z"/><path d="M12 6v6l4 2"/></svg>
+    <div class="report-card rg-card">
+      <div class="rg-ring" aria-hidden="true"><svg viewBox="0 0 120 120"><circle cx="60" cy="60" r="52"/><circle class="rg-ring-value" cx="60" cy="60" r="52" pathLength="100"/></svg><span class="rg-ring-core">✦</span></div>
+      <h2 class="rg-title">Generating your report</h2>
+      <p class="rg-sub">Our panel is reviewing every answer you gave. This usually takes 15–30 seconds.</p>
+      <div class="report-checklist" role="list">
+        <div class="report-check" id="rc-1" role="listitem" data-state="checking"><div class="report-check-icon" aria-hidden="true"></div><span>Scoring communication &amp; clarity</span></div>
+        <div class="report-check" id="rc-2" role="listitem" data-state="pending"><div class="report-check-icon" aria-hidden="true"></div><span>Evaluating domain knowledge</span></div>
+        <div class="report-check" id="rc-3" role="listitem" data-state="pending"><div class="report-check-icon" aria-hidden="true"></div><span>Assessing problem-solving approach</span></div>
+        <div class="report-check" id="rc-4" role="listitem" data-state="pending"><div class="report-check-icon" aria-hidden="true"></div><span>Compiling placement readiness score</span></div>
+        <div class="report-check" id="rc-5" role="listitem" data-state="pending"><div class="report-check-icon" aria-hidden="true"></div><span>Preparing personalised feedback</span></div>
       </div>
-      <h2 style="font-size:1.4rem;font-weight:800;margin-bottom:6px;">Generating your report</h2>
-      <p style="font-size:0.85rem;color:#64748B;margin-bottom:24px;">Analysing your responses across all interview rounds...</p>
-      <div class="report-checklist">
-        <div class="report-check" id="rc-1">
-          <div class="report-check-icon">○</div>
-          <span>Scoring communication &amp; clarity</span>
-        </div>
-        <div class="report-check" id="rc-2">
-          <div class="report-check-icon">○</div>
-          <span>Evaluating domain knowledge</span>
-        </div>
-        <div class="report-check" id="rc-3">
-          <div class="report-check-icon">○</div>
-          <span>Assessing problem-solving approach</span>
-        </div>
-        <div class="report-check" id="rc-4">
-          <div class="report-check-icon">○</div>
-          <span>Compiling placement readiness score</span>
-        </div>
-        <div class="report-check" id="rc-5">
-          <div class="report-check-icon">○</div>
-          <span>Preparing personalised feedback</span>
-        </div>
-      </div>
-      <div id="report-generating-msg" style="font-size:0.8rem;color:#64748B;">Please wait, this takes about 15–30 seconds...</div>
+      <div id="report-generating-msg" class="rg-note" role="status" aria-live="polite">You can stay on this page; we'll show your results here.</div>
     </div>
   </div>
 
@@ -541,9 +566,19 @@
 
       <!-- Plain completion notice, shown instead of the sections below when
            there isn't enough real evaluation data to justify a full report. -->
-      <div id="results-saved-notice" class="r-section" style="display:none;text-align:center;padding:40px 20px;">
-        <h2 style="margin:0 0 8px;">Your responses have been saved</h2>
-        <p id="results-saved-detail" style="font-size:0.9rem;color:#94A3B8;line-height:1.6;max-width:520px;margin:0 auto;"></p>
+      <div id="results-saved-notice" class="r-section rs-saved" style="display:none;">
+        <span class="rs-saved-mark" aria-hidden="true">✓</span>
+        <h2 id="results-saved-title">Interview submitted</h2>
+        <p id="results-saved-detail"></p>
+        <ol class="rs-timeline" id="results-saved-timeline">
+          <li data-state="done"><i aria-hidden="true"></i><strong>Interview recorded</strong><small>Your answers are saved</small></li>
+          <li data-state="current"><i aria-hidden="true"></i><strong>With your placement team</strong><small>They review every interview</small></li>
+          <li data-state="next"><i aria-hidden="true"></i><strong>Result released</strong><small>It appears in My reports</small></li>
+        </ol>
+        <div class="rs-saved-actions">
+          <a id="results-saved-primary" class="pj-btn pj-btn-primary" href="/reports">Go to My reports</a>
+          <a class="pj-btn pj-btn-ghost" href="/">Back to dashboard</a>
+        </div>
       </div>
 
       <!-- Score + Summary -->
@@ -626,6 +661,6 @@
 
   <script src="/student-api-config.js"></script>
   <script src="/interview-theme.js"></script>
-  <script type="module" src="interview.js?v=coach-interview-rollout-20261010"></script>
+  <script type="module" src="interview.js?v=integration-20261012"></script>
 </body>
 </html>

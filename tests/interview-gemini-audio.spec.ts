@@ -45,7 +45,9 @@ for (const round of [1, 2, 3, 4]) {
     await page.evaluate(({round,rate}) => {const h=(window as any).voiceAudit;h.chunk(round,rate);h.end(round);}, {round,rate});
     await page.evaluate(round => (window as any).voiceAudit.stale(round + 100), round);
     expect((await page.evaluate(() => (window as any).voiceAudit.state())).rates).toEqual([rate,rate]);
-    await page.clock.runFor(1100);
+    // The stub clock does not advance AudioContext.currentTime: the queued
+    // 1.08 seconds plus the 40 ms completion guard need at least 1120 ms.
+    await page.clock.runFor(1200);
     state = await page.evaluate(() => (window as any).voiceAudit.state());
     expect(state.speaking).toBe(false);
     expect(state.mouth.some((m: any) => m.talking)).toBe(false);

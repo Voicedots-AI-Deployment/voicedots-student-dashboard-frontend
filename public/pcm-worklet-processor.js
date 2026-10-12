@@ -32,7 +32,7 @@ class PCMCaptureProcessor extends AudioWorkletProcessor {
 
     this.phase = 0;
     this.outBuffer = [];
-    // Deepgram recommends 80 ms chunks for Flux. This reduces WebSocket
+    // 80 ms chunks suit streaming voice recognition. This reduces WebSocket
     // message pressure while preserving responsive live transcription.
     this.chunkSize = 1280;
   }

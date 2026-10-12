@@ -11,6 +11,8 @@ const identity = {
     department_code: "CSE",
     graduation_year: 2027,
     cgpa: 8.6,
+    photo_url: "/api/student/profile/photo",
+    current_resume_submission_id: "resume-main",
   },
 };
 const readiness = {
@@ -543,29 +545,34 @@ test("resume clarification is saved before continuing preparation", async ({
     .getByLabel("Target role", { exact: true })
     .fill("Software engineer");
   await page.getByRole("button", { name: "Start practice interview" }).click();
-  await page
-    .getByLabel("What was your personal contribution?")
-    .fill("I built the API and wrote integration tests.");
+  // One question at a time, with the project it is about.
   const panel = page.locator('.resume-clarification-panel');
-  const card = page.locator('.resume-clarification-card');
-  const desktop = await panel.boundingBox();
-  expect(desktop!.width).toBeGreaterThan(700);
-  expect((await card.first().locator('textarea').boundingBox())!.height).toBeGreaterThanOrEqual(160);
+  await expect(panel.locator(".clarify-count")).toHaveText("Question 1 of 2");
+  await expect(panel.locator(".clarify-about")).toHaveText("Weather app");
+  await expect(page.getByLabel("What tools and methods did you use?")).toHaveCount(0);
+  await page.getByRole("button", { name: "Next question" }).click();
+  await expect(page.getByRole("alert").filter({ hasText: "Please answer this question to continue." })).toBeVisible();
+  await page.getByLabel("What was your personal contribution?").fill("I built the API and wrote integration tests.");
+  await page.getByRole("button", { name: "Next question" }).click();
+  await expect(panel.locator(".clarify-count")).toHaveText("Question 2 of 2");
+  await expect(panel.locator(".clarify-about")).toHaveText("AWS Cloud Quest");
   await page.getByLabel('What tools and methods did you use?').fill('AWS console and SQL for checking stored data.');
-  const firstCard = (await card.nth(0).boundingBox())!, secondCard = (await card.nth(1).boundingBox())!;
-  expect(secondCard.y - firstCard.y - firstCard.height).toBeGreaterThanOrEqual(24);
-  await page.screenshot({path:'/tmp/voicedots-clarification-desktop.png',fullPage:true});
+  await page.getByRole("button", { name: "Back" }).click();
+  await expect(page.getByLabel("What was your personal contribution?")).toHaveValue('I built the API and wrote integration tests.');
+  await page.getByRole("button", { name: "Next question" }).click();
+  await expect(page.getByLabel('What tools and methods did you use?')).toHaveValue('AWS console and SQL for checking stored data.');
+  expect((await panel.boundingBox())!.width).toBeGreaterThan(700);
+  expect((await page.locator('#clarify-answer').boundingBox())!.height).toBeGreaterThanOrEqual(140);
   await page.setViewportSize({width:390,height:844});
   await expect(panel).toBeVisible();
   expect((await panel.boundingBox())!.width).toBeLessThanOrEqual(390);
-  expect(await page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
-  await expect(card.first().locator('textarea')).toHaveValue('I built the API and wrote integration tests.');
-  await page.screenshot({path:'/tmp/voicedots-clarification-mobile.png',fullPage:true});
+  await expect.poll(() => page.evaluate(()=>document.documentElement.scrollWidth <= innerWidth)).toBe(true);
   const amendment = page.waitForRequest("**/api/resume/sub-1/amendments");
   await page.getByRole("button", { name: "Save and continue" }).click();
-  expect((await amendment).postDataJSON().answers[0].entry_id).toBe(
-    "project-1",
-  );
+  expect((await amendment).postDataJSON().answers).toEqual([
+    { entry_id: "project-1", field: "ownership", value: "I built the API and wrote integration tests." },
+    { entry_id: "project-2", field: "how", value: "AWS console and SQL for checking stored data." },
+  ]);
   await expect(
     page.getByRole("heading", { name: "Your panel is ready." }),
   ).toBeVisible();

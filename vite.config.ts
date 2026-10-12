@@ -2,7 +2,8 @@ import { defineConfig, loadEnv } from "vite";
 import react from "@vitejs/plugin-react";
 
 export default defineConfig(({ mode }) => {
-  const env = loadEnv(mode, process.cwd(), "");
+  const envDir = process.env.VOICEDOTS_LOCAL_ENV_DIR || process.cwd();
+  const env = loadEnv(mode, envDir, "");
   const target = env.STUDENT_API_PROXY_TARGET || "http://127.0.0.1:8005";
   const apiBase = (env.VITE_API_URL || "").replace(/\/+$/, "");
   if (apiBase) {
@@ -12,6 +13,7 @@ export default defineConfig(({ mode }) => {
   }
   const runtimeConfig = `window.__API_BASE__ = ${JSON.stringify(apiBase)};\n`;
   return {
+    envDir,
     plugins: [react(), {
       name: "student-api-runtime-config",
       generateBundle() {

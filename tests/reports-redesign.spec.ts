@@ -3,7 +3,7 @@ import {readFileSync} from 'node:fs';
 const base={evaluation_id:'e1',session_id:'s1',status:'released',company_name:'Example',target_role:'Engineer',drive_id:'d1',created_at:'2026-10-07',report:{overall_score:46,status:'released',readiness:'Developing'}};
 async function setup(page:any,decision='hold',released=true){
  await page.route('**/api/**',(route:any)=>{const path=new URL(route.request().url()).pathname;
- if(path==='/api/auth/student-me')return route.fulfill({json:{student:{id:'st1',full_name:'Asha',email:'a@example.edu'}}});
+ if(path==='/api/auth/student-me')return route.fulfill({json:{student:{photo_url:"/api/student/profile/photo",current_resume_submission_id:"resume-main",id:'st1',full_name:'Asha',email:'a@example.edu'}}});
  if(path==='/api/student/reports')return route.fulfill({json:{reports:[{...base,placement_decision:decision,report:released?base.report:{status:'awaiting_release'}}]}});
  if(path==='/api/interview/s1/evaluation')return route.fulfill({json:{...base.report,question_reviews:[{answer_id:1,question:'Explain SQL.',answer:'I used a join.',evidence_status:'answered'}]}});
  if(path.endsWith('/question-feedback'))return route.fulfill({json:{feedback:{},complete:true}});
@@ -55,7 +55,7 @@ test('compact placement video keeps answer playback without a bookmark row',asyn
  await page.route('**/api/student/interview/s1/recording',route=>route.fulfill({json:{status:'ready',playback_url:'https://media.example/bookmarks.webm',started_at:'2026-10-08T10:00:00Z',duration_seconds:120,segment_count:1}}));
  await page.route('https://media.example/**',route=>route.abort());
  await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (2)'}).click();
- const video=page.getByLabel('Interview video');await expect(video).toBeVisible();await expect(page.getByRole('navigation',{name:'Question bookmarks'})).toHaveCount(0);expect((await page.locator('.report-video-review').boundingBox())!.width).toBeLessThanOrEqual(640);
+ const video=page.getByLabel('Interview video');await expect(video).toBeVisible();await expect(page.getByRole('navigation',{name:'Question bookmarks'})).toHaveCount(0);await expect(page.getByRole('group',{name:'Question markers on the video timeline'}).getByRole('button')).toHaveCount(2);expect((await page.locator('.report-video-review').boundingBox())!.width).toBeLessThanOrEqual(640);
  const videoBox=await page.locator('.report-video-review').boundingBox(),answersBox=await page.locator('.report-answer-review').boundingBox();expect(videoBox!.y+videoBox!.height).toBeLessThanOrEqual(answersBox!.y);
  expect(await page.locator('.report-question-content').first().evaluate(e=>getComputedStyle(e).gridTemplateColumns.split(' ').length)).toBe(2);
  await video.evaluate((element:any)=>{Object.defineProperty(element,'readyState',{value:4});Object.defineProperty(element,'currentTime',{value:0,writable:true});element.play=()=>{element.dataset.played='true';return Promise.resolve();};});
@@ -145,4 +145,41 @@ test('released placement video is available on the report overview as well as qu
  await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
  await expect(page.getByLabel('Interview video')).toHaveCount(1);
  await expect(page.getByLabel('Interview video')).toHaveAttribute('src',/recording.webm/);
+});
+
+
+test('each question has a pin on the video timeline that seeks to that answer',async({page})=>{
+ await setup(page);
+ await page.route('**/api/interview/s1/evaluation',route=>route.fulfill({json:{overall_score:65,question_reviews:[
+  {answer_id:1,question:'Tell us about your project.',answer:'I built the service.',answer_started_at:'2026-10-08T10:00:05Z',evidence_status:'answered'},
+  {answer_id:2,question:'How did you test it?',answer:'I tested failed inputs.',answer_started_at:'2026-10-08T10:00:25Z',evidence_status:'answered'},
+  {answer_id:3,question:'What would you change?',answer:'Add retries.',answer_started_at:'2026-10-08T10:01:30Z',evidence_status:'answered'}]}}));
+ await page.route('**/api/student/interview/s1/recording',route=>route.fulfill({json:{status:'ready',playback_url:'https://media.example/pins.webm',started_at:'2026-10-08T10:00:00Z',duration_seconds:120,segment_count:1}}));
+ await page.route('https://media.example/**',route=>route.abort());
+ await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (3)'}).click();
+ const pins=page.getByRole('group',{name:'Question markers on the video timeline'}).getByRole('button');
+ await expect(pins).toHaveCount(3);
+ await expect(pins.nth(0)).toHaveAccessibleName('Question 1 at 0:05: Tell us about your project.');
+ await expect(pins.nth(2)).toHaveAccessibleName('Question 3 at 1:30: What would you change?');
+ // Pins sit in time order along the track.
+ const lefts=await pins.evaluateAll(buttons=>buttons.map(button=>parseFloat((button as HTMLElement).style.left)));
+ expect(lefts[0]).toBeCloseTo(5/120*100,1);expect(lefts[1]).toBeLessThan(lefts[2]);
+ const video=page.getByLabel('Interview video');
+ await video.evaluate((element:any)=>{Object.defineProperty(element,'readyState',{value:4});Object.defineProperty(element,'currentTime',{value:0,writable:true});element.play=()=>{element.dataset.played='true';return Promise.resolve();};});
+ await pins.nth(1).click();
+ expect(await video.evaluate((element:any)=>element.currentTime)).toBe(25);
+ await expect(video).toHaveAttribute('data-played','true');
+ await expect(page.locator('#question-1')).toHaveAttribute('open','');
+ await expect(pins.nth(1)).toHaveAttribute('aria-current','true');
+ await page.setViewportSize({width:390,height:844});await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(390);
+});
+
+test('a combined multi-segment recording explains why pins are unavailable',async({page})=>{
+ await setup(page);
+ await page.route('**/api/interview/s1/evaluation',route=>route.fulfill({json:{overall_score:65,question_reviews:[{answer_id:1,question:'Tell us about your project.',answer:'I built it.',answer_started_at:'2026-10-08T10:00:05Z',evidence_status:'answered'}]}}));
+ await page.route('**/api/student/interview/s1/recording',route=>route.fulfill({json:{status:'ready',playback_url:'https://media.example/joined.webm',started_at:'2026-10-08T10:00:00Z',duration_seconds:120,segment_count:2}}));
+ await page.route('https://media.example/**',route=>route.abort());
+ await page.goto('/reports/s1');await page.getByRole('button',{name:'Questions & feedback (1)'}).click();
+ await expect(page.getByText('Question pins are unavailable because this recording combines several capture segments.')).toBeVisible();
+ await expect(page.getByRole('group',{name:'Question markers on the video timeline'})).toHaveCount(0);
 });

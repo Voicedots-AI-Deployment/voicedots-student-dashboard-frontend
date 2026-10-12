@@ -30,13 +30,8 @@ import {
   PageHeading,
   useResource,
 } from "./ui";
-
-const stages: Record<string, string> = {
-  analyzing_resume: "Getting to know your experience",
-  preparing_role_context: "Understanding your target role",
-  generating_questions: "Preparing your personalized questions",
-  finalizing_session: "Getting your panel ready",
-};
+import { PreparationJourney } from "./preparation-journey";
+import { ResumeClarificationSteps, type ClarificationAnswer } from "./resume-clarification";
 
 export function Practice() {
   const { identity } = useAuth();
@@ -75,7 +70,7 @@ export function Practice() {
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
   const [busy, setBusy] = useState(false);
-  const [stage, setStage] = useState("");
+  const [stageKey, setStageKey] = useState<string | undefined>(undefined);
   const [preparation, setPreparation] = useState<Preparation | null>(() => {
     try {
       return JSON.parse(sessionStorage.getItem(key) || "null");
@@ -238,7 +233,7 @@ export function Practice() {
         );
         if (controller.signal.aborted) return;
         if (result.status === "in_progress") {
-          setStage(stages[result.stage || ""] || "Preparing your interview");
+          setStageKey(result.stage);
           if (Date.now() - started > 180000) {
             setPollError(
               "Preparation is taking longer than usual. Your progress is saved; check again in a moment.",
@@ -368,22 +363,11 @@ export function Practice() {
     }
   }
 
-  async function clarify(event?: FormEvent<HTMLFormElement>) {
-    event?.preventDefault();
+  async function clarify(answers?: ClarificationAnswer[]) {
     setBusy(true);
     setError("");
     try {
-      if (event) {
-        const form = new FormData(event.currentTarget);
-        const answers = (preparation?.prompts || [])
-          .flatMap((prompt, i) =>
-            prompt.missing_fields.map((field, j) => ({
-              entry_id: prompt.entry_id || prompt.name,
-              field,
-              value: String(form.get(`${i}-${j}`) || "").trim(),
-            })),
-          )
-          .filter((answer) => answer.value);
+      if (answers) {
         await api(
           `/api/resume/${encodeURIComponent(preparation!.submission_id!)}/amendments`,
           json({
@@ -439,7 +423,9 @@ export function Practice() {
     preparation?.status === "ready" && preparation.submission_id && !pending;
   const driveCanStart = Boolean(context && context.can_start && context.main_resume_available === true
     && context.interview_window === "open" && !context.coach_gate_locked);
-  const driveCanResume = Boolean(!context?.is_locked && context?.can_resume && context.session_id && context.submission_id);
+  // An attempt can be continued once its resume preparation exists, even
+  // before the interview session is created; the interview room creates it.
+  const driveCanResume = Boolean(!context?.is_locked && context?.can_resume && context.submission_id);
   const releasedAttempt = context?.attempt_history?.slice().reverse().find((attempt) =>
     attempt.result_available && attempt.submission_id,
   ) || (context?.publication_status === "released" && context.submission_id
@@ -497,16 +483,16 @@ export function Practice() {
       )}
 
       {preparation ? (
-        <section className={`panel preparation-panel${needsClarification ? " resume-clarification-panel" : ""}`} aria-live="polite">
+        <section className={`panel preparation-panel${pending ? " preparation-horizontal" : ""}${needsClarification ? " resume-clarification-panel" : ""}`} aria-live="polite">
           {pending && <>
-            <LoaderCircle className={pollError ? "" : "spin"} size={32} />
-            <h2>{stage || "Preparing your interview"}</h2>
-            <p>Your progress is saved. This can take a few minutes.</p>
+            <PreparationJourney stage={stageKey} placement={mode === "placement"}
+              panel={mode === "placement" ? panel.map(person => ({ track: person.track, role: person.role }))
+                : [{ track: "hr", role: "HR interviewer" }, { track: "domain", role: "Domain specialist" }, { track: "industry", role: "Industry expert" }, { track: "manager", role: "Hiring manager" }]} />
             {pollError && <ErrorMessage message={pollError} retry={() => setPollVersion((v) => v + 1)} />}
             {pollError && <button className="button secondary" onClick={() => { sessionStorage.removeItem(key); setPreparation(null); setPollError(""); }}>Return to setup</button>}
           </>}
           {ready && <>
-            <span className="empty-icon"><Check /></span>
+            <span className="prep-ready-burst" aria-hidden="true"><Check size={30} /></span>
             <h2>Your panel is ready.</h2>
             <p>Next, we’ll check your camera, microphone, and screen sharing before the interview begins.</p>
             <button className="button primary" onClick={() => openInterview(preparation.submission_id!, preparation.session_id)}>
@@ -522,16 +508,8 @@ export function Practice() {
           {needsClarification && <>
             <h2>A little more about your experience</h2>
             <p>{preparation.message}</p>
-            <form onSubmit={clarify}>
-              {preparation.prompts?.map((prompt, i) => <fieldset className="resume-clarification-card" key={prompt.entry_id || i}>
-                <legend>{prompt.name}</legend>
-                {prompt.missing_fields.map((field, j) => <label key={field}>
-                  {field === "how" ? "What tools and methods did you use?" : field === "ownership" ? "What was your personal contribution?" : field === "result" ? "What was the outcome?" : humanize(field)}
-                  <textarea rows={6} name={`${i}-${j}`} required={preparation.clarification_required} maxLength={4000}/>
-                </label>)}
-              </fieldset>)}
-              <button className="button primary" disabled={busy}>Save and continue</button>
-            </form>
+            <ResumeClarificationSteps key={`${preparation.source_extraction_id || ""}:${JSON.stringify(preparation.prompts || [])}`} prompts={preparation.prompts || []} required={Boolean(preparation.clarification_required)}
+              busy={busy} onSubmit={answers => void clarify(answers)} />
             {preparation.can_continue_without_answers && <button className="text-button" disabled={busy} onClick={() => void clarify()}>Continue without optional details</button>}
           </>}
           {!pending && !ready && !needsClarification && preparation.status !== "resume_reupload_required" && <>
@@ -599,7 +577,7 @@ export function Practice() {
                       </dl>
                       <details className="placement-jd-details"><summary>View role details</summary><p>{context.job_description || "No job description was provided for this placement."}</p></details>
                       <div className="placement-primary-action">
-                        {driveCanResume ? <button type="button" className="button primary" onClick={() => openInterview(context.submission_id!, context.session_id!)}>Continue interview <ArrowRight size={17}/></button>
+                        {driveCanResume ? <button type="button" className="button primary" onClick={() => openInterview(context.submission_id!, context.session_id || undefined)}>Continue interview <ArrowRight size={17}/></button>
                           : driveCanStart && activeResume && file ? <button type="submit" className="button primary" disabled={busy || resumeBusy}>{busy ? <><LoaderCircle className="spin" size={17}/> Preparing placement interview…</> : <>{placementActionLabel} <ArrowRight size={17}/></>}</button>
                             : releasedAttempt?.submission_id ? <Link className="button primary" to={`/reports?submission=${encodeURIComponent(releasedAttempt.submission_id)}`}>View result <ArrowRight size={17}/></Link>
                               : <button type="button" className="button primary" disabled>{!activeResume ? "Add Main Resume to start" : placementActionLabel}</button>}
@@ -637,7 +615,7 @@ export function Practice() {
           : attempts.error ? <ErrorMessage message={attempts.error}/>
             : practiceAttempts.length ? <div className="interview-session-list">{practiceAttempts.map((attempt) => <div className="interview-session-row" key={attempt.submission_id}><span className="record-icon"><Mic size={18}/></span><div><strong>{attempt.target_role || "Practice interview"}</strong><span>Practice Interview{attempt.submitted_at ? ` · Started ${formatDateTime(attempt.submitted_at)}` : ""}{attempt.duration_minutes ? ` · ${attempt.duration_minutes} minutes` : ""}</span></div><button className="button secondary small" onClick={() => attempt.session_id && openInterview(attempt.submission_id, attempt.session_id)}>Continue <ArrowRight size={15}/></button></div>)}</div>
               : <p className="muted">No interrupted practice interviews. You’re ready for a fresh start.</p>
-          : !context?.is_locked && context?.can_resume && context.session_id && context.submission_id ? <div className="interview-session-row"><span className="record-icon"><Mic size={18}/></span><div><strong>{context.company_name} · {context.role_title}</strong><span>Placement Interview · Attempt {attemptNumber} · Interview in progress</span></div><button className="button secondary small" onClick={() => openInterview(context.submission_id!, context.session_id!)}>Continue interview <ArrowRight size={15}/></button></div>
+          : context && driveCanResume ? <div className="interview-session-row"><span className="record-icon"><Mic size={18}/></span><div><strong>{context.company_name} · {context.role_title}</strong><span>Placement Interview · Attempt {attemptNumber} · Interview in progress</span></div><button className="button secondary small" onClick={() => openInterview(context.submission_id!, context.session_id || undefined)}>Continue interview <ArrowRight size={15}/></button></div>
             : <p className="muted">{selectedDrive ? "There is no interrupted interview for this placement." : "When you select a placement with an interview in progress, it will appear here."}</p>}
       </section>
       {resumePreview && <ResumePreview file={resumePreview} onClose={() => setResumePreview(null)}/>}

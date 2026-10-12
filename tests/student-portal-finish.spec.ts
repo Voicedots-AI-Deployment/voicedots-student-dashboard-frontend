@@ -3,7 +3,7 @@ test('report table actions, interview details, decision date and question sharin
  let submitted:any;
  await page.route('**/api/**',async route=>{
  const path=new URL(route.request().url()).pathname;
- if(path==='/api/auth/student-me')return route.fulfill({json:{student:{id:'s1',full_name:'Asha',roll_number:'CS01',email:'a@example.edu'}}});
+ if(path==='/api/auth/student-me')return route.fulfill({json:{student:{photo_url:"/api/student/profile/photo",current_resume_submission_id:"resume-main",id:'s1',full_name:'Asha',roll_number:'CS01',email:'a@example.edu'}}});
  if(path==='/api/student/reports')return route.fulfill({json:{reports:[{evaluation_id:'e1',session_id:'i1',drive_id:'d1',company_name:'Example',target_role:'Engineer',status:'released',created_at:'2026-10-06',duration_minutes:30,attempt_number:2,placement_decision:'shortlist',placement_decided_at:'2026-10-07T12:00:00Z',report:{overall_score:46}}]}});
  if(path==='/api/interview/i1/evaluation')return route.fulfill({json:{overall_score:46,question_reviews:[]}});
  if(path.endsWith('/recording'))return route.fulfill({json:{status:'unavailable',playback_url:null}});

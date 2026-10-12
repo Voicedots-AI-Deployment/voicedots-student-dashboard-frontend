@@ -185,13 +185,33 @@ let cameraTrackLive = false;
 let microphoneTrackLive = false;
 let preflightId = null;
 let preflightBusy = false;
+// Choosing a screen in the browser's share picker exits full screen, and the
+// interview then started with no click left to re-enter it. The last
+// preflight step now waits for one explicit click that requests full screen.
+let awaitingFullscreen = false;
+let fullscreenStartConfirmed = false;
+const fullscreenSupported = () => document.fullscreenEnabled !== false && typeof document.documentElement.requestFullscreen === "function";
 let interviewHasStarted = false;
 let initialConnectionTimer = null;
 let preflightStarted = false;
 let preflightCancelled = false;
 let servicesCheckedAt = 0;
 let identityCheckedAt = 0;
-const preflightChecks = { camera: "pending", microphone: "pending", identity: "pending", network: "pending", screen: "pending" };
+const preflightChecks = { camera: "pending", microphone: "pending", noise: "pending", liveness: "pending", identity: "pending", network: "pending", screen: "pending" };
+// Every check that must pass before screen sharing is requested.
+const CORE_CHECKS = ["camera", "microphone", "noise", "liveness", "identity", "network"];
+// Background noise is measured on a raw (unfiltered) microphone feed. The
+// value is dBFS; the dB shown to students adds a nominal microphone offset,
+// so it is an estimate, not a calibrated sound level.
+const NOISE_MAX_DBFS = -24; // 70 on the displayed estimate (94 offset), not calibrated SPL.
+const NOISE_DISPLAY_OFFSET = 94;
+const NOISE_SAMPLE_MS = 3000;
+let lastNoiseDb = null;
+// Liveness: the head must turn toward two prompted sides, in a random order,
+// so a still photo or a replayed recording cannot pass.
+const LIVENESS_TURN_TIMEOUT_MS = 9000;
+let latestFaceLandmarks = null;
+let latestFaceLandmarksAt = 0;
 let supportRetryState = "complete";
 let currentAudioEpoch = 0;
 let playbackTime = 0;
@@ -199,6 +219,11 @@ let playbackCompleteTimer = null;
 let processingStatusTimer = null;
 let reconnectTimer = null;
 let reconnectAttempts = 0;
+// True from a dropped connection until the resumed session sends real
+// interview traffic; "authenticated" arrives before the server's lock check.
+let resumingAfterDrop = false;
+let busyResumeRetries = 0;
+const MAX_BUSY_RESUME_RETRIES = 8;
 let interviewStopRequested = false;
 const MAX_RECONNECT_ATTEMPTS = 5;
 const activePlaybackSources = new Set();
@@ -261,8 +286,13 @@ let gazeOffCameraSince = null;
 let phoneVisibleSince = null;
 let phoneDetected = false;
 let phoneEvidence = null;
-const PHONE_EVIDENCE_MIN_SCORE = .75;
-const PHONE_EVIDENCE_MIN_MS = 2000;
+// Calibrated on the Lite2 int8 worker model: phones held up to a webcam score
+// 0.5-0.87 in either the full frame or the centre crop (also in dim rooms),
+// while frames without a phone score 0. A sighting counts from 0.45; weaker
+// sightings need three consistent observations, confident ones two.
+const PHONE_EVIDENCE_MIN_SCORE = .45;
+const PHONE_CONFIDENT_SCORE = .6;
+const PHONE_EVIDENCE_MIN_MS = 500;
 let cameraReminderTimes = {};
 // Integrity signals are intentionally debounced to avoid false positives,
 // but must still be visible quickly to the placement team.
@@ -270,7 +300,9 @@ const CANDIDATE_ABSENT_THRESHOLD_MS = 3000;
 const MULTIPLE_PEOPLE_THRESHOLD_MS = 5000;
 const POOR_LIGHTING_THRESHOLD_MS = 3500;
 const GAZE_AWAY_THRESHOLD_MS = 3500;
-const PHONE_VISIBLE_THRESHOLD_MS = 2000;
+// Phone evidence is already debounced by two consistent sightings, so a
+// confirmed phone is reported on the same analysis tick.
+const PHONE_VISIBLE_THRESHOLD_MS = 0;
 let lastVisionWarningAt = {};
 let visionRecoverySince = {};
 let lastVisionObservationAt = 0;
@@ -344,7 +376,28 @@ window.addEventListener("pagehide", () => {
 // INITIALIZATION
 // ============================================================
 
+// Keeps this student's session counted as "open" while the interview room
+// is on screen, so closing the tab frees the account for the next sign-in
+// within a few minutes instead of hours.
+// Only while the room is on screen and recently used (speaking counts via
+// the live call), so a forgotten tab still reaches the normal idle timeout.
+const PRESENCE_INTERVAL_MS = 60000;
+const PRESENCE_ACTIVE_FOR_MS = 60 * 60000;
+function startPresencePing() {
+  let lastActivity = Date.now();
+  ["pointerdown", "keydown", "touchstart"].forEach(name => window.addEventListener(name, () => { lastActivity = Date.now(); }, { passive: true }));
+  const timer = window.setInterval(() => {
+    const inCall = document.getElementById("call-screen")?.offsetParent != null;
+    if (!getStudentSession() || document.visibilityState !== "visible") return;
+    if (!inCall && Date.now() - lastActivity > PRESENCE_ACTIVE_FOR_MS) return;
+    void studentFetch(`${_HTTP_BASE}/api/auth/student-presence`, { method: "POST" })
+      .then(response => { if (response.status === 401) window.clearInterval(timer); })
+      .catch(() => {});
+  }, PRESENCE_INTERVAL_MS);
+}
+
 document.addEventListener("DOMContentLoaded", async () => {
+  startPresencePing();
   if (!getStudentSession()) {
     // A deep link opened in a fresh tab has no display cache. Restore the
     // identity from the existing HttpOnly session before showing device checks.
@@ -608,7 +661,22 @@ function setupPrejoinFlow() {
   document.getElementById("pj-mic-retry")?.addEventListener("click", () => void retryPreflight("microphone"));
   photoCaptureBtn?.addEventListener("click", () => void retryPreflight("identity"));
   document.getElementById("pj-network-retry")?.addEventListener("click", () => void retryPreflight("network"));
+  document.getElementById("pj-noise-retry")?.addEventListener("click", () => void retryPreflight("noise"));
+  document.getElementById("pj-liveness-retry")?.addEventListener("click", () => void retryPreflight("liveness"));
   pjShareAllowBtn?.addEventListener("click", () => void retryPreflight("screen"));
+  document.getElementById("pj-fullscreen-start")?.addEventListener("click", async () => {
+    // Must run inside this click: full screen needs a live user gesture.
+    const entered = await requestInterviewFullscreen();
+    const error = document.getElementById("pj-fullscreen-error");
+    if (!entered) {
+      if (error) error.textContent = "Your browser did not allow full screen. Allow it for this site, then click again.";
+      return;
+    }
+    if (error) error.textContent = "";
+    awaitingFullscreen = false;
+    fullscreenStartConfirmed = true;
+    void runPreflight();
+  });
 
 }
 
@@ -619,17 +687,22 @@ function showPrejoinError(element, message) {
 }
 
 function renderPreflight() {
-  const panels = { camera: pjPanel1, microphone: pjPanel2, identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
+  const panels = { camera: pjPanel1, microphone: pjPanel2, noise: document.getElementById("pj-noise-panel"), liveness: document.getElementById("pj-liveness-panel"), identity: document.getElementById("pj-photo-verification"), network: document.getElementById("pj-network-panel"), screen: pjPanel3 };
+  const firstFailed = PREFLIGHT_ORDER.find(key => preflightChecks[key] === "failed");
   for (const [key, panel] of Object.entries(panels)) {
-    if (panel) panel.classList.toggle("active", preflightChecks[key] === "failed" ||
+    if (panel) panel.classList.toggle("active", key === firstFailed ||
       (preflightStarted && key === "screen" && preflightChecks[key] !== "passed" &&
-       ["camera", "microphone", "identity", "network"].every(item => preflightChecks[item] === "passed")));
+       CORE_CHECKS.every(item => preflightChecks[item] === "passed")));
     panel?.querySelectorAll("button,select").forEach(element => { element.disabled = preflightBusy; });
   }
+  const fullscreenPanel = document.getElementById("pj-fullscreen-panel");
+  fullscreenPanel?.classList.toggle("active", awaitingFullscreen);
+  fullscreenPanel?.querySelectorAll("button").forEach(element => { element.disabled = preflightBusy; });
   document.getElementById("preflight-loading").hidden = !preflightBusy;
   pjJoinBtn.disabled = preflightBusy || !recordingConsentEl?.checked;
-  pjJoinBtn.hidden = Object.values(preflightChecks).includes("failed") ||
-    (preflightStarted && ["camera", "microphone", "identity", "network"].every(key => preflightChecks[key] === "passed") && preflightChecks.screen !== "passed");
+  pjJoinBtn.hidden = awaitingFullscreen || Object.values(preflightChecks).includes("failed") ||
+    (preflightStarted && CORE_CHECKS.every(key => preflightChecks[key] === "passed") && preflightChecks.screen !== "passed");
+  renderPreflightSteps();
   pjJoinBtn.textContent = preflightBusy ? "Preparing Interview…" : "Start AI Interview";
   document.getElementById("preflight-title").textContent = preflightStarted ? "Preparing Interview" : "Start AI Interview";
 }
@@ -640,7 +713,7 @@ function preflightStatus(message) {
 
 function failPreflight(key, message) {
   preflightChecks[key] = "failed";
-  const errors = { camera: camErrorEl, microphone: micErrorEl, identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), screen: shareErrorEl };
+  const errors = { camera: camErrorEl, microphone: micErrorEl, noise: document.getElementById("pj-noise-error"), liveness: document.getElementById("pj-liveness-error"), identity: document.getElementById("pj-photo-status"), network: document.getElementById("pj-network-error"), screen: shareErrorEl };
   showPrejoinError(errors[key], message);
   renderPreflight();
 }
@@ -701,10 +774,225 @@ async function verifyPreflightIdentity() {
   identityCheckedAt = Date.now();
 }
 
+// Windows lists the same microphone up to three times ("Default - X",
+// "Communications - X" and "X"). Keep one entry per physical device.
+function uniqueDevices(list) {
+  const seen = new Map();
+  for (const device of list) {
+    if (device.deviceId === "default" || device.deviceId === "communications") continue;
+    const key = device.groupId ? `${device.groupId}|${device.label.replace(/^(Default|Communications)\s*-\s*/i, "")}` : device.deviceId;
+    if (!seen.has(key)) seen.set(key, device);
+  }
+  return [...seen.values()];
+}
+
+// Uses the system default microphone; if it picks up no sound, tries each
+// other microphone in turn and keeps the first one that does.
+async function findWorkingMicrophone() {
+  const heard = async (timeout) => {
+    startMicLevelTest();
+    await micTestContext?.resume();
+    try {
+      await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running" && micSignalDetected, "", timeout);
+      return true;
+    } catch (error) {
+      if (preflightCancelled) throw error;
+      return false;
+    }
+  };
+  preflightStatus("Say a few words so we can hear your microphone.");
+  if (await heard(6000)) return;
+  const current = userMediaStream?.getAudioTracks()[0]?.getSettings?.() || {};
+  const { mics } = await populateDeviceSelects();
+  for (const mic of mics) {
+    // Skip the microphone that was just tested (the default resolves to it).
+    if (mic.deviceId === current.deviceId || (current.groupId && mic.groupId === current.groupId)) continue;
+    preflightStatus(`Trying ${mic.label || "another microphone"}… say a few words.`);
+    if (!await attachDeviceTrack("audio", mic.deviceId)) continue;
+    if (micSelectEl) micSelectEl.value = mic.deviceId;
+    if (await heard(4000)) return;
+  }
+  throw new Error("No microphone audio was detected. Say a few words, check that your microphone is not muted, then retry or choose another microphone.");
+}
+
+function showNoiseLevel(db) {
+  const row = document.querySelector('#pf-steps [data-check="noise"]');
+  if (!row) return;
+  const estimate = Math.max(20, Math.round(db + NOISE_DISPLAY_OFFSET));
+  row.style.setProperty("--level", `${Math.max(4, Math.min(100, (db + 80) / 60 * 100))}%`);
+  row.dataset.loud = db > NOISE_MAX_DBFS ? "true" : "false";
+  row.querySelector("small").textContent = `Measuring… about ${estimate} dB`;
+}
+
+// Measures background noise for a few seconds on an unfiltered feed and
+// blocks the interview while the room is too loud.
+async function measureBackgroundNoise() {
+  preflightStatus("Thanks! Now stay quiet for 3 seconds while we measure the background noise.");
+  const deviceId = userMediaStream?.getAudioTracks()[0]?.getSettings?.().deviceId;
+  const raw = await navigator.mediaDevices.getUserMedia({
+    audio: { ...(deviceId ? { deviceId: { exact: deviceId } } : { deviceId: { ideal: "default" } }), echoCancellation: false, noiseSuppression: false, autoGainControl: false },
+    video: false,
+  });
+  const AudioContextCtor = window.AudioContext || window.webkitAudioContext;
+  const context = new AudioContextCtor();
+  try {
+    await context.resume();
+    const analyser = context.createAnalyser();
+    analyser.fftSize = 2048;
+    context.createMediaStreamSource(raw).connect(analyser);
+    const buffer = new Float32Array(analyser.fftSize);
+    const samples = [];
+    const until = Date.now() + NOISE_SAMPLE_MS;
+    // Give the student a moment to stop speaking after the microphone check.
+    await new Promise(resolve => setTimeout(resolve, 1000));
+    const sampleUntil = Math.max(until, Date.now() + NOISE_SAMPLE_MS - 1000);
+    while (Date.now() < sampleUntil) {
+      if (preflightCancelled) throw new Error("Preparation cancelled.");
+      analyser.getFloatTimeDomainData(buffer);
+      let sum = 0;
+      for (const value of buffer) sum += value * value;
+      const db = 20 * Math.log10(Math.max(Math.sqrt(sum / buffer.length), 1e-6));
+      samples.push(db);
+      showNoiseLevel(db);
+      await new Promise(resolve => setTimeout(resolve, 100));
+    }
+    // The median ignores a single cough or click.
+    const median = samples.sort((a, b) => a - b)[Math.floor(samples.length / 2)];
+    lastNoiseDb = Math.max(20, Math.round(median + NOISE_DISPLAY_OFFSET));
+    if (median > NOISE_MAX_DBFS) {
+      throw new Error(`Your room is too noisy (about ${lastNoiseDb} dB). Move somewhere quieter, close doors or windows, then measure again.`);
+    }
+  } finally {
+    raw.getTracks().forEach(track => track.stop());
+    void context.close().catch(() => {});
+  }
+}
+
+// Mirrored like the preview: < 0.5 means the head turned toward the
+// student's left (the left of the screen).
+function headTurnRatio() {
+  const landmarks = latestFaceLandmarks;
+  if (!landmarks || Date.now() - latestFaceLandmarksAt > 1500) return null;
+  const nose = landmarks[1], eyeA = landmarks[33], eyeB = landmarks[263];
+  if (!nose || !eyeA || !eyeB) return null;
+  const a = 1 - eyeA.x, b = 1 - eyeB.x, n = 1 - nose.x;
+  const span = Math.abs(a - b);
+  return span > 0.01 ? (n - Math.min(a, b)) / span : null;
+}
+
+function showLivenessPrompt(side) {
+  const prompt = document.getElementById("pf-liveness");
+  if (!prompt) return;
+  prompt.hidden = !side;
+  if (!side) return;
+  prompt.dataset.side = side;
+  prompt.querySelector(".pf-arrow").textContent = side === "left" ? "←" : side === "right" ? "→" : "•";
+  document.getElementById("pf-liveness-text").textContent =
+    side === "center" ? "Now look back at the camera" : `Slowly turn your head ${side}`;
+}
+
+async function checkLiveness() {
+  // Without face landmarks (an older browser), the multi-frame identity
+  // check that follows is the remaining guard.
+  if (!faceLandmarker) return;
+  const sides = Math.random() < 0.5 ? ["left", "right"] : ["right", "left"];
+  try {
+    for (const [step, side] of [...sides, "center"].entries()) {
+      showLivenessPrompt(side);
+      document.querySelectorAll(".pf-turn-progress i").forEach((dot, index) => {
+        dot.classList.toggle("done", index < step); dot.classList.toggle("active", index === step);
+      });
+      preflightStatus(side === "center" ? "Look back at the camera." : `Follow the arrow: slowly turn your head ${side}.`);
+      await waitForPreflight(() => {
+        if (faceCountDetected !== 1) return false;
+        const ratio = headTurnRatio();
+        if (ratio == null) return false;
+        return side === "left" ? ratio < 0.36 : side === "right" ? ratio > 0.64 : ratio > 0.4 && ratio < 0.6;
+      }, "We couldn't confirm a live person. Keep only your face in view, follow the arrow, then try again.", LIVENESS_TURN_TIMEOUT_MS);
+    }
+  } finally {
+    showLivenessPrompt(null);
+  }
+}
+
+const PREFLIGHT_STEP_TEXT = {
+  camera: { checking: "Checking your camera and lighting…", passed: "Camera ready", failed: "Needs attention" },
+  microphone: { checking: "Say a few words…", passed: "We can hear you", failed: "Needs attention" },
+  noise: { checking: "Stay quiet for 3 seconds…", passed: "", failed: "Too noisy" },
+  liveness: { checking: "Follow the arrow on the camera", passed: "Live person confirmed", failed: "Try again" },
+  identity: { checking: "Matching your profile photo…", passed: "Verified", failed: "Not verified" },
+  network: { checking: "Connecting to the interview service…", passed: "Connected", failed: "Not connected" },
+  screen: { checking: "Waiting for your entire screen…", passed: "Sharing", failed: "Share again" },
+};
+
+// One focused step at a time: which check the student should look at now.
+const PREFLIGHT_ORDER = ["camera", "microphone", "noise", "liveness", "identity", "network", "screen"];
+const PREFLIGHT_TITLES = { camera: "Camera", microphone: "Microphone", noise: "Quiet room", liveness: "Liveness", identity: "Identity", network: "Connection", screen: "Screen sharing" };
+const PREFLIGHT_ICONS = {
+  camera: '<svg viewBox="0 0 24 24"><path d="M15 10l4.5-2.6v9.2L15 14"/><rect x="3" y="6.5" width="12" height="11" rx="2.5"/></svg>',
+  microphone: '<i class="pf-ring-a"></i><i class="pf-ring-b"></i><svg viewBox="0 0 24 24"><rect x="9" y="3" width="6" height="11" rx="3"/><path d="M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21"/></svg>',
+  noise: '<svg viewBox="0 0 24 24"><path d="M3 12h2M7 8v8M11 5v14M15 9v6M19 11v2"/></svg>',
+  liveness: '<svg viewBox="0 0 24 24"><ellipse cx="12" cy="10" rx="5.5" ry="7"/><path d="M5 21c1.2-3 4-4.5 7-4.5s5.8 1.5 7 4.5"/></svg>',
+  identity: '<svg viewBox="0 0 24 24"><path d="M12 3l7 3v5c0 4.5-3 8-7 10-4-2-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>',
+  network: '<svg viewBox="0 0 24 24"><path d="M4 9a12 12 0 0 1 16 0M7 12.5a7.5 7.5 0 0 1 10 0M10 16a3 3 0 0 1 4 0"/><circle cx="12" cy="19" r="1"/></svg>',
+  screen: '<svg viewBox="0 0 24 24"><rect x="3" y="4" width="18" height="12" rx="2"/><path d="M8 20h8M12 16v4"/></svg>',
+};
+
+function currentPreflightFocus() {
+  const failed = PREFLIGHT_ORDER.find(key => preflightChecks[key] === "failed");
+  if (failed) return failed;
+  // Steps that need the student come first, then background ones.
+  const active = ["microphone", "noise", "liveness", "identity", "camera", "network"].find(key => preflightChecks[key] === "checking");
+  if (active) return active;
+  if (preflightStarted && CORE_CHECKS.every(key => preflightChecks[key] === "passed")) return "screen";
+  return PREFLIGHT_ORDER.find(key => preflightChecks[key] !== "passed") || "screen";
+}
+
+function renderPreflightFocus() {
+  const focus = document.getElementById("pf-focus");
+  if (!focus) return;
+  focus.hidden = !preflightStarted;
+  if (!preflightStarted) return;
+  const key = currentPreflightFocus();
+  const state = key === "screen" && preflightChecks.screen === "pending" ? "action" : preflightChecks[key];
+  if (focus.dataset.step !== key) {
+    focus.dataset.step = key;
+    document.getElementById("pf-focus-art").innerHTML = PREFLIGHT_ICONS[key] || "";
+    focus.classList.remove("pf-focus-enter"); void focus.offsetWidth; focus.classList.add("pf-focus-enter");
+  }
+  focus.dataset.state = state;
+  const done = PREFLIGHT_ORDER.filter(item => preflightChecks[item] === "passed").length;
+  document.getElementById("pf-focus-count").textContent = `Step ${PREFLIGHT_ORDER.indexOf(key) + 1} of ${PREFLIGHT_ORDER.length} · ${done} done`;
+  document.getElementById("pf-focus-title").textContent = PREFLIGHT_TITLES[key];
+  document.getElementById("pf-focus-state").textContent = state === "action" ? "Click Share entire screen to continue"
+    : key === "noise" && state === "passed" ? `Quiet enough${lastNoiseDb ? ` · about ${lastNoiseDb} dB` : ""}`
+    : PREFLIGHT_STEP_TEXT[key]?.[state] || "Getting ready…";
+}
+
+function renderPreflightSteps() {
+  const list = document.getElementById("pf-steps");
+  if (!list) return;
+  list.hidden = !preflightStarted;
+  for (const row of list.querySelectorAll("li[data-check]")) {
+    const key = row.dataset.check;
+    let state = preflightChecks[key];
+    if (key === "screen" && state === "pending" && preflightStarted && CORE_CHECKS.every(item => preflightChecks[item] === "passed")) state = "action";
+    if (row.dataset.state === state && !(key === "noise" && state === "passed")) continue;
+    row.dataset.state = state;
+    row.title = `${PREFLIGHT_TITLES[key]}: ${state === "passed" ? "done" : state === "failed" ? "needs attention" : state === "checking" ? "checking" : "waiting"}`;
+    const text = state === "action" ? "Click Share entire screen below"
+      : key === "noise" && state === "passed" ? `Quiet enough${lastNoiseDb ? ` · about ${lastNoiseDb} dB` : ""}`
+      : PREFLIGHT_STEP_TEXT[key]?.[state] || "Waiting";
+    row.querySelector("small").textContent = text;
+  }
+  renderPreflightFocus();
+}
+
 async function checkPreflightItem(key, action) {
   if (preflightChecks[key] === "passed") return;
   preflightChecks[key] = "checking";
-  try { await action(); preflightChecks[key] = "passed"; }
+  renderPreflightSteps();
+  try { await action(); preflightChecks[key] = "passed"; renderPreflightSteps(); }
   catch (error) { failPreflight(key, error.message); }
 }
 
@@ -715,8 +1003,10 @@ async function retryPreflight(key) {
   renderPreflight();
   if (key === "camera") {
     preflightChecks.identity = "pending";
+    preflightChecks.liveness = "pending";
     await attachDeviceTrack("video", camSelectEl.value);
   }
+  if (key === "liveness") preflightChecks.identity = "pending";
   if (key === "microphone") {
     await attachDeviceTrack("audio", micSelectEl.value);
     micLevelDetected = false;
@@ -755,24 +1045,28 @@ async function runPreflight() {
           "A clear camera feed with one person is required. Check your camera and lighting.", 25000);
       });
     const networkCheck = checkPreflightItem("network", checkReadiness);
+    // Camera and connection checks run in the background; the steps that
+    // need the student (speak, stay quiet, turn your head) go one at a time
+    // so the instructions never compete.
+    const soundChecks = checkPreflightItem("microphone", async () => {
+      await devices;
+      await waitForPreflight(() => hasLiveTrack("audio"), "Your default microphone is unavailable. Allow access or select a working microphone.", 5000);
+      await findWorkingMicrophone();
+    }).then(async () => {
+      if (preflightChecks.microphone === "passed") await checkPreflightItem("noise", measureBackgroundNoise);
+    });
     await Promise.all([
       cameraCheck,
       networkCheck,
-      checkPreflightItem("microphone", async () => {
-        await devices;
-        await waitForPreflight(() => hasLiveTrack("audio"), "Your default microphone is unavailable. Allow access or select a working microphone.", 5000);
-        startMicLevelTest();
-        await micTestContext?.resume();
-        await waitForPreflight(() => hasLiveTrack("audio") && micTestContext?.state === "running" && micSignalDetected,
-          "No microphone audio was detected. Say a few words, check that your microphone is not muted, or select another microphone.", 10000);
-      }),
-      Promise.all([cameraCheck, networkCheck]).then(async () => {
+      soundChecks,
+      Promise.all([cameraCheck, networkCheck, soundChecks]).then(async () => {
         if (preflightChecks.camera === "passed" && preflightId) {
-          await checkPreflightItem("identity", verifyPreflightIdentity);
+          await checkPreflightItem("liveness", checkLiveness);
+          if (preflightChecks.liveness === "passed") await checkPreflightItem("identity", verifyPreflightIdentity);
         }
       }),
     ]);
-    if (["camera", "microphone", "identity", "network"].some(key => preflightChecks[key] !== "passed")) return;
+    if (CORE_CHECKS.some(key => preflightChecks[key] !== "passed")) return;
     if (preflightChecks.screen !== "passed") {
       preflightStatus("Click Share entire screen below. Select Entire Screen in the browser picker.");
       return; // getDisplayMedia must run directly from its own user click.
@@ -791,6 +1085,12 @@ async function runPreflight() {
     if (!screenStream?.getVideoTracks().some(track => track.readyState === "live" && !track.muted && track.getSettings().displaySurface === "monitor")) {
       failPreflight("screen", "Your entire screen must remain shared. Share Screen Again."); return;
     }
+    if (fullscreenSupported() && !document.fullscreenElement && !fullscreenStartConfirmed) {
+      awaitingFullscreen = true;
+      preflightStatus("All checks passed. Click Enter full screen and start to begin your interview.");
+      return;
+    }
+    awaitingFullscreen = false;
     preflightStatus("Starting interview…");
     const response = await studentFetch(`${_HTTP_BASE}/api/resume/${currentSubmissionId}/interview`, {
       method: "POST", headers: { "Content-Type": "application/json" }, signal: AbortSignal.timeout(30000),
@@ -843,15 +1143,17 @@ async function populateDeviceSelects() {
     const fill = (select, list, kind) => {
       if (!select) return;
       const current = select.value;
+      const physical = uniqueDevices(list);
+      const defaultLabel = (list.find(d => d.deviceId === "default")?.label || "").replace(/^Default\s*-\s*/i, "");
       select.innerHTML = list.length
-        ? (kind === "Microphone" ? '<option value="">System default microphone</option>' : "") + list.map((d, i) => `<option value="${d.deviceId}">${d.label || (kind + " " + (i + 1))}</option>`).join("")
+        ? (kind === "Microphone" ? `<option value="">System default${defaultLabel ? ` (${escHtml(defaultLabel)})` : " microphone"}</option>` : "") + physical.map((d, i) => `<option value="${d.deviceId}">${escHtml(d.label || (kind + " " + (i + 1)))}</option>`).join("")
         : `<option value="">No ${kind} found</option>`;
       if (current && list.some((d) => d.deviceId === current)) select.value = current;
       else if (kind === "Microphone") select.value = "";
     };
     fill(camSelectEl, cams, "Camera");
     fill(micSelectEl, mics, "Microphone");
-    return { cams, mics };
+    return { cams, mics: uniqueDevices(mics) };
   } catch (err) {
     console.warn("Could not enumerate devices:", err);
     return { cams: [], mics: [] };
@@ -881,6 +1183,7 @@ function updatePrejoinReadiness() {
   if (!preflightStarted || _isCallScreenActive()) return;
   if (!cameraTrackLive && preflightChecks.camera === "passed") {
     preflightChecks.identity = "pending";
+    preflightChecks.liveness = "pending";
     failPreflight("camera", "Camera disconnected. Select a camera and retry.");
   }
   if (!microphoneTrackLive && preflightChecks.microphone === "passed") failPreflight("microphone", "Microphone disconnected. Select a microphone and retry.");
@@ -1339,28 +1642,50 @@ function landmarkGazeOffCamera(landmarks) {
   return left < 0.16 || left > 0.84 || right < 0.16 || right > 0.84 || faceRatio < 0.32 || faceRatio > 0.68;
 }
 
+// A phone stays "visible" between detector runs: the window follows how
+// often the object detector actually runs on this device (up to ~2 s).
+let phoneFreshMs = 2500;
+
+// A phone moves in a hand between detector runs; treat a nearby box as the
+// same phone rather than demanding a tight overlap.
+function samePhoneBox(a, b) {
+  if (boxIoU(a, b) >= .1) return true;
+  const dx = (a.originX + a.width / 2) - (b.originX + b.width / 2);
+  const dy = (a.originY + a.height / 2) - (b.originY + b.height / 2);
+  return Math.hypot(dx, dy) <= 1.5 * Math.max(b.width, b.height, a.width, a.height);
+}
+
+function phoneSighting(detections, corroborating) {
+  const phoneScore = d => Number((d.categories || []).find(c => c.categoryName === "cell phone")?.score);
+  const views = [
+    ...detections.filter(d => phoneScore(d) >= PHONE_EVIDENCE_MIN_SCORE && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8)
+      .map(d => ({box: d.boundingBox, score: phoneScore(d), full: true})),
+    ...corroborating.filter(box => Number(box.confidence) >= PHONE_EVIDENCE_MIN_SCORE)
+      .map(box => ({box, score: Number(box.confidence), full: false})),
+  ].sort((a, b) => b.score - a.score);
+  if (!views.length) return null;
+  const best = views[0];
+  // A second independent view of the same phone (full frame and a crop, or
+  // two crops) is as good as a confident single view.
+  const corroborated = views.some(view => view !== best && boxIoU(view.box, best.box) >= .2);
+  return {...best, requiredCount: corroborated || best.score >= PHONE_CONFIDENT_SCORE ? 2 : 3};
+}
+
 function updatePhoneEvidence(detections, corroborating, now) {
-  const strong = detections.filter(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_EVIDENCE_MIN_SCORE) && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8);
-  // Require agreement between independent views, including crop-only phones.
-  const full = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
-  const crop = corroborating.find((box, index) => Number(box.confidence) >= .75 &&
-    corroborating.some((other, otherIndex) => index !== otherIndex && Number(other.confidence) >= .75 && boxIoU(box, other) >= .3));
-  // High-confidence phones outside the crops require four temporal observations.
-  const temporal = strong.find(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= .85));
-  const box = full?.boundingBox || crop || temporal?.boundingBox;
-  const confidence = full ? Number(full.categories.find(c => c.categoryName === "cell phone").score) : crop ? Number(crop.confidence) : Number(temporal?.categories.find(c => c.categoryName === "cell phone")?.score);
-  const requiredCount = full || crop ? 2 : 4;
-  if (!box) {
-    if (phoneEvidence && now - phoneEvidence.last > 1500) phoneEvidence = null;
+  const sighting = phoneSighting(detections, corroborating);
+  if (!sighting) {
+    if (phoneEvidence && now - phoneEvidence.last > phoneFreshMs) phoneEvidence = null;
     return false;
   }
-  if (!phoneEvidence || now - phoneEvidence.last > 8000 || boxIoU(phoneEvidence.box, box) < .2) {
+  const {box, score: confidence, requiredCount} = sighting;
+  if (!phoneEvidence || now - phoneEvidence.last > Math.max(8000, phoneFreshMs * 2) || !samePhoneBox(phoneEvidence.box, box)) {
     phoneEvidence = {since:now,last:now,count:1,box,confidence,requiredCount};
   } else {
     if (now <= phoneEvidence.last) return false;
     phoneEvidence.last=now;phoneEvidence.count++;phoneEvidence.box=box;
-    phoneEvidence.requiredCount=Math.max(phoneEvidence.requiredCount,requiredCount);
-    phoneEvidence.confidence=Math.min(phoneEvidence.confidence,confidence);
+    // The weakest requirement seen so far applies once a confident view arrives.
+    phoneEvidence.requiredCount=Math.min(phoneEvidence.requiredCount,requiredCount);
+    phoneEvidence.confidence=Math.max(phoneEvidence.confidence,confidence);
   }
   return phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
 }
@@ -1392,8 +1717,23 @@ function clearVisionSignal(type, recovered, now) {
   return true;
 }
 
+// The pre-join lobby is display:none for the whole live interview, and a
+// <video> in a non-rendered subtree stops handing new MediaStream frames to
+// drawImage/detectForVideo -- every proctoring signal (face count, gaze,
+// lighting, sharpness, extra people, phone) was being computed from a frozen
+// lobby frame as soon as the call screen opened. The call screen's own
+// element carries the same userMediaStream and IS rendered, so analysis
+// follows the visible element, exactly as the photo verifier already does.
+function proctorVideoSource() {
+  const live = _isCallScreenActive() ? candidateVideoEl : lobbyVideoEl;
+  if (live && live.readyState >= 2 && live.videoWidth > 0) return live;
+  const fallback = live === candidateVideoEl ? lobbyVideoEl : candidateVideoEl;
+  return fallback && fallback.readyState >= 2 && fallback.videoWidth > 0 ? fallback : null;
+}
+
 async function analyzeCameraFrame() {
-  if (!lobbyVideoEl || lobbyVideoEl.readyState < 2 || !cameraTrackLive) return;
+  const sourceVideo = proctorVideoSource();
+  if (!sourceVideo || !cameraTrackLive) return;
   if (!faceLandmarker && !nativeFaceDetector && Date.now() - lastVisionDetectorAttemptAt >= VISION_RETRY_INTERVAL_MS) {
     setVisionCheck(faceCheckEl, "warn", "Retrying person check…");
     void loadFaceDetector();
@@ -1401,12 +1741,12 @@ async function analyzeCameraFrame() {
   if (!objectDetector && !objectDetectorUnavailable) void loadPersonDetector();
   let landmarks = null;
   if (faceLandmarker) {
-    const result = faceLandmarker.detectForVideo(lobbyVideoEl, performance.now());
+    const result = faceLandmarker.detectForVideo(sourceVideo, performance.now());
     const faces = distinctFaceLandmarks(result.faceLandmarks || []);
     faceCountDetected = faces.length;
     landmarks = faces[0] || null;
   } else if (nativeFaceDetector) {
-    const faces = await nativeFaceDetector.detect(lobbyVideoEl);
+    const faces = await nativeFaceDetector.detect(sourceVideo);
     const distinct = [];
     for (const face of faces) {
       const r = face.boundingBox;
@@ -1418,8 +1758,10 @@ async function analyzeCameraFrame() {
     faceCountDetected = 0;
   }
 
+  latestFaceLandmarks = faceCountDetected === 1 ? landmarks : null;
+  latestFaceLandmarksAt = Date.now();
   faceQualityRegion = faceRegion(landmarks);
-  const luminance = frameLighting(lobbyVideoEl);
+  const luminance = frameLighting(sourceVideo);
   lightingPassing = luminance >= 40 && luminance <= 235;
   setVisionCheck(
     lightingCheckEl,
@@ -1427,7 +1769,7 @@ async function analyzeCameraFrame() {
     lightingPassing ? "✓ Lighting is clear" : (luminance < 40 ? "More light needed" : "Reduce backlight"),
   );
 
-  const sharpness = frameSharpness(lobbyVideoEl);
+  const sharpness = frameSharpness(sourceVideo);
   const qualityIssue = !lightingPassing ? "poor_lighting" : sharpness < 12 ? "camera_blurry" : null;
   if (qualityIssue) {
     cameraAnalysisPassing = false;
@@ -1464,8 +1806,8 @@ async function analyzeCameraFrame() {
     // Every crop uses the same captured frame. Asynchronous inference must not
     // count a moving person twice by comparing snapshots from different times.
     const objectFrame = analyzeCameraFrame.objectFrame || (analyzeCameraFrame.objectFrame = document.createElement("canvas"));
-    objectFrame.width = lobbyVideoEl.videoWidth; objectFrame.height = lobbyVideoEl.videoHeight;
-    objectFrame.getContext("2d").drawImage(lobbyVideoEl, 0, 0);
+    objectFrame.width = sourceVideo.videoWidth; objectFrame.height = sourceVideo.videoHeight;
+    objectFrame.getContext("2d").drawImage(sourceVideo, 0, 0);
     const detections = (await objectDetector.detectForVideo(objectFrame, nextObjectDetectorTimestamp())).detections || [];
     // categoryAllowlist now includes "cell phone" alongside "person" (same
     // model, no extra load), so detections must be split by category rather
@@ -1493,7 +1835,7 @@ async function analyzeCameraFrame() {
     const region = personCropToggle === 0
       ? { x: 0, y: 0, w: 0.55, h: 1 }
       : { x: 0.45, y: 0, w: 0.55, h: 1 };
-    const fullPhoneVisible=phoneDetections.some(d=>Number(d.categories?.[0]?.score)>=PHONE_EVIDENCE_MIN_SCORE);
+    const fullPhoneVisible=phoneDetections.some(d=>Number(d.categories?.[0]?.score)>=PHONE_CONFIDENT_SCORE);
     const crop = fullPhoneVisible && faceCountDetected <= 1 ? null : await cropDetectPersons(objectFrame, region);
     if (crop) {
       for (const det of crop.detections) {
@@ -1501,7 +1843,7 @@ async function analyzeCameraFrame() {
         if (category !== "person" && category !== "cell phone") continue;
         const box = translateCropBox(det.boundingBox, crop);
         if (category === "cell phone") {
-          if (Number(det.categories?.[0]?.score) >= .65) corroboratingPhones.push({...box, confidence: Number(det.categories[0].score)});
+          if (Number(det.categories?.[0]?.score) >= PHONE_EVIDENCE_MIN_SCORE) corroboratingPhones.push({...box, confidence: Number(det.categories[0].score)});
           continue;
         }
         const overlapsKnown = personDetections.some(known => samePersonBox(box, known.boundingBox));
@@ -1511,7 +1853,7 @@ async function analyzeCameraFrame() {
     }
     const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
     for (const det of phoneCrop?.detections || []) {
-      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= .65) corroboratingPhones.push({...translateCropBox(det.boundingBox, phoneCrop), confidence: Number(det.categories[0].score)});
+      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= PHONE_EVIDENCE_MIN_SCORE) corroboratingPhones.push({...translateCropBox(det.boundingBox, phoneCrop), confidence: Number(det.categories[0].score)});
     }
     analyzeCameraFrame.lastInferenceMs=performance.now()-inferenceStarted;
     now = Date.now();
@@ -1524,7 +1866,8 @@ async function analyzeCameraFrame() {
   }
   // Only a corroborated sequence can indicate a phone; an isolated detection
   // or a stale worker result never accumulates into a misconduct warning.
-  phoneDetected = !!phoneEvidence && phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 1500;
+  phoneFreshMs = Math.max(2500, objectCooldown * 1.6);
+  phoneDetected = !!phoneEvidence && phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < phoneFreshMs;
   // Do not flash back to "one person" when the smaller background detection
   // drops for a frame. Keep the multi-person result briefly so the candidate
   // must present a consistently clear single-person frame before proceeding.
@@ -1703,18 +2046,39 @@ function startMicLevelTest() {
     micAnalyser.fftSize = 64;
     source.connect(micAnalyser);
 
-    const bars = document.querySelectorAll(".mic-bar");
+    const meter = document.getElementById("mic-activity");
+    const wave = meter?.querySelector(".pf-mic-wave");
+    if (wave && !wave.children.length) {
+      for (let i = 0; i < 24; i++) {
+        const bar = document.createElement("span"); bar.className = "pf-mic-bar"; wave.append(bar);
+      }
+    }
+    if (meter) meter.hidden = false;
+    const bars = wave?.querySelectorAll(".pf-mic-bar") || [];
+    const label = document.getElementById("mic-activity-label");
     const dataArray = new Uint8Array(micAnalyser.frequencyBinCount);
+    const waveform = new Uint8Array(micAnalyser.fftSize);
+    let level = 0;
 
     function updateBars() {
       if (!micAnalyser) return;
       micAnalyser.getByteFrequencyData(dataArray);
+      micAnalyser.getByteTimeDomainData(waveform);
+      const rms = Math.sqrt(waveform.reduce((sum, value) => sum + ((value - 128) / 128) ** 2, 0) / waveform.length);
+      const target = Math.max(0, Math.min(1, (rms - .004) / .12));
+      level += (target - level) * (target > level ? .4 : .14);
+      document.getElementById("pf-focus")?.style.setProperty("--mic-level", level.toFixed(3));
+      const signal = level > .04 ? "active" : "quiet";
+      if (meter && meter.dataset.signal !== signal) {
+        meter.dataset.signal = signal;
+        if (label) label.textContent = signal === "active" ? "Voice detected" : "Listening for your voice";
+      }
 
       let sum = dataArray.reduce((total,value) => total+value,0);
       bars.forEach((bar, idx) => {
-        const val = dataArray[idx % dataArray.length] || 0;
-        const height = Math.max(4, Math.min(44, (val / 255) * 44));
-        bar.style.height = `${height}px`;
+        const shape = Math.sin(Math.PI * (idx + 1) / (bars.length + 1));
+        const band = .65 + (dataArray[idx % dataArray.length] || 0) / 255;
+        bar.style.height = `${(4 + level * (8 + 20 * shape) * Math.min(1, band)).toFixed(1)}px`;
       });
 
       if (sum > 60 && !micSignalDetected) {
@@ -1740,6 +2104,13 @@ function stopMicLevelTest() {
     micAnimId = null;
   }
   micAnalyser = null;
+  const meter = document.getElementById("mic-activity");
+  if (meter) {
+    meter.dataset.signal = "off";
+    meter.querySelectorAll(".pf-mic-bar").forEach(bar => { bar.style.height = "4px"; });
+    const label = document.getElementById("mic-activity-label");
+    if (label) label.textContent = "Microphone check complete";
+  }
   if (micTestContext) {
     micTestContext.close().catch(() => {});
     micTestContext = null;
@@ -2029,6 +2400,8 @@ const HARD_LOSS_TYPES = new Set([
   "camera_disable_attempt", "microphone_disable_attempt",
 ]);
 const HARD_LOSS_CLUSTER_WINDOW_MS = 2000;
+const FOCUS_DEPARTURE_NOTICE_MS = 1500;
+const FOCUS_DEPARTURE_VIOLATION_MS = 5000;
 const SUSPEND_RECOVERY_GRACE_MS = 30000;
 let _pendingHardLoss = null; // { types: Map<eventType, {message, details}>, timer }
 let _suspendRecoveryTimer = null;
@@ -2122,20 +2495,29 @@ function setupIntegrityMonitoring() {
     }
   });
 
-  // Chrome's native capture banner can blur a visible interview when Hide
-  // is clicked. Blur alone cannot distinguish that from another OS window.
-  // Preserve it as context only; actual hidden tabs and stopped sharing are
-  // handled by their own corroborated checks and remain enforceable.
-  let blurTimer;
+  // Leaving the interview window for another app (Alt+Tab, Task View, a
+  // second window) keeps the tab visible, so only focus reveals it. A brief
+  // blur, such as clicking Hide on Chrome's own sharing banner, is a reminder
+  // only; staying away for FOCUS_DEPARTURE_VIOLATION_MS is a warning.
+  let blurTimer, departureTimer, departureStartedAt = 0;
+  const stillAway = () => proctoringActive && _isCallScreenActive() && !document.hidden && !document.hasFocus();
   window.addEventListener("blur", () => {
-    clearTimeout(blurTimer);
+    clearTimeout(blurTimer); clearTimeout(departureTimer);
+    departureStartedAt = Date.now();
     blurTimer = setTimeout(() => {
-      if (proctoringActive && _isCallScreenActive() && !document.hidden && !document.hasFocus()) {
-        _sendIntegrityEvent("window_blur_observed", "info", { review_only: true });
-      }
-    }, 1500);
+      if (!stillAway()) return;
+      _sendIntegrityEvent("window_blur_observed", "info", { review_only: true });
+      showIntegrityNotice("You moved away from the interview window. Click back into the interview to continue.", true);
+    }, FOCUS_DEPARTURE_NOTICE_MS);
+    departureTimer = setTimeout(() => {
+      // Leaving full screen or hiding the tab during the same departure has
+      // already been recorded; one departure is one warning.
+      if (!stillAway() || (lastIntegrityEvent.key === "focus_departure" && lastIntegrityEvent.at >= departureStartedAt)) return;
+      _recordViolationNow("window_blur_observed", "You switched away from the interview window.",
+        { confirmed_by: "focus_sequence", duration_ms: Date.now() - departureStartedAt });
+    }, FOCUS_DEPARTURE_VIOLATION_MS);
   });
-  window.addEventListener("focus", () => clearTimeout(blurTimer));
+  window.addEventListener("focus", () => { clearTimeout(blurTimer); clearTimeout(departureTimer); });
 
   // Browser side panels cannot be named from a page. Observe only a
   // sustained width obstruction, normalized by height so browser zoom
@@ -2160,8 +2542,14 @@ function setupIntegrityMonitoring() {
     }
   }, 500);
 
+  const fullscreenReturn = document.getElementById("fullscreen-return");
+  fullscreenReturn?.addEventListener("click", () => void requestInterviewFullscreen());
   document.addEventListener("fullscreenchange", () => {
-    if (!document.fullscreenElement && _isCallScreenActive()) {
+    const outside = !document.fullscreenElement && _isCallScreenActive() && !sessionCompletedCleanly;
+    // Leaving full screen is still recorded; the student also gets a direct
+    // way back instead of having to find a browser shortcut.
+    if (fullscreenReturn) fullscreenReturn.hidden = !outside;
+    if (outside) {
       recordIntegrityViolation("fullscreen_exit", "Fullscreen interview mode was exited.");
     }
   });
@@ -2804,6 +3192,7 @@ document.addEventListener("click", async event => {
 // ============================================================
 
 function handleControlMessage(payload) {
+  if (payload.type !== "authenticated" && resumingAfterDrop) { resumingAfterDrop = false; busyResumeRetries = 0; }
   switch (payload.type) {
     case "authenticated":
       reconnectAttempts = 0;
@@ -2933,7 +3322,7 @@ function handleControlMessage(payload) {
     // Backend sends "tts_begin" (carries the AI's question text), not
     // "question". Also flips the aiSpeaking flag as early as possible
     // (defense-in-depth mic gate, Feature 1) — deliberately NOT cleared on
-    // the backend's "tts_end" (that fires once Deepgram finishes
+    // the backend's "tts_end" (that fires once the voice provider finishes
     // GENERATING audio, well before the browser finishes actually playing
     // it; see session.py's speak() Phase 1 vs Phase 2 docstring). It's
     // cleared instead by schedulePCMChunk's own playback-completion timer
@@ -2970,7 +3359,7 @@ function handleControlMessage(payload) {
       break;
 
     case "tts_end": {
-      // Deepgram has now streamed every chunk for this epoch. Waiting for
+      // The voice provider has now streamed every chunk for this epoch. Waiting for
       // this explicit boundary prevents a temporary network gap between
       // chunks from cutting a question off halfway through.
       const endedEpoch = Number(payload.audio_epoch || 0);
@@ -2988,7 +3377,7 @@ function handleControlMessage(payload) {
       }
       break;
 
-    // Backend sends "final_transcript" once Deepgram reaches EndOfTurn —
+    // Backend sends "final_transcript" once the provider reaches end of turn —
     // this is the candidate's own committed speech and is exactly what was
     // never being shown ("the agent speaks but I can't understand my
     // voice, it's not taking"), because the frontend was listening for a
@@ -3007,8 +3396,8 @@ function handleControlMessage(payload) {
       if (controls) controls.hidden = !["awaiting_choice", "submitted"].includes(payload.state);
       const status = document.getElementById("support-retry-status");
       if (status) status.textContent = payload.state === "awaiting_choice"
-        ? "Say yes to try again, or no to continue. You can also choose below."
-        : "Would you like another try at this question?";
+        ? "Say yes to start your answer again, or no to keep your answer. You can also choose below."
+        : "Would you like to start your answer again?";
       document.querySelectorAll(".support-retry-actions button").forEach(button => {
         button.disabled = payload.state !== "awaiting_choice";
       });
@@ -3063,16 +3452,28 @@ function handleControlMessage(payload) {
       showIntegrityNotice(payload.detail || "The placement interview ended under the AI-proctor policy set by placement staff.");
       break;
 
-    case "interview_paused":
-      if (rndStatus) rndStatus.textContent = "Paused — restore screen sharing";
+    case "interview_paused": {
+      // Name what was actually lost: camera, microphone or screen sharing.
+      const media = { camera_required: "your camera", microphone_required: "your microphone", screen_share_required: "entire-screen sharing" }[payload.reason] || "the required device";
+      if (rndStatus) rndStatus.textContent = `Paused — restore ${media}`;
       if (aiRoleEl) aiRoleEl.textContent = "Paused";
-      showIntegrityNotice(payload.detail || "Interview paused. Restore entire-screen sharing to continue.");
+      showIntegrityNotice(payload.detail || `Interview paused. Restore ${media} to continue.`);
       break;
+    }
 
     case "interview_resumed":
       if (rndStatus) rndStatus.textContent = "Connected (Live)";
       if (aiRoleEl) aiRoleEl.textContent = currentAgentRole;
-      showIntegrityNotice("Screen sharing restored. The interview will continue.");
+      showIntegrityNotice("Everything is connected again. The interview will continue.");
+      break;
+
+    case "session_paused":
+      // The sign-in expired mid-interview; answers so far are saved.
+      showFatalError("Your sign-in expired, so the interview was paused. Your answers so far are saved. Sign in again and resume this interview.");
+      break;
+
+    case "answer_redirect":
+      if (rndStatus) rndStatus.textContent = "Back to the question";
       break;
 
     case "capture_error":
@@ -3180,7 +3581,13 @@ function connectInterviewSocket() {
       recoverCompletedSession();
       return;
     }
-    if (event.code === 4429) {
+    // During an automatic reconnect the server may still be releasing this
+    // tab's previous connection for a few seconds, so "already active" is
+    // retried with the normal backoff. On a first connection it really is
+    // another browser.
+    const resumeStillReleasing = event.code === 4429 && interviewHasStarted && resumingAfterDrop && busyResumeRetries < MAX_BUSY_RESUME_RETRIES;
+    if (resumeStillReleasing) busyResumeRetries += 1;
+    if (event.code === 4429 && !resumeStillReleasing) {
       showFatalError("This interview is already active in another browser. Close the other interview before resuming here.");
       return;
     }
@@ -3196,8 +3603,9 @@ function connectInterviewSocket() {
       showFatalError("The connection could not be restored after several attempts. Your completed answers are saved; reload this page to resume.");
       return;
     }
-    const delayMs = Math.min(10000, 1000 * (2 ** reconnectAttempts));
+    const delayMs = resumeStillReleasing ? 2000 : Math.min(10000, 1000 * (2 ** reconnectAttempts));
     reconnectAttempts += 1;
+    resumingAfterDrop = true;
     if (rndStatus) rndStatus.textContent = `Connection lost — resuming in ${Math.ceil(delayMs / 1000)}s…`;
     reconnectTimer = setTimeout(() => {
       reconnectTimer = null;
@@ -3314,8 +3722,11 @@ function markReportStepDone(id) {
   const el = document.getElementById(id);
   if (!el || el.classList.contains("done")) return;
   el.classList.add("done");
-  const icon = el.querySelector(".report-check-icon");
-  if (icon) icon.textContent = "✓";
+  el.dataset.state = "done";
+  const next = document.getElementById(REPORT_STEP_IDS[REPORT_STEP_IDS.indexOf(id) + 1]);
+  if (next && next.dataset.state === "pending") next.dataset.state = "checking";
+  const done = REPORT_STEP_IDS.filter(step => document.getElementById(step)?.classList.contains("done")).length;
+  document.querySelector(".rg-ring")?.style.setProperty("--progress", String(Math.round(done / REPORT_STEP_IDS.length * 100)));
 }
 
 async function loadEvaluationResults() {
@@ -3441,10 +3852,20 @@ function renderResponsesSaved(report) {
     if (el) el.style.display = "none";
   });
   if (resultsSavedNotice) resultsSavedNotice.style.display = "block";
+  const placement = report.report_type === "placement_drive";
+  const title = document.getElementById("results-saved-title");
+  const timeline = document.getElementById("results-saved-timeline");
+  const primary = document.getElementById("results-saved-primary");
+  if (title) title.textContent = placement ? "Interview submitted" : "Interview saved";
+  if (timeline) timeline.hidden = !placement;
+  if (primary) {
+    primary.textContent = placement ? "Go to My reports" : "Start another practice";
+    primary.setAttribute("href", placement ? "/reports" : "/practice");
+  }
   if (resultsSavedDetail) {
-    resultsSavedDetail.textContent = report.report_type === "placement_drive"
-      ? "We've recorded your answers for this placement interview. Your placement cell will review the outcome — you don't need to do anything else."
-      : "We've recorded your answers for this practice interview. There wasn't enough of an answered conversation this time to generate a scored evaluation — try another practice round whenever you're ready.";
+    resultsSavedDetail.textContent = placement
+      ? "Your answers are recorded. Your placement team reviews every interview and will release your result. You don't need to do anything else; it will appear in My reports."
+      : "We've recorded your answers. There wasn't enough of an answered conversation this time to score it, so try another practice round whenever you're ready.";
   }
   if (resultsDownloadLink) resultsDownloadLink.hidden = true;
 }
@@ -3688,35 +4109,172 @@ async function showInterviewExperienceFeedback() {
     if (!response.ok) return;
     const data=await response.json();
     if (data.submitted || !Array.isArray(data.questions)) return;
-    const overlay=document.createElement("div");overlay.id="interview-experience-feedback";
-    overlay.style.cssText="position:fixed;inset:0;z-index:10000;background:#070812c9;display:grid;place-items:center;padding:20px;overflow:auto";
-    const form=document.createElement("form");form.setAttribute("role","dialog");form.setAttribute("aria-modal","true");form.setAttribute("aria-labelledby","experience-feedback-title");
-    form.style.cssText="width:min(100%,580px);max-height:90vh;overflow:auto;padding:28px;background:#171622;color:#fff;border:1px solid #393646;border-radius:20px;box-shadow:0 24px 80px #0006";
-    const title=document.createElement("h2");title.id="experience-feedback-title";title.textContent="How was your interview?";form.appendChild(title);
-    const intro=document.createElement("p");intro.textContent="Share your experience to help us improve. Every question is optional, and you can skip. This feedback does not affect your score or placement decision. Your placement team can view feedback for placement interviews.";intro.style.cssText="line-height:1.5;color:#bbb8ca;margin:12px 0 20px";form.appendChild(intro);
-    for (const question of data.questions) {
-      const label=document.createElement("label");label.style.cssText="display:block;margin:14px 0;font-size:14px";
-      const text=document.createElement("span");text.textContent=question.label;label.appendChild(text);
-      const select=document.createElement("select");select.name=question.key;select.style.cssText="display:block;width:100%;margin-top:7px;padding:10px;border-radius:8px;background:#242232;color:#fff;border:1px solid #484256";
-      for(const [value,caption] of [["","Choose a rating (optional)"],["1","1 · Poor"],["2","2 · Fair"],["3","3 · Good"],["4","4 · Very good"],["5","5 · Excellent"]]){const option=document.createElement("option");option.value=value;option.textContent=caption;select.appendChild(option);}
-      label.appendChild(select);form.appendChild(label);
+    const esc = escHtml;
+    const limit = Number(data.text_limit) || 500;
+    const words = Array.isArray(data.rating_labels) && data.rating_labels.length === 5 ? data.rating_labels : ["Very poor", "Poor", "Average", "Good", "Excellent"];
+    const context = data.context || {};
+    const when = context.completed_at && !Number.isNaN(Date.parse(context.completed_at))
+      ? new Intl.DateTimeFormat("en-IN", { day: "numeric", month: "short", year: "numeric", hour: "numeric", minute: "2-digit", timeZone: "Asia/Kolkata" }).format(new Date(context.completed_at))
+      : "Today";
+    const total = data.questions.length + 1;
+    const ratingRow = (question, index) => `
+      <fieldset class="xf-q" data-q="${esc(question.key)}">
+        <legend>${index + 1}. ${esc(question.label)}${index === 0 ? ' <em aria-label="required">*</em>' : ""}</legend>
+        <div class="xf-rate">
+          <div class="xf-stars" role="radiogroup" aria-label="${esc(question.label)}" data-name="${esc(question.key)}">${[1, 2, 3, 4, 5].map(value =>
+            `<label class="xf-star"><input type="radio" name="${esc(question.key)}" value="${value}" aria-label="${value} star${value === 1 ? "" : "s"}, ${esc(words[value - 1])}"><span aria-hidden="true">★</span></label>`).join("")}</div>
+          <span class="xf-word" aria-hidden="true"></span>
+        </div>
+        <ol class="xf-scale" aria-hidden="true">${words.map((word, i) => `<li>${i + 1} - ${esc(word)}</li>`).join("")}</ol>
+        <p class="xf-error" role="alert"></p>
+      </fieldset>`;
+    const overlay = document.createElement("div");
+    overlay.id = "interview-experience-feedback";
+    overlay.className = "xf-overlay";
+    overlay.innerHTML = `
+      <div class="xf-shell" role="dialog" aria-modal="true" aria-labelledby="experience-feedback-title">
+        <form class="xf-form" novalidate>
+          <header class="xf-bar">
+            <div class="topbar-brand xf-brand"><img src="/voicedotslogo.svg" alt="" width="30" height="30"><span class="topbar-name">oiceDots</span></div>
+            <span class="xf-bar-note"><span aria-hidden="true">✓</span> Interview saved</span>
+          </header>
+          <div class="xf-body">
+            <div class="xf-head">
+              <span class="xf-badge" aria-hidden="true">★</span>
+              <div>
+                <h2 id="experience-feedback-title">Interview Completed! Share Your Feedback</h2>
+                <p class="xf-sub">Takes about 30 seconds. Only the first rating is required, and your feedback never affects your result.</p>
+              </div>
+            </div>
+            <dl class="xf-context">
+              <div><dt>Interview type</dt><dd>${esc(context.interview_type || "AI interview")}</dd></div>
+              <div><dt>Role</dt><dd>${esc(context.role || "Not specified")}</dd></div>
+              <div><dt>Drive</dt><dd>${esc(context.drive || "Self practice")}</dd></div>
+              <div><dt>Date</dt><dd>${esc(when)}</dd></div>
+            </dl>
+            <div class="xf-progress" aria-hidden="true"><span class="xf-progress-bar"><i></i></span><span class="xf-progress-text">0 of ${total} answered · about 30 seconds</span></div>
+            <div class="xf-list">
+              ${data.questions.map(ratingRow).join("")}
+              <fieldset class="xf-q" data-q="recommend"><legend>${data.questions.length + 1}. How likely are you to recommend this AI interview experience to other students?</legend>
+                <div class="xf-range"><div class="xf-range-ends"><span>Not likely</span><output class="xf-range-value" aria-live="polite">Not selected</output><span>Extremely likely</span></div>
+                <input type="range" name="recommend" min="0" max="10" step="1" value="5" aria-label="How likely are you to recommend this AI interview experience? 0 to 10">
+                <div class="xf-range-ticks">${Array.from({ length: 11 }, (_, n) => `<button type="button" data-score="${n}" tabindex="-1">${n}</button>`).join("")}</div></div></fieldset>
+              <fieldset class="xf-q" data-q="improvements"><legend>What could we improve? <span>(Optional, choose any)</span></legend>
+                <div class="xf-chips">${(data.improvement_options || []).map(option => `<label class="xf-chip"><input type="checkbox" name="improvements" value="${esc(option.key)}"><span>${esc(option.label)}</span></label>`).join("")}</div>
+                <input class="xf-other" name="improvement_other" maxlength="200" placeholder="Tell us what else to improve..." aria-label="Please specify the other improvement" hidden>
+                <p class="xf-error" role="alert"></p></fieldset>
+              <fieldset class="xf-q" data-q="comments"><legend>Additional Comments <span>(Optional)</span></legend>
+                <div class="xf-text"><textarea name="comments" maxlength="${limit}" rows="3" aria-label="Additional comments" placeholder="Share any other thoughts, suggestions, or feedback..."></textarea><span class="xf-count">0/${limit}</span></div></fieldset>
+            </div>
+          </div>
+          <footer class="xf-actions">
+            <p class="xf-status" role="status"></p>
+            <button type="button" class="pj-btn pj-btn-ghost xf-skip">Skip for now</button>
+            <button type="submit" class="pj-btn pj-btn-primary xf-submit">Submit Feedback</button>
+          </footer>
+        </form>
+      </div>`;
+    document.body.appendChild(overlay);
+    const form = overlay.querySelector("form");
+    const status = form.querySelector(".xf-status");
+    const submit = form.querySelector(".xf-submit");
+    const skip = form.querySelector(".xf-skip");
+    const range = form.querySelector('input[name="recommend"]');
+    const rangeValue = form.querySelector(".xf-range-value");
+    const other = form.querySelector(".xf-other");
+    let recommend = null;
+    const checked = name => form.querySelector(`input[name="${name}"]:checked`);
+    function updateProgress() {
+      const answered = data.questions.filter(question => checked(question.key)).length + (recommend == null ? 0 : 1);
+      form.querySelector(".xf-progress-bar i").style.width = `${Math.round(answered / total * 100)}%`;
+      form.querySelector(".xf-progress-text").textContent = answered === total ? "All answered — thank you!" : `${answered} of ${total} answered · about 30 seconds`;
     }
-    const commentLabel=document.createElement("label");commentLabel.textContent="What worked well, or what should we improve? (optional)";
-    const comments=document.createElement("textarea");comments.name="comments";comments.maxLength=2000;comments.rows=3;comments.style.cssText="display:block;width:100%;box-sizing:border-box;margin-top:8px;padding:10px;background:#242232;color:#fff;border:1px solid #484256;border-radius:8px";commentLabel.appendChild(comments);form.appendChild(commentLabel);
-    const status=document.createElement("p");status.setAttribute("role","status");form.appendChild(status);
-    const actions=document.createElement("div");actions.style.cssText="display:flex;flex-wrap:wrap;gap:12px;justify-content:flex-end;margin-top:20px;padding-top:8px";
-    const skip=document.createElement("button");skip.type="button";skip.className="pj-btn pj-btn-ghost";skip.textContent="Skip feedback";skip.style.minHeight="44px";
-    const submit=document.createElement("button");submit.type="submit";submit.className="pj-btn pj-btn-primary";submit.textContent="Submit feedback";submit.style.minHeight="44px";
-    actions.append(skip,submit);form.appendChild(actions);overlay.appendChild(form);document.body.appendChild(overlay);skip.focus();
-    skip.onclick=()=>{overlay.remove();void studentFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({skipped:true}),signal:AbortSignal.timeout(10000)}).catch(()=>{});};
-    form.onsubmit=async event=>{
-      event.preventDefault();const payload={comments:comments.value.trim()};
-      for(const question of data.questions){const select=form.elements.namedItem(question.key);if(select?.value)payload[question.key]=Number(select.value);}
-      if(Object.keys(payload).length===1&&!payload.comments){status.textContent="Choose at least one rating, add a comment, or skip feedback.";return;}
-      submit.disabled=true;status.textContent="Saving your feedback…";
-      try{const saved=await studentFetch(endpoint,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload),signal:AbortSignal.timeout(15000)});if(!saved.ok)throw new Error("Your feedback could not be saved. Retry or skip.");overlay.remove();}
-      catch(error){status.textContent=error.message||"Feedback could not be saved. Retry or skip.";submit.disabled=false;}
+    function clearError(name) {
+      const question = form.querySelector(`[data-q="${name}"]`);
+      question?.classList.remove("invalid");
+      const error = question?.querySelector(".xf-error");
+      if (error) error.textContent = "";
+    }
+    function showError(name, message) {
+      const question = form.querySelector(`[data-q="${name}"]`);
+      question?.classList.add("invalid");
+      const error = question?.querySelector(".xf-error");
+      if (error) error.textContent = message;
+    }
+    const setRecommend = value => {
+      recommend = Number(value);
+      range.value = String(recommend);
+      rangeValue.textContent = `${recommend} / 10`;
+      form.querySelector(".xf-range").classList.add("chosen");
+      form.querySelectorAll(".xf-range-ticks button").forEach(button => button.classList.toggle("on", Number(button.dataset.score) === recommend));
+      updateProgress();
     };
-    overlay.addEventListener("keydown",event=>{if(event.key==="Escape")skip.click();if(event.key==="Tab"){const controls=[...form.querySelectorAll('select,textarea,button')].filter(el=>!el.disabled);const first=controls[0],last=controls.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}}});
+    range.addEventListener("input", () => setRecommend(range.value));
+    range.addEventListener("change", () => setRecommend(range.value));
+    range.addEventListener("pointerup", () => { if (recommend == null) setRecommend(range.value); });
+    form.querySelectorAll(".xf-range-ticks button").forEach(button => button.addEventListener("click", () => setRecommend(button.dataset.score)));
+    form.querySelectorAll(".xf-stars").forEach(group => group.addEventListener("change", event => {
+      const value = Number(event.target.value);
+      group.querySelectorAll(".xf-star").forEach((star, index) => star.classList.toggle("on", index < value));
+      const word = group.parentElement.querySelector(".xf-word");
+      word.textContent = words[value - 1];
+      word.dataset.level = String(value);
+      clearError(group.dataset.name);
+      updateProgress();
+    }));
+    form.querySelectorAll('input[name="improvements"]').forEach(box => box.addEventListener("change", () => {
+      box.closest(".xf-chip").classList.toggle("on", box.checked);
+      const otherChecked = form.querySelector('input[name="improvements"][value="other"]')?.checked;
+      other.hidden = !otherChecked;
+      if (otherChecked) other.focus(); else other.value = "";
+      clearError("improvements");
+    }));
+    other.addEventListener("input", () => clearError("improvements"));
+    const comments = form.elements.namedItem("comments");
+    comments.addEventListener("input", () => { form.querySelector(".xf-count").textContent = `${comments.value.length}/${limit}`; });
+    const close = () => { overlay.classList.add("closing"); setTimeout(() => overlay.remove(), 220); };
+    skip.focus();
+    skip.onclick = () => {
+      overlay.remove();
+      void studentFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ skipped: true }), signal: AbortSignal.timeout(10000) }).catch(() => {});
+    };
+    form.onsubmit = async event => {
+      event.preventDefault();
+      const improvements = [...form.querySelectorAll('input[name="improvements"]:checked')].map(box => box.value);
+      const payload = { recommend, improvements, improvement_other: other.value.trim(), comments: comments.value.trim() };
+      for (const question of data.questions) payload[question.key] = checked(question.key) ? Number(checked(question.key).value) : null;
+      const first = data.questions[0]?.key;
+      if (first && payload[first] == null) {
+        showError(first, "Please choose a rating to submit, or skip for now.");
+        status.textContent = "The first question is required.";
+        form.querySelector(`[data-q="${first}"]`)?.scrollIntoView({ behavior: "smooth", block: "center" });
+        return;
+      }
+      if (improvements.includes("other") && !payload.improvement_other) {
+        showError("improvements", "Please tell us what else to improve.");
+        status.textContent = "";
+        return;
+      }
+      submit.disabled = true;
+      status.textContent = "Saving your feedback…";
+      try {
+        const saved = await studentFetch(endpoint, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload), signal: AbortSignal.timeout(15000) });
+        if (!saved.ok) throw new Error("Your feedback could not be saved. Retry or skip.");
+        form.innerHTML = `<div class="xf-done" role="status"><span class="xf-done-mark" aria-hidden="true">✓</span><h2>Thank you!</h2><p>Your feedback helps us make every AI interview better.</p></div>`;
+        setTimeout(close, 1500);
+      } catch (error) {
+        status.textContent = error.message || "Feedback could not be saved. Retry or skip.";
+        submit.disabled = false;
+      }
+    };
+    overlay.addEventListener("keydown", event => {
+      if (event.key === "Escape" && document.body.contains(skip)) skip.click();
+      if (event.key === "Tab") {
+        const controls = [...form.querySelectorAll("input:not([hidden]),textarea,button:not([disabled])")].filter(element => element.tabIndex !== -1);
+        const firstControl = controls[0], last = controls.at(-1);
+        if (event.shiftKey && document.activeElement === firstControl) { event.preventDefault(); last.focus(); }
+        else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); firstControl.focus(); }
+      }
+    });
   } catch { /* Optional feedback must never block interview completion. */ }
 }

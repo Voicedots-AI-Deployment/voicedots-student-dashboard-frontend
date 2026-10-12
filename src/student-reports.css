@@ -68,3 +68,21 @@
 
 /* Keep the existing question/feedback cards, with the video above them. */
 .report-review-layout{display:grid;grid-template-columns:1fr;gap:22px;align-items:start}.report-video-review{position:static;min-width:0;width:100%;max-width:640px;justify-self:center}.report-video-review .report-video{display:block;width:100%;max-height:320px;aspect-ratio:16/9;object-fit:contain;background:#111827;border-radius:10px}.report-video-review>.button{margin-top:12px}.report-answer-review{min-width:0}.report-response>.button{margin-top:12px}.report-video-review .report-section-heading{margin-bottom:14px}
+
+/* Question pins on the interview video timeline */
+.report-video-markers { margin: 12px 0 4px; }
+.report-marker-track { position: relative; height: 46px; margin: 0 14px; }
+.report-marker-track:before { content: ""; position: absolute; left: 0; right: 0; top: 36px; height: 6px; border-radius: 999px; background: var(--soft); }
+.report-marker-progress { position: absolute; left: 0; top: 36px; height: 6px; border-radius: 999px; background: linear-gradient(90deg, #b496df, var(--primary)); transition: width .2s linear; }
+.report-marker { position: absolute; top: 4px; display: grid; place-items: center; width: 24px; height: 24px; padding: 0; transform: translateX(-50%); transform-origin: 50% 32px; border: 2px solid var(--card); border-radius: 50%; background: #b496df; color: #fff; font-size: 10px; font-weight: 600; cursor: pointer; box-shadow: 0 4px 10px rgba(60, 34, 104, .25); transition: background-color .2s ease, transform .2s ease; z-index: 1; }
+.report-marker:after { content: ""; position: absolute; top: 100%; left: 50%; width: 2px; height: 9px; transform: translateX(-50%); background: inherit; border-radius: 0 0 2px 2px; }
+.report-marker:hover, .report-marker:focus-visible { transform: translateX(-50%) scale(1.15); z-index: 3; outline: none; }
+.report-marker:focus-visible { box-shadow: 0 0 0 3px var(--card), 0 0 0 5px var(--primary); }
+.report-marker.active { background: var(--primary); z-index: 2; }
+.report-marker-tip { position: absolute; bottom: calc(100% + 10px); left: 50%; transform: translateX(-50%); display: none; width: max-content; max-width: 220px; padding: 8px 10px; border-radius: 10px; background: #1f1830; color: #fff; font-size: 11px; font-weight: 400; line-height: 1.4; text-align: left; white-space: normal; box-shadow: 0 10px 24px rgba(0, 0, 0, .25); pointer-events: none; }
+.report-marker-tip b { display: block; margin-bottom: 3px; color: #cdb3ff; font-weight: 600; }
+.report-marker:hover .report-marker-tip, .report-marker:focus-visible .report-marker-tip { display: block; }
+.report-marker-scale { display: flex; justify-content: space-between; gap: 8px; margin: 4px 14px 0; color: var(--muted); font-size: 10px; }
+.report-marker-scale span:nth-child(2) { text-align: center; }
+.report-marker-note { margin: 10px 0 0; color: var(--muted); font-size: 12px; }
+@media (max-width: 520px) { .report-marker-scale span:nth-child(2) { display: none; } }

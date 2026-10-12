@@ -2,15 +2,17 @@ import { test, expect, type Page } from "@playwright/test";
 
 const identity = { student: { id: "s1", full_name: "Student", email: "student@example.edu", roll_number: "CS01", allow_student_photo_upload: true } };
 
-async function camera(page: Page, denied = false) {
-  await page.addInitScript(({ denied }) => {
+async function camera(page: Page, denied = false, fill = "#000000") {
+  await page.addInitScript(({ denied, fill }) => {
     const state = { stopped: 0 };
     (window as unknown as { cameraState: typeof state }).cameraState = state;
     Object.defineProperty(navigator.mediaDevices, "getUserMedia", { value: async () => {
       if (denied) throw new DOMException("Denied", "NotAllowedError");
       const canvas = document.createElement("canvas");
       canvas.width = 640; canvas.height = 480;
-      canvas.getContext("2d")!.fillRect(0, 0, 640, 480);
+      const context = canvas.getContext("2d")!;
+      context.fillStyle = fill;
+      context.fillRect(0, 0, 640, 480);
       const stream = canvas.captureStream(5);
       stream.getTracks().forEach((track) => {
         const stop = track.stop.bind(track);
@@ -18,7 +20,7 @@ async function camera(page: Page, denied = false) {
       });
       return stream;
     } });
-  }, { denied });
+  }, { denied, fill });
 }
 
 async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolean; rosterPhoto?: boolean; photoValidationError?: boolean; photoPermission?: boolean } = {}) {
@@ -26,6 +28,9 @@ async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolea
   let hasPhoto = Boolean(options.rosterPhoto);
   const signedInIdentity = () => ({ student: { ...identity.student, allow_student_photo_upload: options.photoPermission ?? true, ...(hasPhoto ? { photo_url: "/api/student/profile/photo" } : {}) } });
   const captures: Record<string, unknown>[] = [];
+  // These students have not finished their profile, so the welcome prompt
+  // appears after sign-in; they skip it as a student would, then continue.
+  await page.addLocatorHandler(page.getByRole("button", { name: "Skip for now" }), button => button.click());
   await page.route("**/api/**", async (route) => {
     const path = new URL(route.request().url()).pathname;
     if (path === "/api/auth/student-me") return route.fulfill({ status: signedIn ? 200 : 401, json: signedIn ? signedInIdentity() : { detail: "Authentication required." } });
@@ -41,6 +46,9 @@ async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolea
     }
     if (["/api/auth/student-login", "/api/auth/student-enroll"].includes(path)) {
       const body = route.request().postDataJSON();
+      // Mirrors the API: one method per sign-in. Password needs no photo;
+      // face sign-in needs a camera photo.
+      if (body.auth_method !== "face" && path === "/api/auth/student-login") { captures.push(body); signedIn = true; return route.fulfill({ json: signedInIdentity() }); }
       if (!body.webcam_photo) return route.fulfill({ status: 403, json: { detail: { code: "PHOTO_REQUIRED", message: "Take a photo." } } });
       captures.push(body);
       if (options.mismatch) return route.fulfill({ status: 403, json: { detail: { code: "PHOTO_MISMATCH", message: "Photo did not match. Please retake it." } } });
@@ -55,11 +63,37 @@ async function auth(page: Page, options: { mismatch?: boolean; conflict?: boolea
 
 async function signIn(page: Page) {
   await page.goto("/");
+  await page.getByRole("button", { name: "Face", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await page.getByLabel("Email").fill("student@example.edu");
+  await page.getByRole("button", { name: "Open camera" }).click();
+  await expect(page.getByRole("heading", { name: "Verify your photo." })).toBeVisible();
+}
+
+test("password sign-in uses only the email and password, with no camera step", async ({ page }) => {
+  const captures = await auth(page);
+  await page.goto("/");
+  await expect(page.getByRole("button", { name: "Email & password" })).toHaveAttribute("aria-pressed", "true");
   await page.getByLabel("Email").fill("student@example.edu");
   await page.getByLabel("Password", { exact: true }).fill("CorrectPassword1!");
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
-  await expect(page.getByRole("heading", { name: "Verify your photo." })).toBeVisible();
-}
+  await expect(page.getByRole("heading", { name: "Verify your photo." })).toHaveCount(0);
+  await expect.poll(() => captures.length).toBe(1);
+  expect(captures[0].webcam_photo).toBeUndefined();
+  expect(captures[0].password).toBe("CorrectPassword1!");
+});
+
+test("face sign-in asks only for the email and a camera photo", async ({ page }) => {
+  await camera(page);
+  await auth(page);
+  await page.goto("/");
+  await page.getByRole("button", { name: "Face", exact: true }).click();
+  await expect(page.getByRole("button", { name: "Face", exact: true })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByLabel("Password", { exact: true })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: /Email me a password/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Email & password" }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+});
 
 test("login waits for a camera match and stops the camera", async ({ page }) => {
     await camera(page);
@@ -70,7 +104,8 @@ test("login waits for a camera match and stops the camera", async ({ page }) => 
     await expect(page.getByRole("heading", { name: "Verify your photo." })).not.toBeVisible();
     expect(captures).toHaveLength(1);
     expect(captures[0].webcam_photo).toMatch(/^data:image\/jpeg;base64,/);
-    expect(captures[0].password).toBe("CorrectPassword1!");
+    expect(captures[0].auth_method).toBe("face");
+    expect(captures[0].password).toBe("");
     expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
     expect(await page.evaluate(() => JSON.stringify({ ...sessionStorage, ...localStorage }))).not.toContain("CorrectPassword1!");
 });
@@ -85,8 +120,40 @@ test("mismatch keeps the student at the camera and allows a retry", async ({ pag
   await expect.poll(() => captures.length).toBe(2);
   expect(await page.evaluate(() => sessionStorage.getItem("vd_student_data"))).toBeNull();
   await page.getByRole("button", { name: "Back to sign in" }).click();
-  await expect(page.getByLabel("Password", { exact: true })).toHaveValue("");
+  await expect(page.getByRole("button", { name: "Open camera" })).toBeVisible();
   expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
+});
+
+test("unavailable face sign-in returns to password login and releases the camera", async ({ page }) => {
+  await camera(page);
+  await auth(page);
+  await page.route("**/api/auth/student-login", route => route.fulfill({ status: 403, json: { detail: {
+    code: "FACE_LOGIN_NOT_ENABLED", message: "Face sign-in is not available. Use email and password, or contact your placement team.",
+  } } }));
+  await signIn(page);
+  await page.getByRole("button", { name: "Capture and verify" }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await expect(page.getByRole("alert")).toContainText("Face sign-in is not available");
+  await expect(page.getByRole("heading", { name: "Verify your photo." })).toHaveCount(0);
+  expect(await page.evaluate(() => (window as unknown as { cameraState: { stopped: number } }).cameraState.stopped)).toBeGreaterThan(0);
+  expect(await page.evaluate(() => sessionStorage.getItem("vd_student_data"))).toBeNull();
+});
+
+test("appearance changes can recover through password login without accepting a mismatch", async ({ page }) => {
+  await camera(page);
+  const captures = await auth(page, { mismatch: true });
+  await signIn(page);
+  await page.getByRole("button", { name: "Capture and verify" }).click();
+  await expect(page.getByText(/appearance has changed/)).toBeVisible();
+  expect(await page.evaluate(() => sessionStorage.getItem("vd_student_data"))).toBeNull();
+  await page.getByRole("button", { name: "Sign in with password", exact: true }).click();
+  await expect(page.getByLabel("Password", { exact: true })).toBeVisible();
+  await page.getByLabel("Email").fill("student@example.edu");
+  await page.getByLabel("Password", { exact: true }).fill("CorrectPassword1!");
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect.poll(() => captures.length).toBe(2);
+  expect(captures[1].webcam_photo).toBeUndefined();
+  await expect(page.getByRole("heading", { name: "Welcome back." })).toHaveCount(0);
 });
 
 test("camera denial cannot complete sign in", async ({ page }) => {
@@ -222,3 +289,20 @@ test("My Profile hides photo controls when placement manages the photo", async (
   await expect(page.getByRole("button", { name: "Upload photo" })).toHaveCount(0);
   await expect(page.getByRole("button", { name: "Use webcam" })).toHaveCount(0);
 });
+
+for (const [fill, hint] of [["#000000", "Too dark: face a window or lamp"], ["#9a9a9a", "Good light. Line up your face and capture"]] as const) {
+  test(`profile camera shows a live lighting check (${hint.split(":")[0].split(".")[0]})`, async ({ page }) => {
+    await camera(page, false, fill);
+    await auth(page);
+    await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: [] } }));
+    await page.route("**/api/student/resume-studio/resumes", route => route.fulfill({ json: [] }));
+    await signIn(page);
+    await page.getByRole("button", { name: "Capture and verify" }).click();
+    await page.getByRole("link", { name: "My profile", exact: true }).click();
+    await page.getByRole("button", { name: "Use webcam" }).click();
+    await expect(page.getByRole("list", { name: "Tips for a clear photo" })).toBeVisible();
+    await expect(page.locator(".profile-face-outline")).toBeVisible();
+    await expect(page.locator(".photo-light")).toHaveText(hint);
+  });
+}
+
