@@ -44,6 +44,8 @@ test.beforeEach(async({page})=>{
           recoverMicrophoneCapture=originalRecover;recordIntegrityViolation=originalViolation;
           return {recoveries:window.microphoneRecoveryCalls,integrityEvents:window.microphoneIntegrityCalls};
         },
+        resumeState(){return {resumingAfterDrop,busyResumeRetries,reconnectAttempts};},
+        busyResume(refresh=false){interviewHasStarted=!refresh;resumePreviouslyStarted=refresh;resumingAfterDrop=true;busyResumeRetries=2;reconnectAttempts=3;handleControlMessage({type:"authenticated"});handleControlMessage({type:"error",code:"SESSION_ALREADY_ACTIVE",detail:"already active"});return {resumingAfterDrop,busyResumeRetries,reconnectAttempts,fatal:document.getElementById("error-toast")?.classList.contains("show")};},
         kind:preflightFailureKind,
         listening(){aiSpeaking=true;activePlaybackSources.clear();handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});return aiSpeaking;},
         gate(){aiSpeaking=true;activePlaybackSources.add({});handleControlMessage({type:'listening',audio_epoch:currentAudioEpoch});const value=aiSpeaking;activePlaybackSources.clear();aiSpeaking=false;return value;},
@@ -141,4 +143,14 @@ test('quality flicker does not spam reminders and sustained failures share a coo
     return events.filter(Boolean);
   });
   expect(result).toEqual(['poor_lighting','camera_quality_restored','camera_blurry']);
+});
+
+
+test('ownership refusal during authenticated resume preserves bounded retry and avoids a fatal interruption',async({page})=>{
+  expect(await page.evaluate(()=>(window as any).captureRecovery.busyResume())).toEqual({resumingAfterDrop:true,busyResumeRetries:2,reconnectAttempts:3,fatal:false});
+});
+
+
+test('authenticated refresh of a started attempt also preserves its resume retries',async({page})=>{
+  expect(await page.evaluate(()=>(window as any).captureRecovery.busyResume(true))).toEqual({resumingAfterDrop:true,busyResumeRetries:2,reconnectAttempts:3,fatal:false});
 });

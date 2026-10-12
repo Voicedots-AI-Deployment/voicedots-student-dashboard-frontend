@@ -12,7 +12,7 @@ const WS_BASE = _HTTP_BASE.replace(/^http/, "ws");
 const STT_SAMPLE_RATE = 16000;
 const TTS_SAMPLE_RATE = 48000;
 let currentTTSSampleRate = TTS_SAMPLE_RATE;
-const PREBUFFER_SECONDS = 0.25;
+const PREBUFFER_SECONDS = 0.08;
 // app.js's login flow only ever caches the logged-in student's profile under
 // "vd_student_data" (set right after /api/auth/student-me succeeds). The
 // similarly named vd_student_session is an HttpOnly cookie and therefore
@@ -223,6 +223,7 @@ let reconnectAttempts = 0;
 // True from a dropped connection until the resumed session sends real
 // interview traffic; "authenticated" arrives before the server's lock check.
 let resumingAfterDrop = false;
+let resumePreviouslyStarted = false;
 let busyResumeRetries = 0;
 const MAX_BUSY_RESUME_RETRIES = 8;
 let interviewStopRequested = false;
@@ -453,7 +454,12 @@ async function tryResumeCompletedSessionOnLoad() {
     const response = await studentFetch(`${_HTTP_BASE}/api/interview/${currentSessionId}`);
     if (!response.ok) return false;
     const record = await response.json();
-    if (record.status !== "completed") return false;
+    if (record.status !== "completed") {
+      // The authenticated session view confirms this is a resume after reload.
+      resumePreviouslyStarted = Boolean(record.started_at);
+      if (resumePreviouslyStarted) resumingAfterDrop = true;
+      return false;
+    }
     const agents = new Set((record.turns || []).map((turn) => turn.agent_type).filter(Boolean));
     if (!agents.size || agents.size > TOTAL_INTERVIEW_ROUNDS) return false;
     setRequiredInterviewRounds(agents.size);
@@ -2767,16 +2773,18 @@ function schedulePCMChunk(pcmBytes, epoch = currentAudioEpoch) {
   const now = playbackAudioContext.currentTime;
   if (playbackTime < now) playbackTime = now + PREBUFFER_SECONDS;
 
-  const startsInMs = Math.max(0, (playbackTime - now) * 1000);
+  const audibleStartTime = playbackTime;
   if (!schedulePCMChunk._lipEpochs) schedulePCMChunk._lipEpochs = new Set();
   if (!schedulePCMChunk._lipEpochs.has(epoch)) {
     schedulePCMChunk._lipEpochs.add(epoch);
-    setTimeout(() => {
-      if (epoch === currentAudioEpoch && aiSpeaking) {
+    const acknowledgeAudibleStart = () => {
+      if (epoch !== currentAudioEpoch || !aiSpeaking) return;
+      if (playbackAudioContext && (!playbackAudioContext.state || (playbackAudioContext.state === "running" && playbackAudioContext.currentTime >= audibleStartTime))) {
         setActivePanelTalking(true);
         if (ws?.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: "playback_started", audio_epoch: epoch }));
-      }
-    }, startsInMs);
+      } else setTimeout(acknowledgeAudibleStart, 20);
+    };
+    setTimeout(acknowledgeAudibleStart, 0);
   }
   source.start(playbackTime);
   playbackTime += buffer.duration;
@@ -3051,7 +3059,13 @@ function describeInterviewRecordingFormat(mimeType) {
 
 let interviewRecordingEnabled = true;
 let completionPersistencePending = false;
+let recordingStartTask = null;
 async function startInterviewRecording() {
+  if (recordingStartTask) return recordingStartTask;
+  recordingStartTask = initializeInterviewRecording().finally(() => { recordingStartTask = null; });
+  return recordingStartTask;
+}
+async function initializeInterviewRecording() {
   if (!interviewRecordingEnabled) return;
   if (interviewRecorder || !currentSessionId || !userMediaStream || !recordingConsentEl?.checked) return;
   if (typeof MediaRecorder === "undefined" || !recordingAudioDestination) {
@@ -3063,6 +3077,22 @@ async function startInterviewRecording() {
   if (!videoTrack || !audioTrack) {
     setRecordingStatus("The camera or microphone recording track is unavailable. Your interview can continue.", true);
     return;
+  }
+  // Drain the previous page's persisted slices before the server seals its
+  // old segment. Never replace or silently discard an earlier recording.
+  let savedMetas;
+  try { savedMetas = await recordingDbRequest("meta", "readonly", store => store.getAll()); }
+  catch { setRecordingStatus("Recording storage is unavailable in this browser. Your interview can continue.", true); return; }
+  const previousMeta = (savedMetas || []).filter(row => row.session === currentSessionId)
+    .sort((a, b) => b.startedAt - a.startedAt)[0];
+  if (previousMeta) {
+    recordingSegmentId = previousMeta.segment;
+    recordingPartNumber = previousMeta.nextPart || 1;
+    recordingPartMetadata = previousMeta.parts || [];
+    recordingMimeType = previousMeta.mimeType;
+    recordingStartedAt = previousMeta.startedAt;
+    try { await retryRecordingFlush(true); }
+    catch { setRecordingStatus("Previous recording upload needs a retry before recording can resume. Keep this page open.", true); return; }
   }
   recordingSegmentId = crypto.randomUUID();
   recordingChunkSequence = 0;
@@ -3094,7 +3124,7 @@ async function startInterviewRecording() {
     });
     if (!started.ok) throw new Error((await started.json().catch(() => ({}))).detail || "Recording could not be started.");
     const startedData = await started.json().catch(() => ({}));
-    const serverStartedAt = Date.parse(String(startedData.started_at || ""));
+    const serverStartedAt = Date.parse(String(startedData.server_now || startedData.started_at || ""));
     if (Number.isFinite(serverStartedAt)) recordingServerClockOffsetMs = serverStartedAt - Date.now();
     await recordingDbRequest("meta", "readwrite", store => store.put({
       id: `${currentSessionId}:${recordingSegmentId}`, session: currentSessionId,
@@ -3102,6 +3132,7 @@ async function startInterviewRecording() {
       nextPart: 1, parts: [], duration: null,
     }));
     sessionStorage.setItem(`vd_interview_recording_consent_${currentSessionId}`, "true");
+    if (interviewStopRequested) return;
     // Capture a low-resolution recording-only camera track. The live proctor
     // pipeline keeps the original camera stream and its existing quality.
     const canvas = document.createElement("canvas");
@@ -3266,11 +3297,15 @@ document.addEventListener("click", async event => {
 // ============================================================
 
 function handleControlMessage(payload) {
-  if (payload.type !== "authenticated" && resumingAfterDrop) { resumingAfterDrop = false; busyResumeRetries = 0; }
+  if (payload.type === "interview_started") {
+    resumingAfterDrop = false; busyResumeRetries = 0; reconnectAttempts = 0;
+    document.getElementById("error-toast")?.classList.remove("show");
+  }
   switch (payload.type) {
     case "authenticated":
-      reconnectAttempts = 0;
-      if (rndStatus) rndStatus.textContent = "Connected (Live)";
+      // Authentication succeeds before the server acquires interview ownership.
+      // Keep retry counters until interview_started confirms a live runner.
+      if (rndStatus) rndStatus.textContent = "Connecting interview…";
       break;
 
     // Backend-authoritative proctoring boundary — prejoin/setup checks
@@ -3557,6 +3592,10 @@ function handleControlMessage(payload) {
       break;
 
     case "error":
+      if (payload.code === "SESSION_ALREADY_ACTIVE" && (interviewHasStarted || resumePreviouslyStarted) && resumingAfterDrop && busyResumeRetries < MAX_BUSY_RESUME_RETRIES) {
+        if (rndStatus) rndStatus.textContent = "Restoring your previous interview connection…";
+        break; // onclose retries after the previous authenticated runner releases its locks.
+      }
       if (!interviewHasStarted) {
         returnToPreflight(payload.detail || "Interview connection failed. Retry readiness.");
         break;
@@ -3666,13 +3705,13 @@ function connectInterviewSocket() {
     // tab's previous connection for a few seconds, so "already active" is
     // retried with the normal backoff. On a first connection it really is
     // another browser.
-    const resumeStillReleasing = event.code === 4429 && interviewHasStarted && resumingAfterDrop && busyResumeRetries < MAX_BUSY_RESUME_RETRIES;
+    const resumeStillReleasing = event.code === 4429 && (interviewHasStarted || resumePreviouslyStarted) && resumingAfterDrop && busyResumeRetries < MAX_BUSY_RESUME_RETRIES;
     if (resumeStillReleasing) busyResumeRetries += 1;
     if (event.code === 4429 && !resumeStillReleasing) {
       showFatalError("This interview is already active in another browser. Close the other interview before resuming here.");
       return;
     }
-    if (!interviewHasStarted) {
+    if (!interviewHasStarted && !resumeStillReleasing) {
       returnToPreflight("Could not start the interview connection. Retry readiness.");
       return;
     }
@@ -3685,7 +3724,7 @@ function connectInterviewSocket() {
       showFatalError(reason);
       return;
     }
-    if (reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
+    if (!resumeStillReleasing && reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       showFatalError("The connection could not be restored after several attempts. Your completed answers are saved; reload this page to resume.");
       return;
     }
