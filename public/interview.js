@@ -3396,8 +3396,8 @@ function handleControlMessage(payload) {
       if (controls) controls.hidden = !["awaiting_choice", "submitted"].includes(payload.state);
       const status = document.getElementById("support-retry-status");
       if (status) status.textContent = payload.state === "awaiting_choice"
-        ? "Say yes to try again, or no to continue. You can also choose below."
-        : "Would you like another try at this question?";
+        ? "Say yes to start your answer again, or no to keep your answer. You can also choose below."
+        : "Would you like to start your answer again?";
       document.querySelectorAll(".support-retry-actions button").forEach(button => {
         button.disabled = payload.state !== "awaiting_choice";
       });
