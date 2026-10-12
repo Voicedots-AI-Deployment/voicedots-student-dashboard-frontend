@@ -1,5 +1,30 @@
 import { test, expect } from '@playwright/test';
 
+test('audio interrupted after tts_begin resumes when the first PCM arrives', async ({ page }) => {
+  await page.route('**/api/**', route => route.fulfill({ json: { student: { id: 'voice-audit' }, csrf_token: 'test' } }));
+  await page.route('**/interview.js*', async route => {
+    const response = await route.fetch();
+    await route.fulfill({ response, body: await response.text() + `
+      window.testInterruptedReply = () => {
+        window.resumeCalls = 0;
+        playbackAudioContext = {state:'running',currentTime:0,destination:{},
+          async resume(){window.resumeCalls++;this.state='running';},
+          createBuffer(c,n,r){return {duration:n/r,getChannelData:()=>new Float32Array(n)};},
+          createBufferSource(){return {connect(){},start(){},stop(){}};}};
+        playbackAnalyser=null;
+        handleControlMessage({type:'tts_begin',audio_epoch:99,text:'What did you verify?',sample_rate:24000});
+        playbackAudioContext.state='interrupted';
+        const packet=new ArrayBuffer(484);new DataView(packet).setUint32(0,99,false);
+        handleBinaryFrame(packet);
+        return window.resumeCalls;
+      };
+    ` });
+  });
+  await page.goto('/interview.html?id=voice-audit');
+  await expect.poll(() => page.evaluate(() => typeof (window as any).testInterruptedReply)).toBe('function');
+  expect(await page.evaluate(() => (window as any).testInterruptedReply())).toBe(1);
+});
+
 for (const [provider, rate] of [['Deepgram', 48000], ['Gemini', 24000]] as const) {
 for (const round of [1, 2, 3, 4]) {
   test(`${provider} ${rate / 1000} kHz audio drives only avatar ${round} and waits for playback before opening the mic`, async ({ page }) => {

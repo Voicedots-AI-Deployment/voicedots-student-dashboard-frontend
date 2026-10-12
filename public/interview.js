@@ -2886,6 +2886,11 @@ function handleBinaryFrame(data) {
   const view = new DataView(data);
   const epoch = view.getUint32(0, false);
   if (epoch !== currentAudioEpoch) return;
+  // Chrome can interrupt its audio context after tts_begin (permissions,
+  // device changes, focus changes). Resume again when actual audio arrives.
+  if (playbackAudioContext?.state && playbackAudioContext.state !== "running") {
+    void resumeInterviewAudio().catch(error => microphoneCaptureStatus(error.message));
+  }
 
   const pcm = data.slice(4);
 
