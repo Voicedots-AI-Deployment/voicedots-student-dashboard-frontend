@@ -286,10 +286,13 @@ let gazeOffCameraSince = null;
 let phoneVisibleSince = null;
 let phoneDetected = false;
 let phoneEvidence = null;
-const PHONE_EVIDENCE_MIN_SCORE = .7;
-// Single-view phones (no corroborating crop) need this score, seen 3 times.
-const PHONE_TEMPORAL_MIN_SCORE = .7;
-const PHONE_EVIDENCE_MIN_MS = 2000;
+// Calibrated on the Lite2 int8 worker model: phones held up to a webcam score
+// 0.5-0.87 in either the full frame or the centre crop (also in dim rooms),
+// while frames without a phone score 0. A sighting counts from 0.45; weaker
+// sightings need three consistent observations, confident ones two.
+const PHONE_EVIDENCE_MIN_SCORE = .45;
+const PHONE_CONFIDENT_SCORE = .6;
+const PHONE_EVIDENCE_MIN_MS = 1000;
 let cameraReminderTimes = {};
 // Integrity signals are intentionally debounced to avoid false positives,
 // but must still be visible quickly to the placement team.
@@ -297,7 +300,7 @@ const CANDIDATE_ABSENT_THRESHOLD_MS = 3000;
 const MULTIPLE_PEOPLE_THRESHOLD_MS = 5000;
 const POOR_LIGHTING_THRESHOLD_MS = 3500;
 const GAZE_AWAY_THRESHOLD_MS = 3500;
-const PHONE_VISIBLE_THRESHOLD_MS = 2000;
+const PHONE_VISIBLE_THRESHOLD_MS = 1000;
 let lastVisionWarningAt = {};
 let visionRecoverySince = {};
 let lastVisionObservationAt = 0;
@@ -1641,28 +1644,46 @@ function landmarkGazeOffCamera(landmarks) {
 // often the object detector actually runs on this device (up to ~2 s).
 let phoneFreshMs = 2500;
 
+// A phone moves in a hand between detector runs; treat a nearby box as the
+// same phone rather than demanding a tight overlap.
+function samePhoneBox(a, b) {
+  if (boxIoU(a, b) >= .1) return true;
+  const dx = (a.originX + a.width / 2) - (b.originX + b.width / 2);
+  const dy = (a.originY + a.height / 2) - (b.originY + b.height / 2);
+  return Math.hypot(dx, dy) <= 1.5 * Math.max(b.width, b.height, a.width, a.height);
+}
+
+function phoneSighting(detections, corroborating) {
+  const phoneScore = d => Number((d.categories || []).find(c => c.categoryName === "cell phone")?.score);
+  const views = [
+    ...detections.filter(d => phoneScore(d) >= PHONE_EVIDENCE_MIN_SCORE && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8)
+      .map(d => ({box: d.boundingBox, score: phoneScore(d), full: true})),
+    ...corroborating.filter(box => Number(box.confidence) >= PHONE_EVIDENCE_MIN_SCORE)
+      .map(box => ({box, score: Number(box.confidence), full: false})),
+  ].sort((a, b) => b.score - a.score);
+  if (!views.length) return null;
+  const best = views[0];
+  // A second independent view of the same phone (full frame and a crop, or
+  // two crops) is as good as a confident single view.
+  const corroborated = views.some(view => view !== best && boxIoU(view.box, best.box) >= .2);
+  return {...best, requiredCount: corroborated || best.score >= PHONE_CONFIDENT_SCORE ? 2 : 3};
+}
+
 function updatePhoneEvidence(detections, corroborating, now) {
-  const strong = detections.filter(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_EVIDENCE_MIN_SCORE) && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8);
-  // Require agreement between independent views, including crop-only phones.
-  const full = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
-  const crop = corroborating.find((box, index) => Number(box.confidence) >= .75 &&
-    corroborating.some((other, otherIndex) => index !== otherIndex && Number(other.confidence) >= .75 && boxIoU(box, other) >= .3));
-  // Phones seen without a second view need three consistent observations.
-  const temporal = strong.find(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_TEMPORAL_MIN_SCORE));
-  const box = full?.boundingBox || crop || temporal?.boundingBox;
-  const confidence = full ? Number(full.categories.find(c => c.categoryName === "cell phone").score) : crop ? Number(crop.confidence) : Number(temporal?.categories.find(c => c.categoryName === "cell phone")?.score);
-  const requiredCount = full || crop ? 2 : 3;
-  if (!box) {
+  const sighting = phoneSighting(detections, corroborating);
+  if (!sighting) {
     if (phoneEvidence && now - phoneEvidence.last > phoneFreshMs) phoneEvidence = null;
     return false;
   }
-  if (!phoneEvidence || now - phoneEvidence.last > 8000 || boxIoU(phoneEvidence.box, box) < .2) {
+  const {box, score: confidence, requiredCount} = sighting;
+  if (!phoneEvidence || now - phoneEvidence.last > Math.max(8000, phoneFreshMs * 2) || !samePhoneBox(phoneEvidence.box, box)) {
     phoneEvidence = {since:now,last:now,count:1,box,confidence,requiredCount};
   } else {
     if (now <= phoneEvidence.last) return false;
     phoneEvidence.last=now;phoneEvidence.count++;phoneEvidence.box=box;
-    phoneEvidence.requiredCount=Math.max(phoneEvidence.requiredCount,requiredCount);
-    phoneEvidence.confidence=Math.min(phoneEvidence.confidence,confidence);
+    // The weakest requirement seen so far applies once a confident view arrives.
+    phoneEvidence.requiredCount=Math.min(phoneEvidence.requiredCount,requiredCount);
+    phoneEvidence.confidence=Math.max(phoneEvidence.confidence,confidence);
   }
   return phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS;
 }
@@ -1812,7 +1833,7 @@ async function analyzeCameraFrame() {
     const region = personCropToggle === 0
       ? { x: 0, y: 0, w: 0.55, h: 1 }
       : { x: 0.45, y: 0, w: 0.55, h: 1 };
-    const fullPhoneVisible=phoneDetections.some(d=>Number(d.categories?.[0]?.score)>=PHONE_EVIDENCE_MIN_SCORE);
+    const fullPhoneVisible=phoneDetections.some(d=>Number(d.categories?.[0]?.score)>=PHONE_CONFIDENT_SCORE);
     const crop = fullPhoneVisible && faceCountDetected <= 1 ? null : await cropDetectPersons(objectFrame, region);
     if (crop) {
       for (const det of crop.detections) {
@@ -1820,7 +1841,7 @@ async function analyzeCameraFrame() {
         if (category !== "person" && category !== "cell phone") continue;
         const box = translateCropBox(det.boundingBox, crop);
         if (category === "cell phone") {
-          if (Number(det.categories?.[0]?.score) >= .65) corroboratingPhones.push({...box, confidence: Number(det.categories[0].score)});
+          if (Number(det.categories?.[0]?.score) >= PHONE_EVIDENCE_MIN_SCORE) corroboratingPhones.push({...box, confidence: Number(det.categories[0].score)});
           continue;
         }
         const overlapsKnown = personDetections.some(known => samePersonBox(box, known.boundingBox));
@@ -1830,7 +1851,7 @@ async function analyzeCameraFrame() {
     }
     const phoneCrop = await cropDetectPersons(objectFrame, { x: .2, y: .2, w: .6, h: .8 });
     for (const det of phoneCrop?.detections || []) {
-      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= .65) corroboratingPhones.push({...translateCropBox(det.boundingBox, phoneCrop), confidence: Number(det.categories[0].score)});
+      if (det.categories?.[0]?.categoryName === "cell phone" && Number(det.categories[0].score) >= PHONE_EVIDENCE_MIN_SCORE) corroboratingPhones.push({...translateCropBox(det.boundingBox, phoneCrop), confidence: Number(det.categories[0].score)});
     }
     analyzeCameraFrame.lastInferenceMs=performance.now()-inferenceStarted;
     now = Date.now();

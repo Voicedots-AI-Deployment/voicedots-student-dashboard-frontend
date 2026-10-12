@@ -110,8 +110,10 @@ test('phone evidence rejects single, weak and inconsistent detections and confir
   const strong=Array.from({length:7},(_,i)=>h.update([detection(.95)],[box],i*800));
   return {weak,isolated,noCorroboration,strong};
  });
- expect(result.weak.some(Boolean)).toBe(false);expect(result.isolated.some(Boolean)).toBe(false);expect(result.noCorroboration.slice(0,3).some(Boolean)).toBe(false);expect(result.noCorroboration.at(-1)).toBe(true);
- expect(result.strong.slice(0,3).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
+ expect(result.weak.some(Boolean)).toBe(false);expect(result.isolated.some(Boolean)).toBe(false);
+ // A single sighting never confirms; a sustained phone is confirmed after about a second.
+ expect(result.noCorroboration.slice(0,2).some(Boolean)).toBe(false);expect(result.noCorroboration.at(-1)).toBe(true);
+ expect(result.strong.slice(0,2).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
 });
 
 test('a phone held to the camera is confirmed on a slower device where the detector runs every 2 seconds', async ({page}) => {
@@ -123,11 +125,16 @@ test('a phone held to the camera is confirmed on a slower device where the detec
   const phone=(score:number)=>({categories:[{categoryName:'cell phone',score}],boundingBox:box});
   // Typical dim-room confidence, no corroborating crop, one detector run every 2 s.
   const slow=Array.from({length:4},(_,i)=>h.update([phone(.75)],[],i*2000));h.reset();
-  const weak=Array.from({length:6},(_,i)=>h.update([phone(.55)],[],i*2000));
-  return {slow,weak};
+  // Real held-up phones often score only ~0.5; three steady sightings confirm them.
+  const moderate=Array.from({length:4},(_,i)=>h.update([phone(.52)],[],i*2000));h.reset();
+  // A phone moving in the hand stays the same phone.
+  const moving=[0,2000,4000].map((t,i)=>h.update([{categories:[{categoryName:'cell phone',score:.7}],boundingBox:{...box,originX:200+i*70}}],[],t));h.reset();
+  const weak=Array.from({length:6},(_,i)=>h.update([phone(.4)],[],i*2000));
+  return {slow,moderate,moving,weak};
  });
- expect(result.slow.slice(0,2).some(Boolean)).toBe(false);
- expect(result.slow.at(-1)).toBe(true);
+ expect(result.slow).toEqual([false,true,true,true]);
+ expect(result.moderate).toEqual([false,false,true,true]);
+ expect(result.moving).toEqual([false,true,true]);
  expect(result.weak.some(Boolean)).toBe(false);
 });
 
