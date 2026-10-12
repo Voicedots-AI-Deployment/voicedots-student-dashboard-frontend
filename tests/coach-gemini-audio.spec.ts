@@ -14,7 +14,11 @@ for(const kind of ['lesson','widget'])for(const rate of [24000,48000,undefined,1
   await page.evaluate(async(kind)=>{const url='/tests/fixtures/coach-audio-harness.tsx';const harness=await import(url);harness.mount(kind)},kind);
   await page.getByRole('button',{name:kind==='lesson'?'Connect with Neha':'Start voice lesson'}).click();
   await expect.poll(()=>page.evaluate(()=>Boolean((window as any).coachSocket?.onmessage))).toBe(true);
-  await page.clock.install();
+  const playbackTime=new Date('2030-01-01T00:00:01Z');
+  await page.clock.install({time:new Date(playbackTime.getTime()-1000)});
+  // Installation leaves time running; pause before audio so browser work cannot
+  // consume playback time before the explicit completion assertions below.
+  await page.clock.pauseAt(playbackTime);
   await page.evaluate(rate=>{const socket=(window as any).coachSocket;socket.onmessage({data:JSON.stringify({type:'tts_begin',audio_epoch:1,text:'Let us work through this calmly.',sample_rate:rate})});const packet=new ArrayBuffer(48004);new DataView(packet).setUint32(0,1,false);socket.onmessage({data:packet});socket.onmessage({data:JSON.stringify({type:'tts_end',audio_epoch:1})})},rate);
   expect(await page.evaluate(()=>(window as any).rates)).toEqual([rate===24000?24000:48000]);
   await page.evaluate(()=>(window as any).coachCapture.port.onmessage({data:new Float32Array([.2,.3])}));
@@ -25,7 +29,10 @@ for(const kind of ['lesson','widget'])for(const rate of [24000,48000,undefined,1
   expect(await page.evaluate(()=>(window as any).voiceGains[0].gain.value)).toBe(1);
 
   expect(await page.evaluate(()=>(window as any).voicePackets.filter((p:any)=>p.type==='playback_complete'))).toHaveLength(0);
-  await page.clock.runFor(rate===24000?1100:600);
+  // 24,000 PCM samples take 1000/500ms, plus 25ms scheduling and 70ms guard.
+  await page.clock.runFor(rate===24000?1094:594);
+  expect(await page.evaluate(()=>(window as any).voicePackets.filter((p:any)=>p.type==='playback_complete'))).toHaveLength(0);
+  await page.clock.runFor(1);
   expect(await page.evaluate(()=>(window as any).voicePackets.filter((p:any)=>p.type==='playback_complete'))).toEqual([{type:'playback_complete',audio_epoch:1}]);
 
   await page.evaluate(()=>{const w=window as any;w.coachSocket.onmessage({data:JSON.stringify({type:'barge_in',audio_epoch:2})});const stale=new ArrayBuffer(48004);new DataView(stale).setUint32(0,1,false);w.coachSocket.onmessage({data:stale});});
