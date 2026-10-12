@@ -294,7 +294,8 @@ test('a sustained large full-frame phone is detected even if crops miss it',asyn
   const h=(window as any).conversationAudit;
   return [0,1000,2100,3100].map(t=>h.phone([phone],[],t));
  });
- expect(results).toEqual([false,false,false,true]);
+ // Confirmed on the third sustained sighting (about 2 s), not the fourth.
+ expect(results).toEqual([false,false,true,true]);
 });
 
 test('quality sampling uses the visible face instead of plain background',async({page})=>{

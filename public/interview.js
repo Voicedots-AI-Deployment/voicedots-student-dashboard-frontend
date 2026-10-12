@@ -286,7 +286,9 @@ let gazeOffCameraSince = null;
 let phoneVisibleSince = null;
 let phoneDetected = false;
 let phoneEvidence = null;
-const PHONE_EVIDENCE_MIN_SCORE = .75;
+const PHONE_EVIDENCE_MIN_SCORE = .7;
+// Single-view phones (no corroborating crop) need this score, seen 3 times.
+const PHONE_TEMPORAL_MIN_SCORE = .7;
 const PHONE_EVIDENCE_MIN_MS = 2000;
 let cameraReminderTimes = {};
 // Integrity signals are intentionally debounced to avoid false positives,
@@ -1635,19 +1637,23 @@ function landmarkGazeOffCamera(landmarks) {
   return left < 0.16 || left > 0.84 || right < 0.16 || right > 0.84 || faceRatio < 0.32 || faceRatio > 0.68;
 }
 
+// A phone stays "visible" between detector runs: the window follows how
+// often the object detector actually runs on this device (up to ~2 s).
+let phoneFreshMs = 2500;
+
 function updatePhoneEvidence(detections, corroborating, now) {
   const strong = detections.filter(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_EVIDENCE_MIN_SCORE) && d.boundingBox?.width >= 8 && d.boundingBox?.height >= 8);
   // Require agreement between independent views, including crop-only phones.
   const full = strong.find(d => corroborating.some(box => boxIoU(d.boundingBox, box) >= .2));
   const crop = corroborating.find((box, index) => Number(box.confidence) >= .75 &&
     corroborating.some((other, otherIndex) => index !== otherIndex && Number(other.confidence) >= .75 && boxIoU(box, other) >= .3));
-  // High-confidence phones outside the crops require four temporal observations.
-  const temporal = strong.find(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= .85));
+  // Phones seen without a second view need three consistent observations.
+  const temporal = strong.find(d => (d.categories || []).some(c => c.categoryName === "cell phone" && Number(c.score) >= PHONE_TEMPORAL_MIN_SCORE));
   const box = full?.boundingBox || crop || temporal?.boundingBox;
   const confidence = full ? Number(full.categories.find(c => c.categoryName === "cell phone").score) : crop ? Number(crop.confidence) : Number(temporal?.categories.find(c => c.categoryName === "cell phone")?.score);
-  const requiredCount = full || crop ? 2 : 4;
+  const requiredCount = full || crop ? 2 : 3;
   if (!box) {
-    if (phoneEvidence && now - phoneEvidence.last > 1500) phoneEvidence = null;
+    if (phoneEvidence && now - phoneEvidence.last > phoneFreshMs) phoneEvidence = null;
     return false;
   }
   if (!phoneEvidence || now - phoneEvidence.last > 8000 || boxIoU(phoneEvidence.box, box) < .2) {
@@ -1837,7 +1843,8 @@ async function analyzeCameraFrame() {
   }
   // Only a corroborated sequence can indicate a phone; an isolated detection
   // or a stale worker result never accumulates into a misconduct warning.
-  phoneDetected = !!phoneEvidence && phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < 1500;
+  phoneFreshMs = Math.max(2500, objectCooldown * 1.6);
+  phoneDetected = !!phoneEvidence && phoneEvidence.count >= (phoneEvidence.requiredCount || 2) && now - phoneEvidence.since >= PHONE_EVIDENCE_MIN_MS && now - phoneEvidence.last < phoneFreshMs;
   // Do not flash back to "one person" when the smaller background detection
   // drops for a frame. Keep the multi-person result briefly so the candidate
   // must present a consistently clear single-person frame before proceeding.

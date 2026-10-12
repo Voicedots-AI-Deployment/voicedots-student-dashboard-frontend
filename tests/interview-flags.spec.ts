@@ -114,6 +114,23 @@ test('phone evidence rejects single, weak and inconsistent detections and confir
  expect(result.strong.slice(0,3).some(Boolean)).toBe(false);expect(result.strong.at(-1)).toBe(true);
 });
 
+test('a phone held to the camera is confirmed on a slower device where the detector runs every 2 seconds', async ({page}) => {
+ await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'s1'},csrf_token:'test'}}));
+ await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.phoneAudit={update:updatePhoneEvidence,reset:()=>{phoneEvidence=null}};`});});
+ await page.goto('/interview.html?id=sub-1');await expect.poll(()=>page.evaluate(()=>!!(window as any).phoneAudit)).toBe(true);
+ const result=await page.evaluate(()=>{
+  const h=(window as any).phoneAudit;const box={originX:200,originY:100,width:60,height:110};
+  const phone=(score:number)=>({categories:[{categoryName:'cell phone',score}],boundingBox:box});
+  // Typical dim-room confidence, no corroborating crop, one detector run every 2 s.
+  const slow=Array.from({length:4},(_,i)=>h.update([phone(.75)],[],i*2000));h.reset();
+  const weak=Array.from({length:6},(_,i)=>h.update([phone(.55)],[],i*2000));
+  return {slow,weak};
+ });
+ expect(result.slow.slice(0,2).some(Boolean)).toBe(false);
+ expect(result.slow.at(-1)).toBe(true);
+ expect(result.weak.some(Boolean)).toBe(false);
+});
+
 test('camera reminders hide the misconduct badge and server zero clears optimistic warnings',async({page})=>{
  await page.route('**/api/**',route=>route.fulfill({json:{student:{id:'s1'},csrf_token:'test'}}));
  await page.route('**/interview.js*',async route=>{const response=await route.fetch();await route.fulfill({response,body:await response.text()+`window.noticeAudit={remind:()=>{integrityStrikeCount=3;showIntegrityNotice('Camera check uncertain. This is not misconduct.',true)},reply:handleControlMessage,count:()=>integrityStrikeCount};`});});
