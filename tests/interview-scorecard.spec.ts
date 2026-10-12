@@ -12,7 +12,7 @@ async function setup(page:any,{empty=false,saveError=false,pending=false}={}) {
     if(path==='/api/student/reports')return route.fulfill({json:{reports:[{session_id:'scorecard-1',submission_id:'resume-1',status:pending?'awaiting_release':'released',drive_id:'drive-1',company_name:'Example Technologies',target_role:'Graduate Software Engineer',duration_minutes:18,completed_at:'2026-10-11T12:00:00Z'}]}});
     if(path.endsWith('/evaluation/satisfaction')){
       saveCount++;if(saveError)return route.fulfill({status:503,json:{detail:'Feedback could not be saved. Please retry.'}});
-      const ratings=route.request().postDataJSON();saved={score:Math.round(Object.values(ratings).reduce((sum:number,n:any)=>sum+n,0)/30*100),label:'Very good',ratings,submitted_at:'2026-10-12T12:00:00Z',method:'Six candidate ratings'};
+      const body=route.request().postDataJSON();const ratings=Object.fromEntries(['question_relevance','conversation_quality','assessment_fairness','feedback_usefulness','audio_experience','overall_experience'].map(key=>[key,body[key]]));saved={...body,score:Math.round(Object.values(ratings).reduce((sum:number,n:any)=>sum+n,0)/30*100),label:'Very good',ratings,submitted_at:'2026-10-12T12:00:00Z',method:'Six candidate ratings'};
       return route.fulfill({json:saved});
     }
     if(path.endsWith('/evaluation'))return route.fulfill({json:{overall_score:empty?null:78,readiness:empty?'Not assessed':'Developing',candidate_info:{full_name:'Asha Kumar',program:'B.Tech',department:'Computer Science',year_of_study:'2026'},candidate_satisfaction:saved,executive_summary:'Demonstrated sound technical foundations and structured debugging. Further practice will help with SQL optimisation and concise project communication.',score_breakdown:empty?{communication:null}:dimensions,core_dimensions:Object.entries(dimensions).map(([dimension,percentage])=>({dimension,percentage,reason:dimension==='communication'?'Explained the teamwork example clearly.':'Supported by the saved project and scenario answers.'})),strengths:empty?[]:[{text:'Clear project architecture and structured debugging.'}],priority_improvement_areas:[{focus:'SQL optimisation',problem:'Explore query optimisation and concise project storytelling.',actions:['Practise a short SQL work sample and explain the query plan.']}],question_reviews:[{answer_id:1,question:'Walk through your project architecture.',answer:empty?'':'I separated the API and database layers.',evidence_status:empty?'no_response':'answered',asked_at:'2026-10-11T11:42:01Z',strength_feedback:['Clear project example']}]}});
@@ -28,6 +28,10 @@ async function setup(page:any,{empty=false,saveError=false,pending=false}={}) {
 test('real report data, survey submission and report screenshots',async({page})=>{
   await page.setViewportSize({width:1440,height:1100});const state=await setup(page);
   await expect(page.getByRole('heading',{name:'Competency Results'})).toBeVisible();
+  const reportWidth=(await page.locator('.report-workspace').boundingBox())!.width;
+  await page.getByRole('button',{name:'Close navigation',exact:true}).click();
+  await expect.poll(async()=> (await page.locator('.report-workspace').boundingBox())!.width).toBeGreaterThan(reportWidth);
+  await page.getByRole('button',{name:'Open navigation',exact:true}).click();
   await expect(page.locator('.scorecard-heading,.scorecard-profile,.scorecard-practice-tiles,.scorecard-insights')).toHaveCount(0);
   await expect(page.getByRole('heading',{name:'What went well',exact:true})).toHaveCount(1);
   await expect(page.getByRole('heading',{name:'Where to focus',exact:true})).toHaveCount(1);
@@ -38,11 +42,18 @@ test('real report data, survey submission and report screenshots',async({page})=
   await page.locator('.satisfaction-form summary').click();
   await page.getByRole('button',{name:'Save feedback',exact:true}).click();
   expect(state.count()).toBe(0);
-  for(const select of await page.locator('.satisfaction-form select').all())await select.selectOption('4');
+  for(const group of await page.locator('.feedback-rating-question').all())await group.getByRole('radio',{name:'4 out of 5',exact:true}).check();
+  await page.getByRole('checkbox',{name:'Include a recommendation rating'}).check();
+  await page.getByLabel('Recommendation rating',{exact:true}).fill('8');
+  await page.getByLabel('Additional comments (optional)').fill('Useful interview questions.');
+  const savedRequest=page.waitForRequest(r=>r.url().endsWith('/evaluation/satisfaction')&&r.method()==='POST');
   await page.getByRole('button',{name:'Save feedback',exact:true}).click();
   await expect(page.getByLabel('Candidate satisfaction score')).toHaveAttribute('value','80');
   await expect(page.locator('.scorecard-ring')).toHaveAttribute('aria-label','AI interview score: 78/100');
   expect(state.count()).toBe(1);
+  expect((await savedRequest).postDataJSON()).toMatchObject({recommendation_score:8,comments:'Useful interview questions.'});
+  mkdirSync('/root/voicedots/releases/placement-feedback-dashboard-20261012',{recursive:true});
+  await page.locator('.scorecard-satisfaction').screenshot({path:'/root/voicedots/releases/placement-feedback-dashboard-20261012/student-feedback-form.png',style:'.dashboard-topbar{visibility:hidden}'});
   await page.locator('.satisfaction-form summary').click();
   await expect.poll(()=>page.locator('video').evaluate((v:HTMLVideoElement)=>v.readyState)).toBeGreaterThanOrEqual(2);
   await page.locator('video').evaluate((v:HTMLVideoElement)=>{v.currentTime=1;});
@@ -70,7 +81,7 @@ test('missing assessment is not presented as a real zero score',async({page})=>{
 
 test('feedback save errors allow retry without displaying an invented score',async({page})=>{
   await setup(page,{saveError:true});await page.locator('.satisfaction-form summary').click();
-  for(const select of await page.locator('.satisfaction-form select').all())await select.selectOption('5');
+  for(const group of await page.locator('.feedback-rating-question').all())await group.getByRole('radio',{name:'5 out of 5',exact:true}).check();
   await page.getByRole('button',{name:'Save feedback',exact:true}).click();
   await expect(page.getByRole('alert')).toContainText('could not be saved');
   await expect(page.locator('.satisfaction-value')).toContainText('Not collected');

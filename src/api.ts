@@ -335,4 +335,4 @@ export type InterviewReportView = {
   communication?: { speaking_speed_wpm?: number | null; pace_label?:string; filler_word_count?:number; top_filler_words?:string[]; measurement_note?:string; scores?: Record<string, number | null> };
   interview_profile?: { difficulty_tier?: string; duration_minutes?: number };
 };
-export type CandidateSatisfaction = {score:number;label:string;ratings:Record<string,number>;submitted_at:string;method:string};
+export type CandidateSatisfaction = {score:number;label:string;ratings:Record<string,number>;submitted_at:string;method:string;recommendation_score?:number|null;comments?:string};

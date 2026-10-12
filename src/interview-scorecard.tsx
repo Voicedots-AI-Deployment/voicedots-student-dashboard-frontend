@@ -1,5 +1,5 @@
 import { useState, type FormEvent } from 'react';
-import { BarChart3, Brain, Code2, FileText, Lightbulb, MessageCircle } from 'lucide-react';
+import { BarChart3, Brain, Code2, FileText, Lightbulb, MessageCircle, Star } from 'lucide-react';
 import { api, type CandidateSatisfaction, type InterviewReportView } from './api';
 import { humanize } from './ui';
 import './interview-scorecard.css';
@@ -12,13 +12,19 @@ const icons=[Code2,MessageCircle,Brain,Lightbulb,BarChart3];
 
 export function InterviewScorecard({view,sessionId}:{view:InterviewReportView;sessionId:string}) {
   const [satisfaction,setSatisfaction]=useState(view.candidate_satisfaction);
+  const [feedbackRatings,setFeedbackRatings]=useState<Record<string,number>>(satisfaction?.ratings??{});
+  const [recommend,setRecommend]=useState(satisfaction?.recommendation_score!=null);
+  const [recommendation,setRecommendation]=useState(satisfaction?.recommendation_score??5);
+  const [comments,setComments]=useState(satisfaction?.comments??'');
   const [busy,setBusy]=useState(false),[error,setError]=useState('');
   const dimensions=Object.entries(view.score_breakdown||{});
   const reasons=new Map([...(view.core_dimensions||[]),...(view.domain_dimensions||[])].map(d=>[d.dimension.toLowerCase().replaceAll(' ','_'),d.reason]));
   const points=view.overall_score;
   async function saveFeedback(event:FormEvent<HTMLFormElement>){
     event.preventDefault();const form=new FormData(event.currentTarget);
-    const ratings=Object.fromEntries(feedbackQuestions.map(([key])=>[key,Number(form.get(key))]));
+    const ratings:Record<string,number|string>=Object.fromEntries(feedbackQuestions.map(([key])=>[key,Number(form.get(key))]));
+    if(recommend)ratings.recommendation_score=recommendation;
+    if(comments.trim())ratings.comments=comments.trim();
     setBusy(true);setError('');
     try {setSatisfaction(await api<CandidateSatisfaction>(`/api/interview/${encodeURIComponent(sessionId)}/evaluation/satisfaction`,{method:'POST',body:JSON.stringify(ratings)}));}
     catch(cause){setError(cause instanceof Error?cause.message:'Your feedback could not be saved. Please retry.');}
@@ -30,6 +36,6 @@ export function InterviewScorecard({view,sessionId}:{view:InterviewReportView;se
 
     <div className="scorecard-dashboard"><div className="scorecard-main">
       <section className="scorecard-card scorecard-competencies"><div className="scorecard-title-row"><h3>Competency Results</h3><span>Evidence from this interview</span></div><div className="scorecard-table-wrap"><table><thead><tr><th>Competency</th><th>Score</th><th>Evidence</th></tr></thead><tbody>{dimensions.map(([label,value],i)=>{const Icon=icons[i%icons.length];return <tr key={label}><th scope="row"><span><Icon size={21} style={{color:colors[i%colors.length]}}/>{humanize(label)}</span></th><td><b>{rating(value)}</b>{value!=null&&<progress max="100" value={clamp(value)} aria-label={`${humanize(label)} competency score`}/>}</td><td>{value==null?'Not enough evidence to assess':reasons.get(label.toLowerCase().replaceAll(' ','_'))||'See saved question-level feedback.'}</td></tr>;})}{!dimensions.length&&<tr><td colSpan={3}>No competencies were assessed.</td></tr>}</tbody></table></div></section>
-    </div><aside className="scorecard-sidebar"><section className="scorecard-card scorecard-satisfaction"><h3><MessageCircle size={20}/> Candidate Satisfaction Score</h3><p>How you experienced the AI interview</p><div className="satisfaction-value"><strong>{satisfaction?`${satisfaction.score}/100`:'Not collected'}</strong>{satisfaction&&<span>{satisfaction.label}</span>}</div>{satisfaction&&<progress max="100" value={satisfaction.score} aria-label="Candidate satisfaction score"/>}<p className="scorecard-note">Measured from six post-interview feedback questions. This does not affect your competency score.</p><details className="satisfaction-form"><summary>{satisfaction?'Update your feedback':'Share interview feedback'}</summary><form onSubmit={saveFeedback}><p>1 = Strongly disagree · 5 = Strongly agree</p>{feedbackQuestions.map(([key,label])=><label key={key}>{label}<select name={key} required defaultValue={satisfaction?.ratings[key]??''}><option value="" disabled>Select a rating</option>{[1,2,3,4,5].map(n=><option key={n} value={n}>{n}</option>)}</select></label>)}{error&&<p role="alert">{error}</p>}<button className="button primary" disabled={busy}>{busy?'Saving…':'Save feedback'}</button>{satisfaction&&<p role="status">Your feedback is saved.</p>}</form></details></section></aside></div>
+    </div><aside className="scorecard-sidebar"><section className="scorecard-card scorecard-satisfaction"><h3><MessageCircle size={20}/> Candidate Satisfaction Score</h3><p>How you experienced the AI interview</p><div className="satisfaction-value"><strong>{satisfaction?`${satisfaction.score}/100`:'Not collected'}</strong>{satisfaction&&<span>{satisfaction.label}</span>}</div>{satisfaction&&<progress max="100" value={satisfaction.score} aria-label="Candidate satisfaction score"/>}<p className="scorecard-note">Measured from six post-interview feedback questions. This does not affect your competency score.</p><details className="satisfaction-form"><summary>{satisfaction?'Update your feedback':'Share interview feedback'}</summary><form onSubmit={saveFeedback}><p>1 = Strongly disagree · 5 = Strongly agree</p><div className="feedback-survey-grid">{feedbackQuestions.map(([key,label],index)=><fieldset key={key} className="feedback-rating-question"><legend>{index+1}. {label}</legend><div className="feedback-star-options">{[1,2,3,4,5].map(n=><label key={n} className={n<=(feedbackRatings[key]??0)?'feedback-star-selected':''}><input type="radio" name={key} value={n} required checked={feedbackRatings[key]===n} onChange={()=>setFeedbackRatings(previous=>({...previous,[key]:n}))} aria-label={`${n} out of 5`}/><Star size={23}/><small>{n}</small></label>)}</div><span className="scorecard-note">Strongly disagree → Strongly agree</span></fieldset>)}</div><label className="feedback-recommend-toggle"><input type="checkbox" checked={recommend} onChange={e=>setRecommend(e.target.checked)}/> Include a recommendation rating (optional)</label><label>How likely are you to recommend this interview? <output>{recommend?`${recommendation}/10`:'Not selected'}</output><input aria-label="Recommendation rating" type="range" min="0" max="10" disabled={!recommend} value={recommendation} onChange={e=>setRecommendation(Number(e.target.value))}/></label><label>Additional comments (optional)<textarea maxLength={500} value={comments} onChange={e=>setComments(e.target.value)} placeholder="Share your thoughts or suggestions…"/><small>{comments.length}/500</small></label>{error&&<p role="alert">{error}</p>}<button className="button primary" disabled={busy}>{busy?'Saving…':'Save feedback'}</button>{satisfaction&&<p role="status">Your feedback is saved.</p>}</form></details></section></aside></div>
   </section>;
 }
