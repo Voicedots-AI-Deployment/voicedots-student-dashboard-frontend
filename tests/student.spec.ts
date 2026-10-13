@@ -1901,3 +1901,27 @@ test('Coach diagnostic saves typed answers, exposes skip before voice, and resum
 });
 
  test('Career Coach shares the page anchor and shows actionable next steps and keyword evidence',async({page})=>{await mockStudent(page);await page.route('**/api/student/resume-library',route=>route.fulfill({json:{resumes:[{resume_id:'r',submission_id:'r',is_primary:true,label:'Main resume'}]}}));await page.route('**/api/student/career/reports',route=>route.fulfill({json:{reports:[]}}));await page.route('**/api/student/career/finder',route=>route.fulfill({json:{analysis_status:'ai',career_profile:'Backend experience',strongest_current_fit:'Backend Engineer',strongest_growth_path:'AI Engineer',best_project_next:'Build a tested API',what_to_learn_next:['Python','API testing'],career_gap_analysis:'Add a deployment example.',recommended_roles:[{role:'Backend Engineer',why:'Python project evidence',matched_skills:['Python','SQL'],missing_skills:['Docker'],project_evidence:['Python API'],evidence_level:'project_evidence'}]}}));await page.goto('/career');await page.getByRole('button',{name:'Explore from my resume'}).click();await expect(page.getByRole('heading',{name:'Your next steps'})).toBeVisible();await expect(page.getByText('Add a deployment example.')).toBeVisible();await page.getByText('Supporting evidence and gaps',{exact:true}).click();await expect(page.locator('.career-keywords').first()).toContainText('Python');expect(await page.locator('.career-keywords ul').count()).toBe(0);const anchors=await page.evaluate(()=>({content:document.querySelector('.dashboard-content')!.getBoundingClientRect().left+parseFloat(getComputedStyle(document.querySelector('.dashboard-content')!).paddingLeft),heading:document.querySelector('.career-discovery>.page-heading')!.getBoundingClientRect().left,card:document.querySelector('.career-discovery-input')!.getBoundingClientRect().left}));expect(Math.abs(anchors.heading-anchors.content)).toBeLessThan(2);expect(Math.abs(anchors.card-anchors.heading)).toBeLessThan(2);});
+
+
+test("profile upload completes while Resume Studio import is still pending", async ({ page }) => {
+  await mockStudent(page);
+  await page.route("**/api/student/resume-library", route => route.request().method()==="POST"
+    ? route.fulfill({json:{resume_id:"fast-upload",submission_id:"fast-submission",analysis_status:"processing"}})
+    : route.fulfill({json:{resumes:[]}}));
+  let release!: () => void;
+  const pending=new Promise<void>(resolve=>{release=resolve});
+  let importStarted=false;
+  await page.route("**/api/student/resume-studio/resumes/import", async route=>{
+    importStarted=true;
+    await pending;
+    await route.fulfill({status:201,json:{id:"fast-studio"}});
+  });
+  await page.goto("/profile");
+  await page.getByLabel("Add resume").setInputFiles({name:"fast.pdf",mimeType:"application/pdf",buffer:Buffer.from("%PDF-1.4 fast")});
+  try {
+    await expect(page.getByRole("status")).toContainText("Your active resume was saved.");
+    await expect(page.getByRole("button",{name:"View resume"})).toBeEnabled();
+    await expect.poll(()=>importStarted).toBe(true);
+  } finally { release(); }
+  await expect(page.getByRole("link",{name:"Edit in Resume Studio"})).toHaveAttribute("href","/resume-studio?resume=fast-studio");
+});

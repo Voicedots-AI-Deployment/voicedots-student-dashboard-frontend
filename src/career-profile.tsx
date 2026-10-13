@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Eye, Trash2 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { api, request, type Resume } from './api';
@@ -12,6 +12,7 @@ export async function download(path:string, name:string, options?:RequestInit) {
 }
 
 export function CareerProfile(){
+ const uploadGeneration=useRef(0);
  const {identity,refresh}=useAuth(); const library=useResource<{resumes:Resume[]}>('/api/student/resume-library');
  const [error,setError]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false),[studioResumeLink,setStudioResumeLink]=useState<{resumeId:string;projectId:string}|null>(null),[previewFile,setPreviewFile]=useState<File|null>(null),[confirmDelete,setConfirmDelete]=useState(false);
  const [pendingIdentity,setPendingIdentity]=useState<{file:File;candidate_name:string|null;student_name:string}|null>(null);
@@ -30,25 +31,26 @@ export function CareerProfile(){
   }catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
  async function upload(file:File){
+  const generation=++uploadGeneration.current;
   setBusy(true);setError('');setMessage('');
   try{
    const body=new FormData();body.set('resume',file);body.set('label',file.name.replace(/\.[^.]+$/,''));body.set('analyze_for_coaching','true');
    const saved=await api<{analysis_status:string;resume_id:string;submission_id?:string}>('/api/student/resume-library',{method:'POST',body});
    setOptimisticActive({resume_id:saved.resume_id,submission_id:saved.submission_id,original_filename:file.name,label:file.name.replace(/\.[^.]+$/,''),is_primary:true,uploaded_at:new Date().toISOString()});
-   let importWarning='';
-   try{
-    const downloadResponse=await request(`/api/student/resume-library/${encodeURIComponent(saved.resume_id)}/file`);
-    const importBody=new FormData();importBody.set('file',new File([await downloadResponse.blob()],file.name,{type:file.type}));importBody.set('profile_resume_id',saved.resume_id);
-    const imported=await api<{id:string;import_report?:{warnings?:string[]}}>('/api/student/resume-studio/resumes/import',{method:'POST',body:importBody,timeoutMs:180_000});
-    setStudioResumeLink({resumeId:saved.resume_id,projectId:imported.id});importWarning=imported.import_report?.warnings?.[0]||'';
-   }catch(importError){importWarning='The active resume was saved, but its Resume Studio copy could not be updated. Open Resume Studio and import it there.'}
-   library.reload();await refresh();
-   setMessage(`${saved.analysis_status==='processing'?'Your active resume was saved. AI analysis is running in the background; it will be ready across your student features shortly.':saved.analysis_status==='unavailable'?'Your active resume was saved, but AI analysis is temporarily unavailable. Retry the analysis from your profile.':'Your active resume is ready to use across AI Coach, placement interviews, self-practice, and Career Coach.'}${importWarning?` ${importWarning}`:''}`);
+   library.reload();void refresh();
+   setMessage(saved.analysis_status==='processing'?'Your active resume was saved. AI analysis is running in the background.':'Your active resume is ready to use across AI Coach, placement interviews, self-practice, and Career Coach.');
+   // The original upload is already durable. Its editable Studio copy must
+   // not delay confirmation, or download the same file just to upload again.
+   const importBody=new FormData();importBody.set('file',file);importBody.set('profile_resume_id',saved.resume_id);
+   void api<{id:string}>('/api/student/resume-studio/resumes/import',{method:'POST',body:importBody,timeoutMs:180_000})
+    .then(imported=>{if(generation===uploadGeneration.current)setStudioResumeLink({resumeId:saved.resume_id,projectId:imported.id})})
+    .catch(()=>{if(generation===uploadGeneration.current)setMessage('Your active resume was saved. Its Resume Studio copy could not be synced; you can import it in Resume Studio.')});
+
   }catch(e){setError((e as Error).message)}finally{setBusy(false)}
  }
  async function downloadActiveResume(resume:Resume){setError('');try{await download(`/api/student/resume-library/${encodeURIComponent(resume.resume_id)}/file`,resume.original_filename)}catch(e){setError((e as Error).message||'The saved resume could not be downloaded. Please retry.')}}
  async function previewActiveResume(resume:Resume){setError('');setBusy(true);try{const response=await request(`/api/student/resume-library/${encodeURIComponent(resume.resume_id)}/file`);const blob=await response.blob();setPreviewFile(new File([blob],resume.original_filename,{type:blob.type}))}catch(e){setError((e as Error).message||'The saved resume could not be opened. Please retry.')}finally{setBusy(false)}}
- async function deleteActiveResume(){if(!active)return;const resumeId=active.resume_id;setBusy(true);setError('');setMessage('');try{await api(`/api/student/resume-library/${encodeURIComponent(resumeId)}`,{method:'DELETE'});setDeletedResumeId(resumeId);setOptimisticActive(null);setStudioResumeLink(null);setConfirmDelete(false);setPreviewFile(null);library.reload();await refresh();setMessage('The active resume was deleted from your profile. Any separate Resume Studio project remains available there.')}catch(e){setError((e as Error).message||'The active resume could not be deleted. Please retry.')}finally{setBusy(false)}}
+ async function deleteActiveResume(){if(!active)return;const resumeId=active.resume_id;setBusy(true);setError('');setMessage('');try{await api(`/api/student/resume-library/${encodeURIComponent(resumeId)}`,{method:'DELETE'});++uploadGeneration.current;setDeletedResumeId(resumeId);setOptimisticActive(null);setStudioResumeLink(null);setConfirmDelete(false);setPreviewFile(null);library.reload();await refresh();setMessage('The active resume was deleted from your profile. Any separate Resume Studio project remains available there.')}catch(e){setError((e as Error).message||'The active resume could not be deleted. Please retry.')}finally{setBusy(false)}}
  return <div className="career-tools">
   {error&&<ErrorMessage message={error}/>} {message&&<p role="status">{message}</p>}
   <section id="resume-library" className="panel saved-resumes-panel">
