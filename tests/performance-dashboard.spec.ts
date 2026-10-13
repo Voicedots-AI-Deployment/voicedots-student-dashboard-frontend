@@ -1,4 +1,5 @@
 import { test, expect, type Page } from "@playwright/test";
+import { detail } from "../preview/vite.config";
 
 // The page renders GET /api/student/performance as-is; these responses use the
 // shape produced by the backend's app/student_performance.py build_performance.
@@ -54,8 +55,9 @@ async function open(page: Page, performance: Record<string, unknown>) {
   await page.route("**/api/auth/student-me", route => route.fulfill({ json: { student } }));
   await page.route("**/api/student/dashboard", route => { requested.push("dashboard"); return route.fulfill({ json: { attempts: [], drives: [], reports: [], readiness: lockedReadiness } }); });
   await page.route("**/api/student/performance/overview", route => { requested.push("performance"); return route.fulfill({ json: performance }); });
+  await page.route("**/api/student/performance", route => route.fulfill({ json: performance.has_results ? detail : {latest:null,competencies:[],comparable_trend:[]} }));
   await page.goto("/performance");
-  await expect(page.getByRole("heading", { name: "My performance" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Student Assessment Intelligence" })).toBeVisible();
   return requested;
 }
 
@@ -63,28 +65,15 @@ test("the dashboard shows the backend's performance summary without recalculatin
   const requested = await open(page, full);
   const kpis = page.getByRole("region", { name: "Performance summary" });
   await expect(kpis.getByText("Placement readiness")).toBeVisible();
-  await expect(kpis.locator(".stat-card strong")).toHaveText(["74", "79", "61", "79"]);
-  await expect(kpis.getByText("+17.5 pts")).toBeVisible();
-  await expect(kpis.getByText("Approaching Ready")).toBeVisible();
-  await expect(page.getByText("3 released interviews · 1 placement · 2 practice · 1 awaiting release")).toBeVisible();
+  await expect(kpis.locator(".spi-score strong")).toHaveText("79");
+  await expect(kpis.locator(".spi-value").first()).toContainText("74");
+  await expect(page.getByText("1 awaiting release",{exact:true})).toBeVisible();
   await expect(page.getByRole("img", { name: "Interview score trend across 3 interviews" })).toBeVisible();
-  // Accessible data table behind the chart, oldest first.
   await expect(page.locator(".perf-chart table tbody tr td:nth-child(3)")).toHaveText(["44", "61", "79"]);
-  await expect(page.getByText("+34.5 pts")).toBeVisible();
-  await expect(page.getByRole("meter", { name: "Resume ownership" })).toBeVisible();
-  await expect(page.locator(".perf-skill-list li", { hasText: "Resume ownership" })).toContainText("75%");
-  await expect(page.locator(".perf-skill-list li", { hasText: "Resume ownership" })).toContainText("+50%");
-  await expect(page.locator(".perf-focus .pill")).toHaveText(["Resume ownership", "Structured thinking", "Applied examples", "Role awareness"]);
+  await expect(page.getByRole("meter", { name: "Resume ownership" })).toHaveAttribute("aria-valuenow","75");
   await expect(page.getByText("Prepare one measurable result for each project.")).toBeVisible();
-  await expect(page.getByText("132")).toBeVisible();
-  await expect(page.locator(".perf-comm-grid")).toContainText("-2");
-  // Fewer filler words is an improvement.
-  await expect(page.locator(".perf-comm-grid .perf-delta")).toHaveClass(/up/);
-  await expect(page.locator(".perf-axes")).toContainText("70% weight");
-  await expect(page.locator(".perf-drive-scores")).toContainText("Razorpay");
-  await expect(page.getByText("active in 3 of 8 weeks", { exact: false })).toBeVisible();
-  await expect(page.getByText("1 open opportunity")).toBeVisible();
-  await expect(page.getByRole("link", { name: "Practice an interview" })).toHaveAttribute("href", "/practice");
+  await expect(page.getByText("132 words/min")).toBeVisible();
+  await expect(page.getByRole("link", { name: "New interview" })).toHaveAttribute("href", "/practice");
   expect(requested).toContain("performance");
 });
 
@@ -92,7 +81,7 @@ test("results awaiting release are not scored and the empty state says why", asy
   await open(page, { ...empty, pending_release_count: 1 });
   await expect(page.getByText("Your performance dashboard is waiting for its first result")).toBeVisible();
   await expect(page.getByText("still being reviewed", { exact: false })).toBeVisible();
-  await expect(page.locator(".perf-kpis")).toHaveCount(0);
+  await expect(page.locator(".spi-kpis")).toHaveCount(0);
 });
 
 test("a student with no interviews is pointed to practice", async ({ page }) => {
@@ -107,11 +96,10 @@ test("practice-only history keeps readiness locked instead of inventing an index
     summary: { released_count: 1, placement_count: 0, practice_count: 1, latest: { ...only, change: null, label_readiness: "Developing" },
       recent_average: { score: 52, count: 1, label: "Developing" }, best: only, first_to_latest_change: null },
     trend: [only], activity: weeks([0, 0, 0, 0, 0, 0, 1, 0]) });
-  await expect(page.locator(".perf-kpis .stat-card").first()).toContainText("—");
+  await expect(page.locator(".spi-kpis .spi-card").nth(1)).toContainText("—");
   await expect(page.getByText("Complete a placement interview to unlock")).toBeVisible();
-  await expect(page.getByText("First result")).toBeVisible();
-  await expect(page.getByText("Complete another interview to see how your score changes.")).toBeVisible();
-  await expect(page.getByText("No placement interview results yet.")).toBeVisible();
+  await expect(page.getByText("Placement / practice")).toBeVisible();
+
 });
 
 test("a failed performance request shows an error instead of made-up numbers", async ({ page }) => {
@@ -119,8 +107,8 @@ test("a failed performance request shows an error instead of made-up numbers", a
   await page.route("**/api/auth/student-me", route => route.fulfill({ json: { student } }));
   await page.route("**/api/student/performance/overview", route => route.fulfill({ status: 500, json: { detail: "down" } }));
   await page.goto("/performance");
-  await expect(page.getByRole("heading", { name: "My performance" })).toBeVisible();
-  await expect(page.locator(".perf-kpis")).toHaveCount(0);
+  await expect(page.getByRole("heading", { name: "Student Assessment Intelligence" })).toBeVisible();
+  await expect(page.locator(".spi-kpis")).toHaveCount(0);
   await expect(page.getByRole("button", { name: /retry|try again/i }).or(page.getByRole("alert")).first()).toBeVisible();
 });
 
@@ -141,8 +129,8 @@ test('restored performance keeps scorecard creation and revocation connected',as
  await open(page,full);let saved:unknown,revoked=false;
  await page.route('**/api/student/scorecard-shares',route=>{if(route.request().method()==='POST'){saved=route.request().postDataJSON();return route.fulfill({json:{token:'opaque-share-token'}});}return route.fulfill({json:{items:[{id:'share-1',session_id:full.summary.latest.session_id,expires_at:'2099-10-13'}]}});});
  await page.route('**/api/student/scorecard-shares/share-1',route=>{revoked=true;return route.fulfill({json:{revoked:true}});});
- await page.getByRole('button',{name:'Share scorecard',exact:true}).click();await page.getByRole('button',{name:'Create share link'}).click();await expect(page.getByLabel('Share link')).toHaveValue(/shared-scorecard\/opaque-share-token/);expect(saved).toEqual({session_id:full.summary.latest.session_id,days:7});
- await page.getByRole('button',{name:'Revoke',exact:true}).click();await expect(page.getByRole('status')).toContainText('Access revoked');expect(revoked).toBe(true);await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+ await page.getByRole('button',{name:'Share scorecard',exact:true}).first().click();await page.getByRole('button',{name:'Create share link'}).click();await expect(page.getByLabel('Share link')).toHaveValue(/shared-scorecard\/opaque-share-token/);expect(saved).toEqual({session_id:full.summary.latest.session_id,days:7});
+ await page.getByRole('button',{name:'Revoke',exact:true}).click();await expect(page.getByRole('dialog').getByRole('status').filter({hasText:'Access revoked'})).toBeVisible();expect(revoked).toBe(true);await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
 });
 
 test('public shared scorecard remains available without signing in',async({page})=>{
@@ -150,6 +138,6 @@ test('public shared scorecard remains available without signing in',async({page}
 });
 
 test('restored growth dashboard renders at desktop, tablet and mobile widths',async({page})=>{
- const {mkdirSync}=await import('node:fs');const out='/root/voicedots/releases/dashboard-polish-20261013/screenshots';mkdirSync(out,{recursive:true});
+ const {mkdirSync}=await import('node:fs');const out='/root/voicedots/artifacts/student-performance-reference-20261013/regression';mkdirSync(out,{recursive:true});
  for(const width of [1440,768,390,320]){await page.setViewportSize({width,height:1000});await open(page,full);await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth<=innerWidth)).toBe(true);if(width===1440||width===390)await page.screenshot({path:`${out}/student-performance-${width}.png`,fullPage:true});}
 });

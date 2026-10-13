@@ -58,7 +58,7 @@ function Delta({ value, suffix = " pts", lowerIsBetter = false }: { value: numbe
   </span>;
 }
 
-function TrendChart({ points }: { points: PerformancePoint[] }) {
+export function TrendChart({ points }: { points: PerformancePoint[] }) {
   // Draw in real pixels at the container's width so labels keep their size on phones.
   const frame = useRef<HTMLElement>(null);
   const [width, setWidth] = useState(640);
@@ -84,11 +84,10 @@ function TrendChart({ points }: { points: PerformancePoint[] }) {
           <stop offset="100%" stopColor="currentColor" stopOpacity="0" />
         </linearGradient>
       </defs>
-      {[0, 40, 55, 70, 100].map(mark => <g key={mark} className={`perf-grid${mark === 70 ? " ready" : ""}`}>
+      {[0, 25, 50, 75, 100].map(mark => <g key={mark} className="perf-grid">
         <line x1={left} x2={width - right} y1={y(mark)} y2={y(mark)} />
         <text x={left - 8} y={y(mark) + 3} textAnchor="end">{mark}</text>
       </g>)}
-      <text className="perf-grid-label" x={left + 6} y={y(70) - 5}>Interview ready</text>
       {area && <path className="perf-area" d={area} fill="url(#perf-trend-fill)" />}
       {points.length > 1 && <path className="perf-line" d={line} pathLength={1} />}
       {points.map((point, index) => <g key={pointKey(point)} className={`perf-point ${point.placement ? "placement" : "practice"}`}>

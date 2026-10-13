@@ -1,6 +1,6 @@
 import { ResourceState, useResource } from './ui';
 import './performance.css';
 import './performance-intelligence.css';
-export { Performance } from './performance-overview';
+export { Performance } from './performance-reference';
 export type { PerformanceData, PerformancePoint } from './performance-overview';
 export function SharedScorecard({token}:{token:string}){const resource=useResource<{candidate:string;role:string;score:number;competencies:Record<string,number>;strengths:string[];development:string[]}>(`/api/scorecard-shares/${encodeURIComponent(token)}`);return <main className="my-performance-intelligence mpi-public"><header className="mpi-heading"><div><span>VOICEDOTS ASSESSMENT SCORECARD</span><h1>{resource.data?.candidate||'Shared scorecard'}</h1></div></header><ResourceState resource={resource}>{null}</ResourceState>{resource.data&&<article className="mpi-card"><h2>{resource.data.role}</h2><h3>Overall score: {resource.data.score}/100</h3>{Object.entries(resource.data.competencies).map(([key,value])=><div className="mpi-competency" key={key}><div>{key.replaceAll('_',' ')}<progress max="100" value={value}/></div><b>{value}</b></div>)}<h3>Demonstrated strengths</h3>{resource.data.strengths.map((s,i)=><p key={i}>{s}</p>)}<h3>Development priorities</h3>{resource.data.development.map((s,i)=><p key={i}>{s}</p>)}<small>Candidate-shared AI assessment. Supports human review; not a hiring recommendation.</small></article>}</main>}
