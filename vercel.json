@@ -64,14 +64,6 @@
     {
       "source": "/shared-scorecard/:path*",
       "destination": "/index.html"
-    },
-    {
-      "source": "/performance",
-      "destination": "/index.html"
-    },
-    {
-      "source": "/shared-scorecard/:path*",
-      "destination": "/index.html"
     }
   ],
   "headers": [
