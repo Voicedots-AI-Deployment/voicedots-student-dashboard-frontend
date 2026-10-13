@@ -1,0 +1,18 @@
+import { useEffect, useRef, useState } from 'react';
+import { Share2, X } from 'lucide-react';
+import { api } from './api';
+import { ResourceState, useResource } from './ui';
+type Share={id:string;session_id:string;expires_at:string};
+export function PerformanceSharing({sessionId}:{sessionId:string|null}) {
+ const [open,setOpen]=useState(false);
+ return <><button className="button secondary small" disabled={!sessionId} onClick={()=>setOpen(true)}><Share2 size={14}/> Share scorecard</button>{open&&sessionId&&<ShareDialog sessionId={sessionId} close={()=>setOpen(false)}/>}</>;
+}
+function ShareDialog({sessionId,close}:{sessionId:string;close:()=>void}) {
+ const shares=useResource<{items:Share[]}>('/api/student/scorecard-shares');
+ const [days,setDays]=useState(7),[url,setUrl]=useState(''),[message,setMessage]=useState(''),[busy,setBusy]=useState(false);
+ const modal=useRef<HTMLElement>(null);
+ useEffect(()=>{const previous=document.activeElement as HTMLElement|null;modal.current?.querySelector<HTMLButtonElement>('button')?.focus();const key=(event:KeyboardEvent)=>{if(event.key==='Escape')close();if(event.key==='Tab'){const nodes=Array.from(modal.current?.querySelectorAll<HTMLElement>('button:not(:disabled),input,select')||[]),first=nodes[0],last=nodes.at(-1);if(event.shiftKey&&document.activeElement===first){event.preventDefault();last?.focus();}else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first?.focus();}}};document.addEventListener('keydown',key);return()=>{document.removeEventListener('keydown',key);previous?.focus();};},[close]);
+ async function create(){setBusy(true);setMessage('');try{const result=await api<{token:string}>('/api/student/scorecard-shares',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({session_id:sessionId,days})});setUrl(`${location.origin}/shared-scorecard/${encodeURIComponent(result.token)}`);shares.reload();}catch(error){setMessage(error instanceof Error?error.message:'Could not create link.');}finally{setBusy(false);}}
+ async function revoke(id:string){setBusy(true);try{await api(`/api/student/scorecard-shares/${encodeURIComponent(id)}`,{method:'DELETE'});setUrl('');setMessage('Access revoked.');shares.reload();}catch(error){setMessage(error instanceof Error?error.message:'Could not revoke link.');}finally{setBusy(false);}}
+ return <div className="mpi-modal-backdrop"><section ref={modal} className="panel perf-share-modal" role="dialog" aria-modal="true" aria-label="Share scorecard"><div className="section-heading"><h2>Share your scorecard</h2><button className="button secondary small" aria-label="Close sharing" onClick={close}><X size={16}/></button></div><p>Anyone with the link can view your shared scores until it expires or you revoke it. Your recording and answers stay private.</p><label>Link expiry<select value={days} onChange={event=>setDays(Number(event.target.value))}><option value="1">1 day</option><option value="7">7 days</option><option value="30">30 days</option></select></label><button className="button primary" disabled={busy} onClick={create}>{busy?'Saving…':'Create share link'}</button>{url&&<label>Share link<input aria-label="Share link" value={url} readOnly onFocus={event=>event.target.select()}/></label>}{message&&<p role="status">{message}</p>}<ResourceState resource={shares}>{shares.data?.items.map(share=><div className="perf-share-row" key={share.id}><div><strong>Scorecard {share.session_id}</strong><small>Expires {new Date(share.expires_at).toLocaleDateString('en-IN')}</small></div><button className="button secondary small" disabled={busy} onClick={()=>revoke(share.id)}>Revoke</button></div>)}</ResourceState></section></div>;
+}
