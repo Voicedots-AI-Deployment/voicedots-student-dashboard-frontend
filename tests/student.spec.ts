@@ -1542,9 +1542,10 @@ test("profile upload becomes the single active resume and enables replacement", 
 test("profile supports viewing, downloading and confirmed deletion of the active resume", async ({ page }) => {
   await mockStudent(page);
   const active = { resume_id: "profile-main", submission_id: "profile-submission", label: "Main resume", original_filename: "main-resume.pdf", is_primary: true, uploaded_at: "2026-10-01T00:00:00Z" };
+  const older = { ...active, resume_id: "older-saved", submission_id: "older-submission", label: "Older saved resume", is_primary: false };
   let exists = true;
   let deletedId = "";
-  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: exists ? [active] : [] } }));
+  await page.route("**/api/student/resume-library", route => route.fulfill({ json: { resumes: exists ? [active, older] : [older] } }));
   await page.route("**/api/student/resume-library/profile-main/file", route => route.fulfill({ contentType: "application/pdf", body: "%PDF-1.4 test resume" }));
   await page.route("**/api/student/resume-library/profile-main", async route => {
     if (route.request().method() !== "DELETE") return route.fallback();
@@ -1569,6 +1570,9 @@ test("profile supports viewing, downloading and confirmed deletion of the active
   await expect(page.getByText(/The active resume was deleted from your profile/)).toBeVisible();
   await expect(page.getByText("No active resume", { exact: true })).toBeVisible();
   expect(deletedId).toBe("profile-main");
+  await page.reload();
+  await expect(page.getByText("No active resume", { exact: true })).toBeVisible();
+  await expect(page.getByRole("button", { name: "View resume" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: "Open Resume Studio" })).toHaveAttribute("href", "/resume-studio");
   await expect(page.getByText("No active resume", { exact: true })).toBeVisible();
   await expect(page.getByText("Add a resume to use it across Interview Practice, Placements, AI Coach and Career Coach.")).toBeVisible();
