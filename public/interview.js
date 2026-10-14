@@ -3627,8 +3627,16 @@ function handleControlMessage(payload) {
       break;
 
     case "session_paused":
-      // The sign-in expired mid-interview; answers so far are saved.
-      showFatalError("Your sign-in expired, so the interview was paused. Your answers so far are saved. Sign in again and resume this interview.");
+      if (payload.reason === "no_response_timeout") {
+        interviewStopRequested = true; // Resume must be explicit, not automatic reconnect.
+        void stopInterviewRecording(false);
+        showFatalError(payload.detail || "Interview paused after one minute without a response. Reopen this interview to resume.");
+        const text = document.getElementById("error-toast-text");
+        if (text) text.textContent = payload.detail || "Interview paused after one minute without a response. Reopen this interview to resume.";
+        if (rndStatus) rndStatus.textContent = "Paused · no response";
+      } else {
+        showFatalError("Your sign-in expired, so the interview was paused. Your answers so far are saved. Sign in again and resume this interview.");
+      }
       break;
 
     case "answer_redirect":
