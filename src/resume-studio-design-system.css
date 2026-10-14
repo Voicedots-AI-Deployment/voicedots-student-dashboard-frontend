@@ -1180,7 +1180,7 @@
 .resume-studio .rs-ai-history > :not(.rs-tool-status):not(.rs-ai-tool-header):not(.rs-form-section:last-child),
 .resume-studio .rs-ai-review > :not(.rs-tool-status):not(.rs-ai-tool-header):not(.rs-proposal-list),
 .resume-studio .rs-ai-summary > :not(.rs-tool-status):not(.rs-ai-tool-header):not(.rs-proposal-list),
-.resume-studio .rs-ai-match > :not(.rs-tool-status):not(.rs-ai-tool-header):not(.rs-jd):not(.rs-match-actions):not(.rs-proposal-list) { display: none; }
+.resume-studio .rs-ai-match > :not(.rs-tool-status):not(.rs-ai-tool-header):not(.rs-jd):not(.rs-drive-select):not(.drive-ats-panel):not(.rs-match-actions):not(.rs-proposal-list) { display: none; }
 .resume-studio .rs-ai-tool-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 .resume-studio .rs-ai-tool-header h2 { margin: 4px 0 0; font-size: 20px; }
 .resume-studio .rs-ai-tool-header .text-button { flex: none; padding-top: 5px; }

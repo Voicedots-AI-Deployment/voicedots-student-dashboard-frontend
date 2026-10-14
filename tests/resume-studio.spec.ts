@@ -13,6 +13,7 @@ async function mockResumeStudio(page:Page, conflict=false, profileResume=false, 
   if(path==="/api/student/resume-library"&&method==="GET")return route.fulfill({json:{resumes:profileResume?[{resume_id:"profile-1",original_filename:"Asha_Profile.pdf",label:"Asha profile resume",is_primary:true,submission_id:"submission-1",uploaded_at:"2026-09-29T00:00:00Z"}]:[]}});
   if(path==="/api/student/resume-library/profile-1/file"&&method==="GET")return route.fulfill({status:200,contentType:"application/pdf",body:"%PDF-1.4 profile"});
   if(path==="/api/student/resume-studio/templates")return route.fulfill({json:[{id:"classic",name:"Classic",description:"ATS-friendly",ats_safe:true,tags:["ATS"],tokens:{layout:"single",font_family:"Amiri",accent_color:"#6b30e8",line_height:1.15,section_spacing_px:12,entry_spacing_px:6,margin_horizontal_mm:14,margin_top_mm:14,margin_bottom_mm:14}},{id:"editorial",name:"Editorial",description:"Clear modern layout",ats_safe:true,tags:["Modern"],tokens:{layout:"sidebar",font_family:"Inter",accent_color:"#238b72"}}]});
+  if(path==="/api/student/drives")return route.fulfill({json:[{id:'drive-ats',company_name:'Example Co',role_title:'Engineer'}]});
   if(path==="/api/student/resume-studio/ai/status")return route.fulfill({json:{provider:"deterministic",model:"offline",live_model_configured:false}});
   if(path==="/api/student/resume-studio/resumes/rs-1/interviews"&&method==="POST")return route.fulfill({json:{id:"chat-1",messages:[{role:"assistant",text:"What experience should we include?"}],state:{},document:project.document,resume_revision:project.revision}});
   if(path==="/api/student/resume-studio/resumes"&&method==="GET"){const rows=existingProject?[project,...additionalProjects]:[];if(profileProject&&!rows.some(row=>row.id===profileProject.id))rows.unshift(profileProject);return route.fulfill({json:rows})}
@@ -565,7 +566,7 @@ test("a resume over one page offers Fit to one page beside the page count and sh
  const fitCalls:unknown[]=[];
  await page.route("**/api/student/resume-studio/resumes/rs-1/preview",async route=>{
   if(route.request().method()!=="POST")return route.fallback();
-  return route.fulfill({contentType:"text/html",body:`<!doctype html><html><body><main class="rd"><h1>Asha</h1></main><script>parent.postMessage({type:"resume-preview",pages:2,height:2264},"*")</script></body></html>`});
+  return route.fulfill({contentType:"text/html",body:`<!doctype html><html><body><main class="rd" style="height:2264px"><h1>Asha</h1></main><script>parent.postMessage({type:"resume-preview",pages:2,height:2264},"*")</script></body></html>`});
  });
  await page.route("**/api/student/resume-studio/resumes/rs-1/fit",async route=>{
   fitCalls.push(route.request().postDataJSON());
@@ -577,6 +578,20 @@ test("a resume over one page offers Fit to one page beside the page count and sh
  await expect(page.locator(".rs-preview-page-size")).toHaveText("2 pages · A4");
  const fit=page.locator(".rs-preview-head").getByRole("button",{name:"Fit to one page"});
  await expect(fit).toBeVisible();
+ await expect(fit).toHaveCSS("display","flex");
+ const box=await fit.boundingBox();expect(box!.width).toBeGreaterThan(110);expect(box!.height).toBeLessThan(35);
+ expect(await fit.evaluate(el=>el.scrollWidth<=el.clientWidth+2)).toBe(true);
+ await page.screenshot({path:"test-results/resume-fit-button-aligned.png"});
+ for(const width of [1440,1024,768,390,360]){
+  await page.setViewportSize({width,height:1000});
+  if(await page.getByRole('button',{name:'Preview',exact:true}).isVisible())await page.getByRole('button',{name:'Preview',exact:true}).click();
+  const controls=page.getByRole('group',{name:'Preview controls'});await expect(controls).toBeVisible();
+  expect(await controls.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);
+  const fitBox=await fit.boundingBox(),zoomBox=await page.getByRole('button',{name:'Zoom in',exact:true}).boundingBox();
+  expect(Math.abs((fitBox!.y+fitBox!.height/2)-(zoomBox!.y+zoomBox!.height/2))).toBeLessThan(2);
+  await page.screenshot({path:`test-results/preview-controls-${width}.png`});
+ }
+ await page.setViewportSize({width:1440,height:1000});
  await fit.click();
  await expect(page.getByRole("tab",{name:"Design & templates"})).toHaveAttribute("aria-selected","true");
  await expect(page.locator(".rs-fit-result")).toContainText("Fit proposal · 2 → 1 pages");
@@ -604,9 +619,9 @@ test('placement ATS handoff preserves drive and adds only confirmed missing skil
  await page.route('**/api/student/drives/drive-ats/ats-fit',route=>route.fulfill({json:{drive_id:'drive-ats',company_name:'Example Co',role_title:'Engineer',job_description:'Python and SQL',ats_status:'evaluated',ats_fit_score:70,skills:[{skill:'Python',match_status:'FULL_MATCH'},{skill:'SQL',priority:'mandatory',match_status:'NO_EVIDENCE'}]}}));
  let added:string[]=[];
  await page.route('**/api/student/resume-studio/resumes/rs-1/ai/add-skills',route=>{added=route.request().postDataJSON().skills;return route.fulfill({json:{resume:{...baseProject,revision:2,document:{...baseProject.document,sections:[{id:'skills',kind:'skills',name:'Skills',entries:[{id:'sql',title:'SQL',body_html:'SQL',tags:[]}]}]}},added,revision:2}})});
- await page.goto('/resume-studio?drive=drive-ats&resume=rs-1');
+ await page.goto('/resume-studio?drive=drive-ats&resume=rs-1&action=add-skills');
  const panel=page.getByRole('region',{name:'ATS fit'});
- await expect(panel).toContainText('Engineer');await expect(panel).toContainText('Python');
+ await expect(page.getByRole('combobox',{name:'Select placement drive'})).toHaveValue('drive-ats');await expect(panel).toContainText('Python');
  await expect(panel.getByRole('button',{name:'Add selected skills'})).toBeDisabled();
  await panel.getByRole('checkbox',{name:/SQL/}).check();
  await panel.getByRole('button',{name:'Add selected skills'}).click();
@@ -626,9 +641,24 @@ test('opportunity details exposes matched and missing evidence with drive handof
  const panel=page.getByRole('region',{name:'ATS fit'});await expect(panel).toContainText('Matching skills');await expect(panel).toContainText('SQL');
  await panel.getByRole('link',{name:'Add missing skills in Resume Studio'}).click();await expect(page).toHaveURL(/resume-studio\?drive=drive-ats&action=add-skills#add-skills/);
  await expect(page.locator('.rs-project-editor')).toBeVisible();
+ await expect(page.locator('.rs-ai-match')).toContainText('Match a job post');
+ await expect(page.locator('.rs-project-editor > .drive-ats-panel')).toHaveCount(0);
+ await expect(page.getByRole('combobox',{name:'Select placement drive'})).toHaveValue('drive-ats');
  await expect(page.locator('#add-skills').getByRole('checkbox',{name:/SQL/})).toBeFocused();
  await page.locator('#add-skills').getByRole('checkbox',{name:/SQL/}).check();
  await page.locator('#add-skills').getByRole('button',{name:'Add selected skills'}).click();
  await expect.poll(()=>added).toEqual(['SQL']);
  await expect(page.getByRole('status').filter({hasText:'Added SQL'})).toBeVisible();
+});
+
+
+test('job match drive selector and missing skills stay compact inside the existing AI tool',async({page})=>{
+ await mockResumeStudio(page);
+ await page.route('**/api/student/drives/drive-ats/ats-fit',route=>route.fulfill({json:{ats_status:'evaluated',ats_fit_score:25,job_description:'Build Java systems',skills:[{skill:'Python',match_status:'FULL_MATCH'},...['Java','Technical Specification Writing','Software Development Life Cycle (SDLC)'].map(skill=>({skill,match_status:'NO_EVIDENCE',priority:'mandatory'}))]}}));
+ await page.goto('/resume-studio?resume=rs-1');await page.getByRole('tab',{name:'AI tools'}).click();await page.getByRole('button',{name:/Match a job post/}).click();
+ await page.getByRole('combobox',{name:'Select placement drive'}).selectOption('drive-ats');
+ await expect(page.getByRole('textbox',{name:'Job description'})).toHaveValue('Build Java systems');
+ for(const width of [1440,768,390]){await page.setViewportSize({width,height:900});const panel=page.locator('.rs-ai-match .drive-ats-panel');await expect(panel).toBeVisible();expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true);expect(await panel.locator('label').first().evaluate(el=>el.getBoundingClientRect().height)).toBeLessThan(50)}
+ await page.setViewportSize({width:1440,height:1000});await page.screenshot({path:'test-results/student-job-match-minimal-desktop.png',fullPage:true});
+ await page.getByRole('combobox',{name:'Select placement drive'}).selectOption('');await expect(page.locator('.rs-ai-match .drive-ats-panel')).toHaveCount(0);await expect(page.getByRole('textbox',{name:'Job description'})).toHaveValue('');
 });

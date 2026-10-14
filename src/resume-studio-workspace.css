@@ -207,3 +207,49 @@
 @media (prefers-reduced-motion: reduce) { .rs-fit-button { animation: none; transition: none; } }
 .rs-writing-tip { display: flex; align-items: flex-start; gap: 8px; margin: 8px 0 0; padding: 9px 12px; border: 1px solid var(--border, #ece7f4); border-radius: 10px; background: var(--soft, #f8f5fe); color: var(--muted, #6f6880); font-size: 12px; line-height: 1.55; }
 .rs-writing-tip svg { flex: none; margin-top: 2px; color: var(--primary, #7c3aed); }
+
+/* Keep the fit action out of the circular zoom-button treatment. */
+.resume-studio .rs-preview-controls button.rs-fit-button{display:inline-flex;width:auto;height:30px;min-height:30px;flex:none;align-items:center;justify-content:center;gap:5px;padding:0 10px;border:1px solid var(--purple);border-radius:8px;background:var(--purple-soft);color:var(--purple);font-size:12px;line-height:1;box-shadow:none;animation:none;white-space:nowrap}
+.resume-studio .rs-preview-controls button.rs-fit-button svg{flex:none}
+.resume-studio .rs-preview-controls button.rs-fit-button:hover:not(:disabled){background:var(--purple);color:#fff;transform:none;box-shadow:none}
+.resume-studio .rs-drive-select{display:grid;gap:7px;font-size:13px}
+.resume-studio .rs-drive-select select{width:100%;min-width:0;min-height:40px;padding:8px 10px;border:1px solid var(--line);border-radius:8px;background:var(--card);color:var(--ink)}
+.resume-studio .drive-ats-panel{margin:0;padding:16px;background:var(--card);border-color:var(--line);border-radius:10px;color:var(--ink)}
+.resume-studio .drive-ats-panel h3{font-size:15px;margin:0}
+.resume-studio .drive-ats-panel h4{font-size:13px;margin-bottom:8px}
+.resume-studio .drive-ats-panel header strong{font-size:22px}
+.resume-studio .drive-ats-panel p{font-size:12px;color:var(--muted);margin:8px 0}
+.resume-studio .drive-ats-columns{grid-template-columns:minmax(0,1fr);gap:12px;margin:12px 0}
+.resume-studio .drive-ats-chips{gap:6px}
+.resume-studio .drive-ats-chips label{display:inline-flex;flex-direction:row;align-items:center;justify-content:flex-start;gap:6px;max-width:100%;padding:6px 8px;background:var(--soft);border:1px solid var(--line);border-radius:6px;color:var(--ink);font-size:12px;line-height:1.4}
+.resume-studio .drive-ats-chips label:has(input:checked){background:var(--purple-soft);border-color:var(--purple-edge)}
+.resume-studio .drive-ats-chips label input{width:14px;height:14px;min-height:0;padding:0;margin:0;flex:none;accent-color:var(--purple)}
+.resume-studio .drive-ats-chips span{font-size:12px;padding:5px 8px}
+
+.resume-studio .rs-preview-panel{container-type:inline-size}
+.resume-studio .rs-preview-zoom-group{display:inline-flex;align-items:center;gap:6px;flex:none}
+.resume-studio .rs-preview-head{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center}
+@container(max-width:650px){.resume-studio .rs-preview-edit-hint{display:none}}
+@container(max-width:450px){.resume-studio .rs-preview-head{grid-template-columns:minmax(0,1fr) auto}.resume-studio .rs-preview-controls{grid-column:1/-1;grid-row:2;justify-content:flex-start;border-radius:10px}.resume-studio .rs-preview-refresh{grid-column:2;grid-row:1}}
+
+.resume-studio .rs-preview-controls{flex-wrap:nowrap;max-width:100%;min-width:0}
+.resume-studio .rs-preview-head .eyebrow{white-space:nowrap}
+.resume-studio .rs-fit-label-short{display:none}
+@container(max-width:450px){
+ .resume-studio .rs-preview-controls{justify-content:space-between;gap:4px}
+ .resume-studio .rs-preview-controls button.rs-fit-button{padding:0 7px;gap:4px}
+ .resume-studio .rs-fit-label-full{display:none}
+ .resume-studio .rs-fit-label-short{display:inline}
+ .resume-studio .rs-preview-page-size{padding:0 6px;font-size:11px;flex:none}
+ .resume-studio .rs-preview-zoom-group{gap:4px}
+ .resume-studio .rs-preview-zoom-value{min-width:40px;padding:0 5px;font-size:11px}
+ .resume-studio .rs-preview-zoom-group button{width:26px;height:26px;flex:none}
+}
+@media(max-width:760px){.resume-studio .rs-project-toolbar .rs-toolbar-save{display:none}}
+@media(max-width:760px){
+ .resume-studio .rs-project-toolbar > .button:not(.rs-toolbar-save){grid-column:2/5}
+ .resume-studio .rs-project-toolbar > .rs-toolbar-menu-wrap:has(>.rs-toolbar-kebab){grid-column:6;grid-row:1;justify-self:end}
+ .resume-studio .rs-project-toolbar > .rs-toolbar-menu-wrap:has(>.button){grid-column:5/7;grid-row:2}
+ .resume-studio .rs-project-toolbar > .rs-toolbar-menu-wrap > .button{padding:0 6px;gap:4px;font-size:12px}
+ .resume-studio .rs-project-toolbar > .rs-toolbar-menu-wrap > .button svg{width:15px;flex:none}
+}
