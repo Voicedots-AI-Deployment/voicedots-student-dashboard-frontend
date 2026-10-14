@@ -38,3 +38,24 @@ test('desktop and mobile spacing stays within the page; chart score stays center
   if(width===1600||width===390)await page.screenshot({path:`/root/voicedots/artifacts/student-performance-reference-20261013/dashboard-${width}.png`,fullPage:true});
  }
 });
+
+test('long recommendations and distinct duplicate labels stay readable at every reference width',async({page})=>{
+ const skills=[{key:'communication',name:'Communication',score:25,target:80},{key:'communication_skills',name:'Communication',score:25,target:70},...Array.from({length:11},(_,i)=>({key:`dimension_${i}`,name:`Assessment competency ${i+1}`,score:i*5,target:null}))];
+ const actions=[{focus:'Structured thinking',action:'Use a simple Situation → Action → Result shape for behavioural answers. Include your responsibility and the specific evidence of the outcome. '.repeat(3)},{focus:'Structured thinking',action:'Before answering, take one breath and mentally outline two or three points you will cover, in order.'},{focus:'Communication',action:'Explain how you tested the workflow and verified the result.'}];
+ await page.route('**/api/student/performance',route=>route.fulfill({json:{...detail,competencies:skills}}));
+ await page.route('**/api/student/performance/overview',route=>route.fulfill({json:{...full,actions}}));
+ await page.goto('/performance');
+ await expect(page.locator('.spi-competencies tbody tr')).toHaveCount(13);
+ await expect(page.locator('.spi-dimension')).toHaveText(['Assessment dimension: communication','Assessment dimension: communication skills']);
+ await expect(page.locator('.spi-plan>li')).toHaveCount(2);
+ await expect(page.locator('.spi-plan>li').first().locator('ul>li')).toHaveCount(2);
+ for(const width of [1920,1440,1366,1024,768,390]){
+  await page.setViewportSize({width,height:1000});
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(width);
+  const progress=await page.getByRole('heading',{name:'Comparable interview progress'}).locator('..').boundingBox();expect(progress!.height).toBeLessThan(520);
+  const sharing=await page.getByRole('heading',{name:'Sharing & employer access'}).locator('..').boundingBox();expect(sharing!.height).toBeLessThan(420);
+  await page.screenshot({path:`/root/voicedots/artifacts/dashboard-layout-20261014/student-${width}.png`,fullPage:true});
+ }
+ await page.getByRole('button',{name:'Share scorecard'}).last().click();
+ await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+});
