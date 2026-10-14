@@ -598,3 +598,37 @@ test("project and experience entries carry a plain writing tip",async({page})=>{
  const tip=page.locator(".rs-content-section").last().locator(".rs-writing-tip");
  await expect(tip).toContainText("Write what you did, how you did it, which part was yours, and what changed because of it.");
 });
+
+test('placement ATS handoff preserves drive and adds only confirmed missing skills',async({page})=>{
+ await mockResumeStudio(page);
+ await page.route('**/api/student/drives/drive-ats/ats-fit',route=>route.fulfill({json:{drive_id:'drive-ats',company_name:'Example Co',role_title:'Engineer',job_description:'Python and SQL',ats_status:'evaluated',ats_fit_score:70,skills:[{skill:'Python',match_status:'FULL_MATCH'},{skill:'SQL',priority:'mandatory',match_status:'NO_EVIDENCE'}]}}));
+ let added:string[]=[];
+ await page.route('**/api/student/resume-studio/resumes/rs-1/ai/add-skills',route=>{added=route.request().postDataJSON().skills;return route.fulfill({json:{resume:{...baseProject,revision:2,document:{...baseProject.document,sections:[{id:'skills',kind:'skills',name:'Skills',entries:[{id:'sql',title:'SQL',body_html:'SQL',tags:[]}]}]}},added,revision:2}})});
+ await page.goto('/resume-studio?drive=drive-ats&resume=rs-1');
+ const panel=page.getByRole('region',{name:'ATS fit'});
+ await expect(panel).toContainText('Engineer');await expect(panel).toContainText('Python');
+ await expect(panel.getByRole('button',{name:'Add selected skills'})).toBeDisabled();
+ await panel.getByRole('checkbox',{name:/SQL/}).check();
+ await panel.getByRole('button',{name:'Add selected skills'}).click();
+ await expect.poll(()=>added).toEqual(['SQL']);await expect(page.getByRole('status').filter({hasText:'Added SQL'})).toBeVisible();
+ await expect(page).toHaveURL(/drive=drive-ats/);
+ for(const width of [1440,768,390]){await page.setViewportSize({width,height:900});expect(await panel.evaluate(el=>el.scrollWidth<=el.clientWidth+1)).toBe(true)}
+});
+
+test('opportunity details exposes matched and missing evidence with drive handoff',async({page})=>{
+ await mockResumeStudio(page,false,true,true,[],true);
+ await page.route('**/api/student/drives',route=>route.fulfill({json:[{id:'drive-ats',company_name:'Example Co',role_title:'Engineer',status:'active',eligibility_status:'eligible',main_resume_available:true}]}));
+ await page.route('**/api/student/drives/drive-ats/interview-context',route=>route.fulfill({json:{drive_id:'drive-ats',company_name:'Example Co',role_title:'Engineer',job_description:'Python and SQL',action:'start',main_resume_available:true,max_attempts:1,attempts_used:0}}));
+ await page.route('**/api/student/drives/drive-ats/ats-fit',route=>route.fulfill({json:{company_name:'Example Co',role_title:'Engineer',ats_status:'evaluated',ats_fit_score:70,skills:[{skill:'Python',match_status:'FULL_MATCH'},{skill:'SQL',match_status:'NO_EVIDENCE'}]}}));
+ let added:string[]=[];
+ await page.route('**/api/student/resume-studio/resumes/rs-1/ai/add-skills',route=>{added=route.request().postDataJSON().skills;return route.fulfill({json:{resume:{...baseProject,linked_resume_id:'profile-1',revision:2},added,revision:2}})});
+ await page.goto('/placements');await page.getByRole('button',{name:/View opportunity/}).click();
+ const panel=page.getByRole('region',{name:'ATS fit'});await expect(panel).toContainText('Matching skills');await expect(panel).toContainText('SQL');
+ await panel.getByRole('link',{name:'Add missing skills in Resume Studio'}).click();await expect(page).toHaveURL(/resume-studio\?drive=drive-ats&action=add-skills#add-skills/);
+ await expect(page.locator('.rs-project-editor')).toBeVisible();
+ await expect(page.locator('#add-skills').getByRole('checkbox',{name:/SQL/})).toBeFocused();
+ await page.locator('#add-skills').getByRole('checkbox',{name:/SQL/}).check();
+ await page.locator('#add-skills').getByRole('button',{name:'Add selected skills'}).click();
+ await expect.poll(()=>added).toEqual(['SQL']);
+ await expect(page.getByRole('status').filter({hasText:'Added SQL'})).toBeVisible();
+});

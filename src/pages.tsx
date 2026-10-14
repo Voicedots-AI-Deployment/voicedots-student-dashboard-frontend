@@ -1,3 +1,4 @@
+import { DriveATSFit } from "./drive-ats-fit";
 import { PlacementResult } from "./report-result";
 import { CareerProfile } from "./career-profile";
 import {displayName} from "./display";
@@ -724,6 +725,7 @@ export function Placements() {
                 {context.coach_gate_locked && <div className="opportunity-coach-gate"><strong>Complete the required AI Coach preparation</strong><p>Your next attempt unlocks when the required preparation and validation are complete.</p><Link className="button secondary" to={`/coach?drive=${encodeURIComponent(context.drive_id)}`}>Continue with AI Coach <ArrowRight size={16}/></Link></div>}
                 <div className="opportunity-next-step"><span className="eyebrow">YOUR NEXT STEP</span><p>{nextStep}</p></div>
               </section>}
+              <DriveATSFit driveId={selected.id}/>
             </main>
             <aside className="opportunity-snapshot" aria-label="Opportunity snapshot"><span className="eyebrow">OPPORTUNITY SNAPSHOT</span><h3>{selected.role_title}</h3><dl>
               <div><dt>Company</dt><dd>{selected.company_name}</dd></div><div><dt>Role</dt><dd>{selected.role_title}</dd></div><div><dt>Location</dt><dd>{context?.location || selected.location || "Not specified"}</dd></div><div><dt>Job type</dt><dd>{humanize(selected.job_type || "Not specified")}</dd></div><div><dt>Compensation</dt><dd>{compensationLabel(selected)}</dd></div><div><dt>Interview window</dt><dd>{selected.window_start_at ? `${dateTime(selected.window_start_at)}${selected.window_end_at ? ` – ${dateTime(selected.window_end_at)}` : ""}` : date(selected.drive_date)}</dd></div><div><dt>Status</dt><dd>{statusText}</dd></div><div><dt>Eligibility</dt><dd>{context?.eligibility?.status === "eligible" || selected.eligibility_status === "eligible" ? "Eligible" : humanize(context?.eligibility?.status || "Eligible")}</dd></div>
