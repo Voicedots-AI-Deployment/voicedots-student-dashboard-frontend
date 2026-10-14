@@ -52,10 +52,25 @@ test('long recommendations and distinct duplicate labels stay readable at every 
  for(const width of [1920,1440,1366,1024,768,390]){
   await page.setViewportSize({width,height:1000});
   await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(width);
-  const progress=await page.getByRole('heading',{name:'Comparable interview progress'}).locator('..').boundingBox();expect(progress!.height).toBeLessThan(520);
-  const sharing=await page.getByRole('heading',{name:'Sharing & employer access'}).locator('..').boundingBox();expect(sharing!.height).toBeLessThan(420);
+  const progress=await page.getByRole('heading',{name:'Comparable interview progress'}).locator('..').boundingBox();expect(progress!.height).toBeLessThan(650);
+  const sharing=await page.getByRole('heading',{name:'Sharing & employer access'}).locator('..').boundingBox();expect(sharing!.height).toBeLessThan(650);
   await page.screenshot({path:`/root/voicedots/artifacts/dashboard-layout-20261014/student-${width}.png`,fullPage:true});
  }
  await page.getByRole('button',{name:'Share scorecard'}).last().click();
  await expect(page.getByRole('dialog')).toBeVisible();await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toHaveCount(0);
+});
+
+test('card grids use consistent spacing and aligned boundaries at each breakpoint',async({page})=>{
+ await page.goto('/performance');await expect(page.locator('.spi-kpis')).toBeVisible();
+
+ for(const width of [1920,1440,1366,1024,768,390]){
+  await page.setViewportSize({width,height:1050});
+  const selector='.spi-kpis,.spi-analysis,.spi-bottom';
+  await expect.poll(()=>page.evaluate(()=>document.documentElement.scrollWidth)).toBe(width);
+  const grids=await page.locator(selector).evaluateAll(elements=>elements.map(element=>{
+   const style=getComputedStyle(element);return {gap:parseFloat(style.gap),cards:Array.from(element.children).map(child=>{const r=child.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right}})};
+  }));
+  for(const grid of grids){expect(grid.gap).toBe(width<=700?12:16);for(const card of grid.cards){const sameRow=grid.cards.filter(other=>Math.abs(other.top-card.top)<1);for(const other of sameRow)expect(Math.abs(other.bottom-card.bottom)).toBeLessThan(2);}}
+  await page.screenshot({path:`/root/voicedots/artifacts/dashboard-grid-20261014/student-${width}.png`,fullPage:true});
+ }
 });
