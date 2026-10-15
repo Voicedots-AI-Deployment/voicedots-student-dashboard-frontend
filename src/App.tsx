@@ -305,7 +305,7 @@ const nav = [
   { to: "/resume-studio", label: "Resume Studio", icon: FileText },
   { to: "/career", label: "Career coach", icon: Compass },
   { to: "/academics", label: "Marks and attendance", icon: GraduationCap },
-  { to: "/study-resources", label: "Study Resources", icon: Library },
+  { to: "/question-papers", label: "Question Papers", icon: Library },
   { to: "/erp", label: "My ERP", icon: LayoutGrid },
   { to: "/reports", label: "My reports", icon: FileText },
   { to: "/profile", label: "My profile", icon: UserRound },
@@ -555,7 +555,8 @@ export function App() {
             <Route path="/reports/:sessionId" element={<InterviewReport />} />
             <Route path="/growth" element={<Navigate to="/" replace />} />
             <Route path="/academics" element={<Academics />} />
-            <Route path="/study-resources" element={<StudyResources />} />
+            <Route path="/question-papers" element={<StudyResources showPractice />} />
+            <Route path="/study-resources" element={<Navigate to="/question-papers" replace />} />
             <Route path="/erp" element={<StudentErp />} />
             <Route path="/erp/:service" element={<StudentErp />} />
             <Route path="/coach" element={<Coach />} />

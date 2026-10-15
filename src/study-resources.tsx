@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowUpRight, BookOpen, ChevronDown, FileText, FolderOpen, GraduationCap, Layers, LoaderCircle, Search } from 'lucide-react';
+import { ArrowLeft, ArrowRight, ArrowUpRight, BookOpen, ChevronDown, FileText, FolderOpen, GraduationCap, Layers, LoaderCircle, Search } from 'lucide-react';
 import { api, request } from './api';
 import { ErrorMessage, PageHeading, useResource } from './ui';
 import './study-resources.css';
@@ -9,23 +9,33 @@ type Resource = {
   id: string; kind: 'PAPER'; title: string; description: string;
   filename: string; exam_year: number | null; exam_session: string | null;
 };
+type PracticeQuestion = {
+  id: string; version: number; question_text: string; question_type: string; marks: number;
+  options: string[]; bloom_level: string; difficulty: string;
+  unit_code: string | null; unit_title: string | null; topic_code: string | null; topic_title: string | null;
+};
+type QuestionPage = { items: PracticeQuestion[]; total: number; limit: number; offset: number };
 type Subject = {
   id: string; code: string; name: string; year_number: number; semester_number: number;
+  lecture_hours: number | null; tutorial_hours: number | null; practical_hours: number | null;
   credits: number | null;
   syllabus_id: string | null; syllabus_version: number | null; document_filename: string | null;
   syllabus_content: { cos?: SyllabusItem[]; units?: SyllabusItem[]; topics?: SyllabusItem[] } | null;
   resources: Resource[];
 };
-type Catalog = { status: 'ready' | 'unavailable'; message?: string; subjects: Subject[] };
-type Section = 'syllabus' | 'papers';
+type Curriculum = { institution_name: string; education_level: string; program_code: string; branch_code: string; batch_name: string; specialization_name: string };
+type Catalog = { status: 'ready' | 'unavailable'; match_status?: 'matched' | 'no_match' | 'ambiguous' | 'profile_incomplete'; match_method?: 'automatic' | 'admin'; curriculum?: Curriculum; message?: string; subjects: Subject[] };
+type Section = 'syllabus' | 'papers' | 'practice';
 type OpenDocument = (path: string) => Promise<void>;
 const documentPath = (id: string) => `/api/student/study-resources/documents/${encodeURIComponent(id)}`;
 
-export function StudyResources() {
+export function StudyResources({ showPractice = false, showHeading = true }: { showPractice?: boolean; showHeading?: boolean }) {
   const catalog = useResource<Catalog>('/api/student/study-resources');
   const [chosenSemester, setChosenSemester] = useState(0);
   const [chosenSubject, setChosenSubject] = useState('');
   const [section, setSection] = useState<Section>('syllabus');
+  const [questionOffset, setQuestionOffset] = useState(0);
+  const [questionSearch, setQuestionSearch] = useState('');
   const [documentError, setDocumentError] = useState('');
   const [pendingPath, setPendingPath] = useState('');
   const [failedPath, setFailedPath] = useState('');
@@ -38,6 +48,12 @@ export function StudyResources() {
     .sort((a, b) => a.code.localeCompare(b.code) || a.name.localeCompare(b.name) || a.id.localeCompare(b.id));
   const subject = semesterSubjects.find(item => item.id === chosenSubject) || semesterSubjects[0];
   const papers = subject?.resources.filter(item => item.kind === 'PAPER') || [];
+  const questionPath = showPractice && subject ? `/api/student/study-resources/questions?subject_id=${encodeURIComponent(subject.id)}&limit=50&offset=${questionOffset}` : null;
+  const practice = useResource<QuestionPage>(questionPath);
+  const practiceItems = practice.data?.items || [];
+  const visibleQuestions = practiceItems.filter(item => `${item.question_text} ${item.unit_title || ''} ${item.topic_title || ''} ${item.question_type}`.toLocaleLowerCase().includes(questionSearch.trim().toLocaleLowerCase()));
+
+  useEffect(() => { setQuestionOffset(0); setQuestionSearch(''); }, [subject?.id]);
 
   useEffect(() => {
     if (!revealSubject) return;
@@ -82,15 +98,17 @@ export function StudyResources() {
   const sections: { id: Section; title: string; icon: typeof BookOpen; count?: number }[] = [
     { id: 'syllabus', title: 'Syllabus', icon: BookOpen },
     { id: 'papers', title: 'Question papers', icon: FileText, count: papers.length },
+    ...(showPractice ? [{ id: 'practice' as const, title: 'Question bank', icon: GraduationCap, count: practice.data?.total }] : []),
   ];
 
   return <div className="study-resources">
-    <PageHeading eyebrow="YOUR ACADEMIC LIBRARY" title="Study Resources">Your published syllabi and released question papers, organized by subject.</PageHeading>
+    {showHeading && <PageHeading eyebrow={showPractice ? 'SUBJECT RESOURCES' : 'YOUR ACADEMIC LIBRARY'} title={showPractice ? 'Question Papers' : 'Study Resources'}>{showPractice ? 'Browse subject syllabi, released question-bank questions, and past papers.' : 'Your published syllabi and released question papers, organized by subject.'}</PageHeading>}
     {catalog.error && <ErrorMessage message={catalog.error} retry={catalog.reload}/>}
     {catalog.loading && <section className="panel study-resources-loading" role="status"><LoaderCircle size={22} className="study-resources-spinner"/> Loading your academic library…</section>}
-    {catalog.data?.status === 'unavailable' && <LibraryEmpty title="Academic details need review" message={catalog.data.message || 'Ask your institution to check your student profile or enrollment.'}/>}
+    {catalog.data?.status === 'unavailable' && <LibraryEmpty title={catalog.data.match_status === 'no_match' ? 'Curriculum not assigned yet' : catalog.data.match_status === 'ambiguous' ? 'Your curriculum needs a selection' : 'Academic details need review'} message={catalog.data.message || 'Ask your institution to check your academic profile.'}/>}
     {catalog.data?.status === 'ready' && !subjects.length && <LibraryEmpty title="Your library is getting ready" message="Your institution has not added subjects for your program and branch yet. Check back once your subjects are set up."/>}
     {subject && <>
+      {catalog.data?.curriculum && <p className="study-resources-inline-note"><GraduationCap size={17}/><span>{[catalog.data.curriculum.institution_name, catalog.data.curriculum.program_code, catalog.data.curriculum.specialization_name || catalog.data.curriculum.branch_code, catalog.data.curriculum.batch_name].filter(Boolean).join(' · ')}</span></p>}
       <section className="panel study-resources-selectors" aria-label="Choose a subject">
         <div className="study-resources-filter-intro"><span className="study-resources-icon"><GraduationCap size={21}/></span><div><strong>Explore your subjects</strong><p>Browse any semester in your program.</p></div></div>
         <label>Semester<select value={semester} onChange={event => { setChosenSemester(Number(event.target.value)); setChosenSubject(''); resetDocumentError(); }}>{semesters.map(value => <option key={value} value={value}>Semester {value}</option>)}</select></label>
@@ -102,27 +120,51 @@ export function StudyResources() {
       <section className="panel study-resources-workspace" aria-label={`${subject.name} resources`}>
         <header className="study-resources-subject">
           <div><div className="study-resources-context"><span>{subject.code}</span><span>Year {subject.year_number}</span><span>Semester {subject.semester_number}</span></div><h2 ref={subjectHeading} tabIndex={-1}>{subject.name}</h2></div>
-          <span className="study-resources-availability"><FolderOpen size={15}/>{papers.length} {papers.length === 1 ? 'resource' : 'resources'}</span>
+          <span className="study-resources-availability"><FolderOpen size={15}/>{papers.length} {papers.length === 1 ? 'paper' : 'papers'}{showPractice && practice.data ? ` · ${practice.data.total} bank questions` : ''}</span>
         </header>
         <nav className="study-resources-nav" aria-label="Resource sections">{sections.map(item => <button key={item.id} type="button" aria-pressed={section === item.id} onClick={() => setSection(item.id)}><item.icon size={17}/>{item.title}{item.count !== undefined && <span>{item.count}</span>}</button>)}</nav>
         <div className="study-resources-content">
           {documentError && <ErrorMessage message={documentError} retry={pendingPath ? undefined : () => void openDocument(failedPath)}/>}
           {section === 'syllabus' && <SyllabusSection key={subject.id} subject={subject} pendingPath={pendingPath} open={openDocument}/>}
           {section === 'papers' && <ResourceSection key={subject.id} title="Question papers" description="Papers generated by your institution and released for student use." empty="No generated papers have been released for this subject yet. Your institution needs to create a final paper and release its student copy." items={papers} pendingPath={pendingPath} open={openDocument}/>}
+          {showPractice && section === 'practice' && <PracticeSection page={practice.data} loading={practice.loading} error={practice.error} retry={practice.reload} offset={questionOffset} setOffset={setQuestionOffset} search={questionSearch} setSearch={setQuestionSearch} items={visibleQuestions}/>}
         </div>
       </section>
     </>}
   </div>;
 }
 
+function PracticeSection({ page, loading, error, retry, offset, setOffset, search, setSearch, items }: {
+  page: QuestionPage | null; loading: boolean; error: string; retry: () => void; offset: number;
+  setOffset: (value: number) => void; search: string; setSearch: (value: string) => void; items: PracticeQuestion[];
+}) {
+  return <>
+    <div className="study-resources-section-heading"><div><h3>Practice questions</h3><p>Questions your institution has approved and released for study. Answers and review notes are not shown here.</p></div>{(page?.total || 0) > 0 && <label className="study-resources-search"><Search size={17}/><input type="search" aria-label="Search practice questions" placeholder="Search questions…" value={search} onChange={event => setSearch(event.target.value)}/></label>}</div>
+    {error && <ErrorMessage message={error} retry={retry}/>}
+    {loading ? <div className="study-resources-loading" role="status"><LoaderCircle size={20} className="study-resources-spinner"/> Loading practice questions…</div>
+      : error ? null
+      : !page?.total ? <LibraryEmpty title="No practice questions yet" message="Your institution has not released any approved questions for this subject yet."/>
+      : !items.length ? <LibraryEmpty title="No matching questions" message="Try a different search term."/>
+      : <div className="study-resources-practice-list">{items.map((item, index) => <article key={item.id}>
+        <div className="study-resources-practice-meta"><span>Question {offset + index + 1}</span><span>{item.question_type.replaceAll('_', ' ')}</span><span>{item.marks} {Number(item.marks) === 1 ? 'mark' : 'marks'}</span><span>{item.difficulty.toLowerCase()}</span>{item.unit_title && <span>{item.unit_code ? `${item.unit_code} · ` : ''}{item.unit_title}</span>}{item.topic_title && <span>{item.topic_title}</span>}</div>
+        <h4>{item.question_text}</h4>
+        {item.options?.length > 0 && <ol type="A" className="study-resources-practice-options">{item.options.map((option, optionIndex) => <li key={`${item.id}-${optionIndex}`}>{option}</li>)}</ol>}
+      </article>)}</div>}
+    {page && page.total > page.limit && <div className="study-resources-practice-pagination"><span>Showing {offset + 1}–{Math.min(offset + page.items.length, page.total)} of {page.total}</span><div><button className="button secondary small" disabled={loading || offset === 0} onClick={() => setOffset(Math.max(0, offset - page.limit))}><ArrowLeft size={14}/>Previous</button><button className="button secondary small" disabled={loading || offset + page.limit >= page.total} onClick={() => setOffset(offset + page.limit)}>Next<ArrowRight size={14}/></button></div></div>}
+  </>;
+}
+
 function SemesterOverview({ subjects, selectedId, onSelect }: { subjects: Subject[]; selectedId: string; onSelect: (id: string) => void }) {
   const first = subjects[0];
   const hasCredits = subjects.length > 0 && subjects.every(subject => typeof subject.credits === 'number' && Number.isFinite(subject.credits));
   const total = hasCredits ? subjects.reduce((sum, subject) => sum + subject.credits!, 0) : null;
+  const totals = (field: 'lecture_hours' | 'tutorial_hours' | 'practical_hours') =>
+    subjects.length > 0 && subjects.every(subject => typeof subject[field] === 'number' && Number.isFinite(subject[field]))
+      ? subjects.reduce((sum, subject) => sum + subject[field]!, 0) : null;
   const formatCredits = (value: number | null) => typeof value === 'number' && Number.isFinite(value)
     ? value.toLocaleString(undefined, { maximumFractionDigits: 2 }) : '—';
   return <section className="panel study-resources-overview" aria-label="Semester course overview">
-    <div className="study-resources-overview-heading"><h2>Year {first.year_number} · Semester {first.semester_number}</h2><p>Select a course to view its syllabus and question papers.</p></div>
+    <div className="study-resources-overview-heading"><h2>Year {first.year_number} · Semester {first.semester_number}</h2><p>Select a course to view its syllabus, question bank, and question papers.</p></div>
     <div className="study-resources-table-scroll" role="region" aria-label="Semester courses" tabIndex={0}>
       <table className="study-resources-course-table">
         <caption>Courses configured for your program and branch</caption>
@@ -130,9 +172,9 @@ function SemesterOverview({ subjects, selectedId, onSelect }: { subjects: Subjec
         <tbody>{subjects.map((item, index) => <tr key={item.id} className={item.id === selectedId ? 'study-resources-course-selected' : undefined}>
           <td>{index + 1}</td><td className="study-resources-course-code">{item.code}</td>
           <th scope="row"><button type="button" aria-pressed={item.id === selectedId} onClick={() => onSelect(item.id)}>{item.name}</button></th>
-          <td>—</td><td>—</td><td>—</td><td>{formatCredits(item.credits)}</td>
+          <td>{formatCredits(item.lecture_hours)}</td><td>{formatCredits(item.tutorial_hours)}</td><td>{formatCredits(item.practical_hours)}</td><td>{formatCredits(item.credits)}</td>
         </tr>)}</tbody>
-        <tfoot><tr><th scope="row" colSpan={3}>Total</th><td>—</td><td>—</td><td>—</td><td>{formatCredits(total)}</td></tr></tfoot>
+        <tfoot><tr><th scope="row" colSpan={3}>Total</th><td>{formatCredits(totals('lecture_hours'))}</td><td>{formatCredits(totals('tutorial_hours'))}</td><td>{formatCredits(totals('practical_hours'))}</td><td>{formatCredits(total)}</td></tr></tfoot>
       </table>
     </div>
     <p className="study-resources-table-note">L: Lecture · T: Tutorial · P: Practical. “—” means information is unavailable. Total credits are shown when all course credits are available.</p>

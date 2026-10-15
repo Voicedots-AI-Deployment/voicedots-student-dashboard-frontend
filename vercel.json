@@ -64,6 +64,14 @@
     {
       "source": "/shared-scorecard/:path*",
       "destination": "/index.html"
+    },
+    {
+      "source": "/question-papers",
+      "destination": "/index.html"
+    },
+    {
+      "source": "/study-resources",
+      "destination": "/index.html"
     }
   ],
   "headers": [
